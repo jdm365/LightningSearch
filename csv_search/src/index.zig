@@ -21,6 +21,7 @@ pub const QueryResult = struct {
 };
 
 
+
 pub const InvertedIndex = struct {
     postings: []csv.token_t,
     vocab: std.StringHashMap(u32),
@@ -180,6 +181,7 @@ pub const BM25Partition = struct {
         new_doc: *bool,
     ) !void {
         if (cntr.* == 0) {
+        // if (cntr.* <= 1) {
             return;
         }
 

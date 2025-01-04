@@ -23,6 +23,7 @@ const AtomicCounter = std.atomic.Value(u64);
 
 pub const MAX_NUM_RESULTS = 1000;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
+// const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(10);
 
 const Column = struct {
     csv_idx: usize,
@@ -578,7 +579,7 @@ pub const IndexManager = struct {
         std.debug.assert(num_search_cols > 0);
 
         // Tokenize query.
-        var tokens: std.ArrayList(ColTokenPair) = std.ArrayList(ColTokenPair).init(self.allocator);
+        var tokens = std.ArrayList(ColTokenPair).init(self.allocator);
         defer tokens.deinit();
 
         var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
@@ -595,42 +596,45 @@ pub const IndexManager = struct {
 
             var term_pos: u8 = 0;
             for (entry.value_ptr.*) |c| {
-                if (c == ' ') {
-                    if (term_len == 0) continue;
+                switch (c) {
+                    0...33, 35...47, 58...64, 91...96, 123...126 => {
+                        if (term_len == 0) continue;
 
-                    const token = self.index_partitions[partition_idx].II[col_idx].vocab.get(
-                        term_buffer[0..term_len]
-                        );
-                    if (token != null) {
-                        try tokens.append(ColTokenPair{
-                            .col_idx = @intCast(col_idx),
-                            .term_pos = term_pos,
-                            .token = token.?,
-                        });
-                        term_pos += 1;
-                        empty_query = false;
-                    }
-                    term_len = 0;
-                    continue;
-                }
+                        const token = self.index_partitions[partition_idx].II[col_idx].vocab.get(
+                            term_buffer[0..term_len]
+                            );
+                        if (token != null) {
+                            try tokens.append(ColTokenPair{
+                                .col_idx = @intCast(col_idx),
+                                .term_pos = term_pos,
+                                .token = token.?,
+                            });
+                            term_pos += 1;
+                            empty_query = false;
+                        }
+                        term_len = 0;
+                        continue;
+                    },
+                    else => {
+                        term_buffer[term_len] = std.ascii.toUpper(c);
+                        term_len += 1;
 
-                term_buffer[term_len] = std.ascii.toUpper(c);
-                term_len += 1;
-
-                if (term_len == MAX_TERM_LENGTH) {
-                    const token = self.index_partitions[partition_idx].II[col_idx].vocab.get(
-                        term_buffer[0..term_len]
-                        );
-                    if (token != null) {
-                        try tokens.append(ColTokenPair{
-                            .col_idx = @intCast(col_idx),
-                            .term_pos = term_pos,
-                            .token = token.?,
-                        });
-                        term_pos += 1;
-                        empty_query = false;
-                    }
-                    term_len = 0;
+                        if (term_len == MAX_TERM_LENGTH) {
+                            const token = self.index_partitions[partition_idx].II[col_idx].vocab.get(
+                                term_buffer[0..term_len]
+                                );
+                            if (token != null) {
+                                try tokens.append(ColTokenPair{
+                                    .col_idx = @intCast(col_idx),
+                                    .term_pos = term_pos,
+                                    .token = token.?,
+                                });
+                                term_pos += 1;
+                                empty_query = false;
+                            }
+                            term_len = 0;
+                        }
+                    },
                 }
             }
 
@@ -699,8 +703,9 @@ pub const IndexManager = struct {
             const offset      = II.term_offsets[token];
             const last_offset = II.term_offsets[token + 1];
 
-            const is_high_df_term: bool = (score < IDF_THRESHOLD) or
-                                          (score < 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len)));
+            // const is_high_df_term: bool = (score < IDF_THRESHOLD) or
+                                          // (score < 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len)));
+            const is_high_df_term: bool = (score < 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len)));
 
             var prev_doc_id: u32 = std.math.maxInt(u32);
             for (II.postings[offset..last_offset]) |doc_token| {
@@ -826,8 +831,8 @@ pub const IndexManager = struct {
                 result,
                 @constCast(&self.result_strings[idx]),
             );
-            std.debug.print("Score {d}: {d} - Doc id: {d}\n", .{idx, self.results_arrays[0].items[idx].score, self.results_arrays[0].items[idx].doc_id});
+            // std.debug.print("Score {d}: {d} - Doc id: {d}\n", .{idx, self.results_arrays[0].items[idx].score, self.results_arrays[0].items[idx].doc_id});
         }
-        std.debug.print("\n", .{});
+        // std.debug.print("\n", .{});
     }
 };

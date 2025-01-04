@@ -12,6 +12,26 @@ pub const TermPos = struct {
     field_len: u32,
 };
 
+pub fn urlDecode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    var output = std.ArrayList(u8).init(allocator);
+    defer output.deinit();
+
+    var i: usize = 0;
+    while (i < input.len) {
+        if (input[i] == '%' and i + 2 < input.len) {
+            const hex = input[i + 1 .. i + 3];
+            const value = try std.fmt.parseInt(u8, hex, 16);
+            try output.append(value);
+            i += 3;
+        } else {
+            try output.append(input[i]);
+            i += 1;
+        }
+    }
+
+    return try output.toOwnedSlice();
+}
+
 pub fn csvLineToJson(
     allocator: std.mem.Allocator,
     csv_line: []const u8,
@@ -298,7 +318,9 @@ pub const QueryHandler = struct {
             if (raw_string[idx] == '=') {
                 idx += 1;
 
-                const result = query_map.getPtr(scratch_buffer[0..count]);
+                const result = query_map.getPtr(
+                    try urlDecode(allocator, scratch_buffer[0..count])
+                    );
 
                 count = 0;
                 while ((idx < raw_string.len) and (raw_string[idx] != '&')) {
@@ -313,7 +335,10 @@ pub const QueryHandler = struct {
                     idx   += 1;
                 }
                 if (result != null) {
-                    const value_copy = try allocator.dupe(u8, scratch_buffer[0..count]);
+                    const value_copy = try allocator.dupe(
+                        u8, 
+                        try urlDecode(allocator, scratch_buffer[0..count]),
+                        );
                     result.?.* = value_copy;
                 }
                 count = 0;
@@ -326,7 +351,6 @@ pub const QueryHandler = struct {
         }
     }
 };
-
 
 test "csv_parse" {
     const csv_line = "26859,13859,1,1,WoM27813813,006,Under My Skin (You Go To My Head (Set One)),02:44,David McAlmont,You_Go_To_My_Head_(Set_One),2005,,";
