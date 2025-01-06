@@ -20,8 +20,6 @@ pub const QueryResult = struct {
     partition_idx: usize,
 };
 
-
-
 pub const InvertedIndex = struct {
     postings: []csv.token_t,
     vocab: std.StringHashMap(u32),
@@ -137,7 +135,8 @@ pub const BM25Partition = struct {
 
     inline fn addTerm(
         self: *BM25Partition,
-        term: *[MAX_TERM_LENGTH]u8,
+        // term: *[MAX_TERM_LENGTH]u8,
+        term: []u8,
         term_len: usize,
         doc_id: u32,
         term_pos: u8,
@@ -156,12 +155,12 @@ pub const BM25Partition = struct {
             gop.value_ptr.* = self.II[col_idx].num_terms;
             self.II[col_idx].num_terms += 1;
             try self.II[col_idx].doc_freqs.append(1);
-            try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*);
+            try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*, col_idx);
         } else {
 
             if (!terms_seen.checkOrInsert(gop.value_ptr.*)) {
                 self.II[col_idx].doc_freqs.items[gop.value_ptr.*] += 1;
-                try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*);
+                try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*, col_idx);
             }
         }
 
@@ -171,7 +170,8 @@ pub const BM25Partition = struct {
 
     inline fn addToken(
         self: *BM25Partition,
-        term: *[MAX_TERM_LENGTH]u8,
+        // term: *[MAX_TERM_LENGTH]u8,
+        term: []u8,
         cntr: *usize,
         doc_id: u32,
         term_pos: *u8,
@@ -181,7 +181,6 @@ pub const BM25Partition = struct {
         new_doc: *bool,
     ) !void {
         if (cntr.* == 0) {
-        // if (cntr.* <= 1) {
             return;
         }
 
@@ -202,7 +201,8 @@ pub const BM25Partition = struct {
 
     inline fn flushLargeToken(
         self: *BM25Partition,
-        term: *[MAX_TERM_LENGTH]u8,
+        // term: *[MAX_TERM_LENGTH]u8,
+        term: []u8,
         cntr: *usize,
         doc_id: u32,
         term_pos: *u8,
@@ -231,18 +231,24 @@ pub const BM25Partition = struct {
         self: *BM25Partition,
         token_stream: *csv.TokenStream,
         doc_id: u32,
-        byte_idx: *usize,
+        // byte_idx: *usize,
+        _: *usize,
         col_idx: usize,
-        term: *[MAX_TERM_LENGTH]u8,
+        _: *[MAX_TERM_LENGTH]u8,
         max_byte: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
-        if (byte_idx.* == max_byte) {
+        const byte_idx: *usize = &token_stream.buffer_idx;
+
+        // if (byte_idx.* == max_byte) {
+        if (token_stream.f_data[byte_idx.*] == ',') {
             try token_stream.addToken(
                 true,
                 std.math.maxInt(u7),
                 std.math.maxInt(u24),
+                col_idx,
             );
+            byte_idx.* += 1;
             return;
         }
 
@@ -251,6 +257,7 @@ pub const BM25Partition = struct {
         var term_pos: u8 = 0;
         const is_quoted = (token_stream.f_data[byte_idx.*] == '"');
         byte_idx.* += @intFromBool(is_quoted);
+        try token_stream.incBufferIdx();
 
         var cntr: usize = 0;
         var new_doc: bool = (doc_id != 0);
@@ -263,13 +270,14 @@ pub const BM25Partition = struct {
                 if (self.II[col_idx].doc_sizes[doc_id] >= MAX_NUM_TERMS) {
                     byte_idx.* = start_byte;
                     token_stream.iterFieldCSV(byte_idx);
+                    try token_stream.incBufferIdx();
                     return;
                 }
                 std.debug.assert(byte_idx.* <= max_byte);
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     try self.flushLargeToken(
-                        term, 
+                        token_stream.f_data[byte_idx.*-cntr..], 
                         &cntr, 
                         doc_id, 
                         &term_pos, 
@@ -281,24 +289,32 @@ pub const BM25Partition = struct {
                     continue;
                 }
 
-                // switch (csv.readUTF8(token_stream.f_data, term, byte_idx, &cntr, true)) {
-                term[cntr] = std.ascii.toUpper(token_stream.f_data[byte_idx.*]);
-                cntr += 1;
-                byte_idx.* += 1;
-                switch (term[cntr - 1]) {
+                // std.debug.print("Buffer: {s}\n", .{token_stream.f_data[byte_idx.*-@min(byte_idx.*, 8)..][0..64]});
+                // std.debug.print("Buffer: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
+                switch (token_stream.f_data[byte_idx.*]) {
                     '"' => {
                         byte_idx.* += 1;
+                        // try token_stream.incBufferIdx();
 
+                        byte_idx.* += 1;
+                        std.debug.print("Buffer: {s}\n", .{token_stream.f_data[byte_idx.*-1..][0..64]});
                         switch (token_stream.f_data[byte_idx.* - 1]) {
                             ',', '\n' => break :outer_loop,
-                            '"' => continue,
+                            '"' => {
+                                continue;
+                            },
                             else => return error.UnexpectedQuote,
                         }
                     },
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
-                        cntr -= 1;
+                        std.debug.print("Buffer 2: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
+                        if (cntr == 0) {
+                            byte_idx.* += 1;
+                            continue;
+                        }
+
                         try self.addToken(
-                            term, 
+                            token_stream.f_data[byte_idx.*-@min(byte_idx.*, cntr)..], 
                             &cntr, 
                             doc_id, 
                             &term_pos, 
@@ -307,8 +323,14 @@ pub const BM25Partition = struct {
                             terms_seen,
                             &new_doc,
                             );
+                        try token_stream.incBufferIdx();
                     },
-                    else => {},
+                    else => {
+                        std.debug.print("Buffer 3: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
+                        cntr += 1;
+                        byte_idx.* += 1;
+                        // try token_stream.incBufferIdx();
+                    },
                 }
             }
 
@@ -318,9 +340,11 @@ pub const BM25Partition = struct {
                 std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
                 std.debug.assert(byte_idx.* <= max_byte);
 
+                std.debug.print("Buffer 4: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
+
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     try self.flushLargeToken(
-                        term, 
+                        token_stream.f_data[byte_idx.*-cntr..], 
                         &cntr, 
                         doc_id, 
                         &term_pos, 
@@ -332,16 +356,17 @@ pub const BM25Partition = struct {
                     continue;
                 }
 
-                // switch (csv.readUTF8(token_stream.f_data, term, byte_idx, &cntr, true)) {
-                term[cntr] = std.ascii.toUpper(token_stream.f_data[byte_idx.*]);
-                cntr += 1;
-                byte_idx.* += 1;
-                switch (term[cntr - 1]) {
+
+                switch (token_stream.f_data[byte_idx.*]) {
                     ',', '\n' => break :outer_loop,
                     0...9, 11...43, 45...47, 58...64, 91...96, 123...126 => {
-                        cntr -= 1;
+                        if (cntr == 0) {
+                            byte_idx.* += 1;
+                            continue;
+                        }
+
                         try self.addToken(
-                            term, 
+                            token_stream.f_data[byte_idx.*-cntr..], 
                             &cntr, 
                             doc_id, 
                             &term_pos, 
@@ -350,8 +375,13 @@ pub const BM25Partition = struct {
                             terms_seen,
                             &new_doc,
                             );
+                        try token_stream.incBufferIdx();
                     },
-                    else => {},
+                    else => {
+                        cntr += 1;
+                        byte_idx.* += 1;
+                        // try token_stream.incBufferIdx();
+                    },
                 }
             }
         }
@@ -360,7 +390,7 @@ pub const BM25Partition = struct {
             std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
 
             try self.addTerm(
-                term, 
+                token_stream.f_data[byte_idx.*-cntr..], 
                 cntr, 
                 doc_id, 
                 term_pos, 
@@ -369,6 +399,7 @@ pub const BM25Partition = struct {
                 terms_seen,
                 &new_doc,
                 );
+            try token_stream.incBufferIdx();
         }
 
         if (new_doc) {
@@ -377,6 +408,7 @@ pub const BM25Partition = struct {
                 true,
                 std.math.maxInt(u7),
                 std.math.maxInt(u24),
+                col_idx,
             );
         }
     }
@@ -384,7 +416,7 @@ pub const BM25Partition = struct {
 
     pub fn constructFromTokenStream(
         self: *BM25Partition,
-        token_streams: *[]csv.TokenStream,
+        token_stream: *csv.TokenStream,
         ) !void {
 
         for (0.., self.II) |col_idx, *II| {
@@ -394,8 +426,11 @@ pub const BM25Partition = struct {
             @memset(term_offsets, 0);
 
             // Create index.
-            const ts = token_streams.*[col_idx];
-            try ts.output_file.seekTo(0);
+            // const ts = token_stream.*;
+            const output_file = &token_stream.output_files[col_idx];
+            try output_file.seekTo(0);
+
+            const tokens = &token_stream.tokens[col_idx];
 
             var bytes_read: usize = 0;
 
@@ -404,26 +439,26 @@ pub const BM25Partition = struct {
 
             while (num_tokens == csv.TOKEN_STREAM_CAPACITY) {
                 var _num_tokens: [4]u8 = undefined;
-                _ = try ts.output_file.read(std.mem.asBytes(&_num_tokens));
+                _ = try output_file.read(std.mem.asBytes(&_num_tokens));
                 const endianness = builtin.cpu.arch.endian();
                 num_tokens = std.mem.readInt(u32, &_num_tokens, endianness);
 
-                bytes_read = try ts.output_file.read(
-                    std.mem.sliceAsBytes(ts.tokens[0..num_tokens])
+                bytes_read = try output_file.read(
+                    std.mem.sliceAsBytes(tokens.*[0..num_tokens])
                     );
                 std.debug.assert(bytes_read == 4 * num_tokens);
 
                 var token_count: usize = 0;
                 for (token_count..token_count + num_tokens) |idx| {
-                    if (@as(*u32, @ptrCast(&ts.tokens[idx])).* == std.math.maxInt(u32)) {
+                    if (@as(*u32, @ptrCast(&tokens.*[idx])).* == std.math.maxInt(u32)) {
                         // Null token.
                         current_doc_id += 1;
                         continue;
                     }
 
-                    const new_doc  = ts.tokens[idx].new_doc;
-                    const term_pos = ts.tokens[idx].term_pos;
-                    const term_id: usize = @intCast(ts.tokens[idx].doc_id);
+                    const new_doc  = tokens.*[idx].new_doc;
+                    const term_pos = tokens.*[idx].term_pos;
+                    const term_id: usize = @intCast(tokens.*[idx].doc_id);
 
 
                     current_doc_id += @intCast(new_doc);
