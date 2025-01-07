@@ -9,6 +9,8 @@ pub const MAX_TERM_LENGTH = 256;
 pub const MAX_NUM_TERMS   = 4096;
 pub const MAX_LINE_LENGTH = 1_048_576;
 
+const ENDIANESS = builtin.cpu.arch.endian();
+
 pub const ScoringInfo = packed struct {
     score: f32,
     term_pos: u8,
@@ -442,8 +444,7 @@ pub const BM25Partition = struct {
             while (num_tokens == csv.TOKEN_STREAM_CAPACITY) {
                 var _num_tokens: [4]u8 = undefined;
                 _ = try output_file.read(std.mem.asBytes(&_num_tokens));
-                const endianness = builtin.cpu.arch.endian();
-                num_tokens = std.mem.readInt(u32, &_num_tokens, endianness);
+                num_tokens = std.mem.readInt(u32, &_num_tokens, ENDIANESS);
 
                 bytes_read = try output_file.read(
                     std.mem.sliceAsBytes(tokens.*[0..num_tokens])
@@ -462,7 +463,6 @@ pub const BM25Partition = struct {
                     const term_pos = tokens.*[idx].term_pos;
                     const term_id: usize = @intCast(tokens.*[idx].doc_id);
 
-
                     current_doc_id += @intCast(new_doc);
 
                     const token = csv.token_t{
@@ -473,7 +473,7 @@ pub const BM25Partition = struct {
 
                     const postings_offset = II.term_offsets[term_id] + term_offsets[term_id];
                     std.debug.assert(postings_offset < II.postings.len);
-                    std.debug.assert(current_doc_id < II.num_docs);
+                    std.debug.assert(current_doc_id <= II.num_docs);
 
                     term_offsets[term_id] += 1;
 

@@ -31,6 +31,10 @@ pub inline fn stringToUpper(str: [*]u8, len: usize) void {
 
         index += 16;
     }
+
+    for (index..len) |idx| {
+        str[idx] = std.ascii.toUpper(str[idx]);
+    }
 }
 
 const SIMD_QUOTE_MASK   = @as(@Vector(32, u8), @splat('"'));
@@ -181,6 +185,8 @@ pub const TokenStream = struct {
                 "{s}_{d}.bin",
                 .{output_filename, idx},
             );
+            defer allocator.free(_output_filename);
+
             output_files[idx] = try std.fs.cwd().createFile(
                 _output_filename, 
                 .{ .read = true },
@@ -214,6 +220,8 @@ pub const TokenStream = struct {
             self.allocator.free(self.tokens[col_idx]);
             file.close();
         }
+        self.allocator.free(self.output_files);
+        self.allocator.free(self.num_terms);
         self.allocator.free(self.tokens);
     }
     
@@ -260,7 +268,7 @@ pub const TokenStream = struct {
             _ = try self.input_file.read(self.f_data[offset_length..]);
 
             const start_pos = offset_length - (offset_length % 16);
-            stringToUpper(self.f_data[start_pos..].ptr, self.f_data.len);
+            stringToUpper(self.f_data[start_pos..].ptr, self.f_data.len - start_pos);
             self.buffer_idx = 0;
         }
     }
