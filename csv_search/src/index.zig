@@ -239,6 +239,7 @@ pub const BM25Partition = struct {
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
         const byte_idx: *usize = &token_stream.buffer_idx;
+        // std.debug.print("Beginning: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
 
         // if (byte_idx.* == max_byte) {
         if (token_stream.f_data[byte_idx.*] == ',') {
@@ -271,6 +272,7 @@ pub const BM25Partition = struct {
                     byte_idx.* = start_byte;
                     token_stream.iterFieldCSV(byte_idx);
                     try token_stream.incBufferIdx();
+
                     return;
                 }
                 std.debug.assert(byte_idx.* <= max_byte);
@@ -289,25 +291,24 @@ pub const BM25Partition = struct {
                     continue;
                 }
 
-                // std.debug.print("Buffer: {s}\n", .{token_stream.f_data[byte_idx.*-@min(byte_idx.*, 8)..][0..64]});
-                // std.debug.print("Buffer: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
                 switch (token_stream.f_data[byte_idx.*]) {
                     '"' => {
                         byte_idx.* += 1;
                         // try token_stream.incBufferIdx();
 
-                        byte_idx.* += 1;
-                        std.debug.print("Buffer: {s}\n", .{token_stream.f_data[byte_idx.*-1..][0..64]});
-                        switch (token_stream.f_data[byte_idx.* - 1]) {
-                            ',', '\n' => break :outer_loop,
+                        switch (token_stream.f_data[byte_idx.*]) {
+                            ',', '\n' => {
+                                byte_idx.* += 1;
+                                break :outer_loop;
+                            },
                             '"' => {
+                                byte_idx.* += 1;
                                 continue;
                             },
                             else => return error.UnexpectedQuote,
                         }
                     },
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
-                        std.debug.print("Buffer 2: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
                         if (cntr == 0) {
                             byte_idx.* += 1;
                             continue;
@@ -326,7 +327,6 @@ pub const BM25Partition = struct {
                         try token_stream.incBufferIdx();
                     },
                     else => {
-                        std.debug.print("Buffer 3: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
                         cntr += 1;
                         byte_idx.* += 1;
                         // try token_stream.incBufferIdx();
@@ -339,8 +339,6 @@ pub const BM25Partition = struct {
             outer_loop: while (true) {
                 std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
                 std.debug.assert(byte_idx.* <= max_byte);
-
-                std.debug.print("Buffer 4: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     try self.flushLargeToken(
@@ -358,7 +356,10 @@ pub const BM25Partition = struct {
 
 
                 switch (token_stream.f_data[byte_idx.*]) {
-                    ',', '\n' => break :outer_loop,
+                    ',', '\n' => {
+                        byte_idx.* += 1;
+                        break :outer_loop;
+                    },
                     0...9, 11...43, 45...47, 58...64, 91...96, 123...126 => {
                         if (cntr == 0) {
                             byte_idx.* += 1;
@@ -411,6 +412,7 @@ pub const BM25Partition = struct {
                 col_idx,
             );
         }
+        // std.debug.print("End: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
     }
 
 

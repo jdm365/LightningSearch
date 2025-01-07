@@ -82,27 +82,30 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
     const is_quoted = buffer[byte_idx.*] == '"';
     byte_idx.* += @intFromBool(is_quoted);
 
-    while (true) {
-        byte_idx.* += 1;
-
+    outer_loop: while (true) {
         if (is_quoted) {
-            // switch (iterUTF8(buffer, byte_idx)) {
-            switch (buffer[byte_idx.* - 1]) {
+            switch (buffer[byte_idx.*]) {
                 '"' => {
                     // Iter over delimeter or escape quote.
                     byte_idx.* += 1;
 
                     // Check escape quote.
-                    if (buffer[byte_idx.* - 1] == '"') continue;
-                    return;
+                    if (buffer[byte_idx.*] == '"') {
+                        byte_idx.* += 1;
+                        continue;
+                    }
+                    byte_idx.* += 1;
+                    break :outer_loop;
                 },
-                else => {},
+                else => byte_idx.* += 1,
             }
         } else {
-            // switch (iterUTF8(buffer, byte_idx)) {
-            switch (buffer[byte_idx.* - 1]) {
-                ',', '\n' => return,
-                else => {},
+            switch (buffer[byte_idx.*]) {
+                ',', '\n' => {
+                    byte_idx.* += 1;
+                    break: outer_loop;
+                },
+                else => byte_idx.* += 1,
             }
         }
     }
@@ -250,7 +253,6 @@ pub const TokenStream = struct {
     pub inline fn incBufferIdx(self: *TokenStream) !void {
         const offset_length = TOKEN_STREAM_CAPACITY - self.buffer_idx;
         if (offset_length <= 16384) {
-            std.debug.print("REFRESH\n", .{});
             @memcpy(
                 self.f_data[0..offset_length],
                 self.f_data[self.buffer_idx..],

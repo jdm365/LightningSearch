@@ -393,8 +393,8 @@ pub const IndexManager = struct {
 
             var line_offset = self.index_partitions[partition_idx].line_offsets[doc_id];
             const next_line_offset = self.index_partitions[partition_idx].line_offsets[doc_id + 1];
-            const num_bytes = next_line_offset - line_offset;
-            const start_buffer_idx = token_stream.buffer_idx;
+            // const num_bytes = next_line_offset - line_offset;
+            // const start_buffer_idx = token_stream.buffer_idx;
 
             var search_col_idx: usize = 0;
             var prev_col: usize = 0;
@@ -423,8 +423,8 @@ pub const IndexManager = struct {
                 prev_col = search_col_idxs[search_col_idx] + 1;
                 search_col_idx += 1;
             }
-            token_stream.buffer_idx = start_buffer_idx + num_bytes;
-            try token_stream.incBufferIdx();
+            // token_stream.buffer_idx = start_buffer_idx + num_bytes;
+            // try token_stream.incBufferIdx();
         }
 
         // Flush remaining tokens.
@@ -475,8 +475,8 @@ pub const IndexManager = struct {
 
         const num_lines = line_offsets.items.len - 2;
 
-        // const num_partitions = try std.Thread.getCpuCount();
-        const num_partitions = 1;
+        const num_partitions = try std.Thread.getCpuCount();
+        // const num_partitions = 1;
 
         self.file_handles = try self.allocator.alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.allocator.alloc(BM25Partition, num_partitions);
