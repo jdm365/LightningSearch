@@ -3,12 +3,14 @@ const TermPos = @import("server.zig").TermPos;
 
 pub const TOKEN_STREAM_CAPACITY = 1_048_576;
 
+
 pub const token_t = packed struct(u32) {
     new_doc: u1,
     term_pos: u7,
     doc_id: u24
 };
 
+const Vec64 = @Vector(8, u8);
 const Vec128 = @Vector(16, u8);
 pub inline fn stringToUpper(str: [*]u8, len: usize) void {
     var index: usize = 0;
@@ -37,9 +39,16 @@ pub inline fn stringToUpper(str: [*]u8, len: usize) void {
     }
 }
 
-const SIMD_QUOTE_MASK   = @as(@Vector(32, u8), @splat('"'));
-const SIMD_NEWLINE_MASK = @as(@Vector(32, u8), @splat('\n'));
-const SIMD_COMMA_MASK   = @as(@Vector(32, u8), @splat(','));
+// const U64_QUOTE_MASK: Vec64     = @splat('"');
+// const U64_NEWLINE_MASK: Vec64   = @splat('\n');
+// const U64_COMMA_MASK: Vec64     = @splat(',');
+const U64_QUOTE_MASK: u64     = 0x2222222222222222;
+const U64_NEWLINE_MASK: u64   = 0x0a0a0a0a0a0a0a0a;
+const U64_COMMA_MASK: u64     = 0x2c2c2c2c2c2c2c2c;
+
+const SIMD_QUOTE_MASK: Vec128 align(16)   = @splat('"');
+const SIMD_NEWLINE_MASK: Vec128 align(16) = @splat('\n');
+const SIMD_COMMA_MASK: Vec128 align(16)   = @splat(',');
 
 pub inline fn iterUTF8(read_buffer: []const u8, read_idx: *usize) u8 {
     // Return final byte.
@@ -86,8 +95,54 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
     const is_quoted = buffer[byte_idx.*] == '"';
     byte_idx.* += @intFromBool(is_quoted);
 
+    // var vec128: *const Vec128 = undefined;
+    // var vec64: *const u64 = undefined;
+
     outer_loop: while (true) {
+        // vec128 = @as(*const Vec128, @ptrCast(@alignCast(buffer[byte_idx.*..])));
+        // vec64 = @as(*const Vec64, @ptrCast(@alignCast(buffer[byte_idx.*..])));
+        // vec64 = @as(*const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
+        // const matches = (vec64.* ^ U64_QUOTE_MASK) &
+                        // (vec64.* ^ U64_NEWLINE_MASK) &
+                        // (vec64.* ^ U64_COMMA_MASK);
+        // const mask = ((matches -% 0x0101010101010101) & ~matches & 0x8080808080808080);
+        // if (mask == 0) {
+            // byte_idx.* += 8;
+            // continue;
+        // }
+        // 
+        // byte_idx.* += @ctz(mask) >> 3;
+
+        var match_idx: u16 = undefined;
+        asm volatile (
+            \\ movdqu %[vec], %%xmm0       // Load data
+            \\ movdqu %[quote], %%xmm1     // Load quote mask
+            \\ movdqa %%xmm0, %%xmm2       // Copy data
+            \\ pcmpeqb %%xmm1, %%xmm2      // Compare with quotes, result in xmm2
+            \\ movdqu %[newline], %%xmm1   // Load newline mask
+            \\ movdqa %%xmm0, %%xmm3       // Copy data again
+            \\ pcmpeqb %%xmm1, %%xmm3      // Compare with newlines
+            \\ por %%xmm3, %%xmm2          // OR results together
+            \\ movdqu %[comma], %%xmm1     // Load comma mask
+            \\ movdqa %%xmm0, %%xmm3       // Copy data once more
+            \\ pcmpeqb %%xmm1, %%xmm3      // Compare with commas
+            \\ por %%xmm3, %%xmm2          // OR final results
+            \\ pmovmskb %%xmm2, %%edx      // Extract mask to GP register
+            \\ tzcnt %%dx, %[out]          // Count trailing zeros to get first match
+            : [out] "=r" (match_idx)        // Using general register constraint
+            : [vec] "m" (buffer[byte_idx.*..][0..16].*),
+              [quote] "m" (SIMD_QUOTE_MASK),
+              [newline] "m" (SIMD_NEWLINE_MASK),
+              [comma] "m" (SIMD_COMMA_MASK)
+            : "xmm0", "xmm1", "xmm2", "edx"
+        );
+        // byte_idx.* += @intCast(result);
+        std.debug.print("{s}\n", .{buffer[byte_idx.*..][0..16].*});
+        byte_idx.* += @intCast(match_idx);
+        std.debug.print("result: {}\n\n", .{match_idx});
+
         if (is_quoted) {
+
             switch (buffer[byte_idx.*]) {
                 '"' => {
                     // Iter over delimeter or escape quote.

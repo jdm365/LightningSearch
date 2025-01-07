@@ -22,9 +22,23 @@ pub const QueryResult = struct {
     partition_idx: usize,
 };
 
+// const SHM = std.HashMap([]const u8, u32, std.hash.XxHash64, 80);
+const SHM = struct {
+    pub fn hash(self: @This(), key: []const u8) u64 {
+        _ = self;
+        return std.hash.Wyhash.hash(0, key);
+    }
+
+    pub fn eql(self: @This(), a: []const u8, b: []const u8) bool {
+        _ = self;
+        return std.mem.eql(u8, a, b);
+    }
+};
+
 pub const InvertedIndex = struct {
     postings: []csv.token_t,
-    vocab: std.StringHashMap(u32),
+    // vocab: std.StringHashMap(u32),
+    vocab: std.hash_map.HashMap([]const u8, u32, SHM, 80),
     term_offsets: []usize,
     doc_freqs: std.ArrayList(u32),
     doc_sizes: []u16,
@@ -37,7 +51,8 @@ pub const InvertedIndex = struct {
         allocator: std.mem.Allocator,
         num_docs: usize,
         ) !InvertedIndex {
-        var vocab = std.StringHashMap(u32).init(allocator);
+        // var vocab = std.StringHashMap(u32).init(allocator);
+        var vocab = std.hash_map.HashMap([]const u8, u32, SHM, 80).init(allocator);
 
         // Guess capacity
         try vocab.ensureTotalCapacity(@intCast(num_docs / 25));
