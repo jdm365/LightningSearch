@@ -393,8 +393,7 @@ pub const IndexManager = struct {
 
             var line_offset = self.index_partitions[partition_idx].line_offsets[doc_id];
             const next_line_offset = self.index_partitions[partition_idx].line_offsets[doc_id + 1];
-            // const num_bytes = next_line_offset - line_offset;
-            // const start_buffer_idx = token_stream.buffer_idx;
+            std.debug.assert(line_offset < next_line_offset);
 
             var search_col_idx: usize = 0;
             var prev_col: usize = 0;
@@ -402,12 +401,10 @@ pub const IndexManager = struct {
             while (search_col_idx < num_search_cols) {
 
                 for (prev_col..search_col_idxs[search_col_idx]) |_| {
-                    // token_stream.iterFieldCSV(&line_offset);
                     token_stream.iterFieldCSV(&token_stream.buffer_idx);
                     try token_stream.incBufferIdx();
                 }
 
-                std.debug.assert(line_offset < next_line_offset);
                 try self.index_partitions[partition_idx].processDocRfc4180(
                     &token_stream,
                     @intCast(doc_id), 
@@ -417,14 +414,11 @@ pub const IndexManager = struct {
                     next_line_offset,
                     &terms_seen_bitset,
                     );
-                // @breakpoint();
 
                 // Add one because we just iterated over the last field.
                 prev_col = search_col_idxs[search_col_idx] + 1;
                 search_col_idx += 1;
             }
-            // token_stream.buffer_idx = start_buffer_idx + num_bytes;
-            // try token_stream.incBufferIdx();
         }
 
         // Flush remaining tokens.
@@ -462,10 +456,9 @@ pub const IndexManager = struct {
         // Time read.
         const start_time = std.time.milliTimestamp();
 
-        try line_offsets.append(file_pos);
         while (file_pos < file_size - 1) {
-            try csv.iterLineCSV(f_data, &file_pos);
             try line_offsets.append(file_pos);
+            try csv.iterLineCSV(f_data, &file_pos);
         }
         try line_offsets.append(file_size);
 
@@ -473,10 +466,10 @@ pub const IndexManager = struct {
         const execution_time_ms = end_time - start_time;
         const mb_s: usize = @as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(execution_time_ms))));
 
-        const num_lines = line_offsets.items.len - 2;
+        const num_lines = line_offsets.items.len - 1;
 
-        const num_partitions = try std.Thread.getCpuCount();
-        // const num_partitions = 1;
+        // const num_partitions = try std.Thread.getCpuCount();
+        const num_partitions = 1;
 
         self.file_handles = try self.allocator.alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.allocator.alloc(BM25Partition, num_partitions);
@@ -836,8 +829,8 @@ pub const IndexManager = struct {
                 result,
                 @constCast(&self.result_strings[idx]),
             );
-            // std.debug.print("Score {d}: {d} - Doc id: {d}\n", .{idx, self.results_arrays[0].items[idx].score, self.results_arrays[0].items[idx].doc_id});
+            std.debug.print("Score {d}: {d} - Doc id: {d}\n", .{idx, self.results_arrays[0].items[idx].score, self.results_arrays[0].items[idx].doc_id});
         }
-        // std.debug.print("\n", .{});
+        std.debug.print("\n", .{});
     }
 };

@@ -187,7 +187,6 @@ pub const BM25Partition = struct {
 
     inline fn addToken(
         self: *BM25Partition,
-        // term: *[MAX_TERM_LENGTH]u8,
         term: []u8,
         cntr: *usize,
         doc_id: u32,
@@ -248,7 +247,6 @@ pub const BM25Partition = struct {
         self: *BM25Partition,
         token_stream: *csv.TokenStream,
         doc_id: u32,
-        // byte_idx: *usize,
         _: *usize,
         col_idx: usize,
         _: *[MAX_TERM_LENGTH]u8,
@@ -256,9 +254,7 @@ pub const BM25Partition = struct {
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
         const byte_idx: *usize = &token_stream.buffer_idx;
-        // std.debug.print("Beginning: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
 
-        // if (byte_idx.* == max_byte) {
         if (token_stream.f_data[byte_idx.*] == ',') {
             try token_stream.addToken(
                 true,
@@ -311,7 +307,6 @@ pub const BM25Partition = struct {
                 switch (token_stream.f_data[byte_idx.*]) {
                     '"' => {
                         byte_idx.* += 1;
-                        // try token_stream.incBufferIdx();
 
                         switch (token_stream.f_data[byte_idx.*]) {
                             ',', '\n' => {
@@ -319,6 +314,20 @@ pub const BM25Partition = struct {
                                 break :outer_loop;
                             },
                             '"' => {
+                                if (cntr > 1) {
+                                    const start_idx = byte_idx.* - 1 - @min(byte_idx.* - 1, cntr);
+                                    try self.addToken(
+                                        token_stream.f_data[start_idx..], 
+                                        &cntr, 
+                                        doc_id, 
+                                        &term_pos, 
+                                        col_idx, 
+                                        token_stream, 
+                                        terms_seen,
+                                        &new_doc,
+                                        );
+                                    try token_stream.incBufferIdx();
+                                }
                                 byte_idx.* += 1;
                                 continue;
                             },
@@ -326,13 +335,21 @@ pub const BM25Partition = struct {
                         }
                     },
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
-                        if (cntr == 0) {
+                        // if (cntr == 0) {
+                            // byte_idx.* += 1;
+                            // continue;
+                        // }
+
+                        if (cntr <= 1) {
                             byte_idx.* += 1;
+                            cntr = 0;
                             continue;
                         }
 
+                        const start_idx = byte_idx.* - @min(byte_idx.*, cntr);
+                        // cntr -= 1;
                         try self.addToken(
-                            token_stream.f_data[byte_idx.*-@min(byte_idx.*, cntr)..], 
+                            token_stream.f_data[start_idx..], 
                             &cntr, 
                             doc_id, 
                             &term_pos, 
@@ -346,7 +363,6 @@ pub const BM25Partition = struct {
                     else => {
                         cntr += 1;
                         byte_idx.* += 1;
-                        // try token_stream.incBufferIdx();
                     },
                 }
             }
@@ -378,13 +394,18 @@ pub const BM25Partition = struct {
                         break :outer_loop;
                     },
                     0...9, 11...43, 45...47, 58...64, 91...96, 123...126 => {
-                        if (cntr == 0) {
+                        // if (cntr == 0) {
+                        if (cntr <= 1) {
                             byte_idx.* += 1;
+                            cntr = 0;
                             continue;
                         }
 
+                        // const start_idx = byte_idx.* - @min(byte_idx.*, cntr);
+                        const start_idx = byte_idx.* - @min(byte_idx.*, cntr);
+                        // cntr -= 1;
                         try self.addToken(
-                            token_stream.f_data[byte_idx.*-cntr..], 
+                            token_stream.f_data[start_idx..], 
                             &cntr, 
                             doc_id, 
                             &term_pos, 
@@ -398,7 +419,6 @@ pub const BM25Partition = struct {
                     else => {
                         cntr += 1;
                         byte_idx.* += 1;
-                        // try token_stream.incBufferIdx();
                     },
                 }
             }
@@ -407,8 +427,10 @@ pub const BM25Partition = struct {
         if (cntr > 0) {
             std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
 
+            const start_idx = byte_idx.* - @intFromBool(is_quoted) 
+                              - @min(byte_idx.* - @intFromBool(is_quoted), cntr + 1);
             try self.addTerm(
-                token_stream.f_data[byte_idx.*-cntr..], 
+                token_stream.f_data[start_idx..], 
                 cntr, 
                 doc_id, 
                 term_pos, 
@@ -429,7 +451,6 @@ pub const BM25Partition = struct {
                 col_idx,
             );
         }
-        // std.debug.print("End: {s}\n", .{token_stream.f_data[byte_idx.*..][0..64]});
     }
 
 
@@ -440,12 +461,12 @@ pub const BM25Partition = struct {
 
         for (0.., self.II) |col_idx, *II| {
             try II.resizePostings(self.allocator);
-            var term_offsets = try self.allocator.alloc(usize, II.num_terms);
-            defer self.allocator.free(term_offsets);
-            @memset(term_offsets, 0);
+
+            var term_cntr = try self.allocator.alloc(usize, II.num_terms);
+            defer self.allocator.free(term_cntr);
+            @memset(term_cntr, 0);
 
             // Create index.
-            // const ts = token_stream.*;
             const output_file = &token_stream.output_files[col_idx];
             try output_file.seekTo(0);
 
@@ -466,8 +487,7 @@ pub const BM25Partition = struct {
                     );
                 std.debug.assert(bytes_read == 4 * num_tokens);
 
-                var token_count: usize = 0;
-                for (token_count..token_count + num_tokens) |idx| {
+                for (0..num_tokens) |idx| {
                     if (@as(*u32, @ptrCast(&tokens.*[idx])).* == std.math.maxInt(u32)) {
                         // Null token.
                         current_doc_id += 1;
@@ -486,16 +506,14 @@ pub const BM25Partition = struct {
                         .doc_id = @truncate(current_doc_id),
                     };
 
-                    const postings_offset = II.term_offsets[term_id] + term_offsets[term_id];
+                    const postings_offset = II.term_offsets[term_id] + term_cntr[term_id];
                     std.debug.assert(postings_offset < II.postings.len);
-                    std.debug.assert(current_doc_id <= II.num_docs);
+                    std.debug.assert(current_doc_id < II.num_docs);
 
-                    term_offsets[term_id] += 1;
+                    term_cntr[term_id] += 1;
 
                     II.postings[postings_offset] = token;
                 }
-
-                token_count += num_tokens;
             }
         }
     }

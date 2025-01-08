@@ -363,6 +363,6 @@ fn server_test() !void {
 
 pub fn main() !void {
     // try main_cli_runner();
-    // try server_test();
-    try bench(true);
+    try server_test();
+    // try bench(true);
 }

@@ -27,7 +27,7 @@ inline fn findFirstSetBitDeBruijn(b: u64) usize {
 
 // inline fn getZeroByteIndex(byte: u64) usize {
 export fn getZeroByteIndex(byte: u64) usize {
-    // @ctz is twice as slow as De Bruijn.
+    // @ctz is twice as slow as De Bruijn. Seems wrong.
     const mask = ((byte -% 0x0101010101010101) & ~byte & 0x8080808080808080);
     if (mask == 0) {
         return 8;
