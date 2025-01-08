@@ -33,7 +33,7 @@ export fn getZeroByteIndex(byte: u64) usize {
         return 8;
     }
     return findFirstSetBitDeBruijn(mask) >> 3;
-    // return @divExact(@ctz(mask), 8);
+    // return @ctz(mask) >> 3;
 }
 
 const Vec64 = @Vector(8, u8);
@@ -124,15 +124,9 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
     var vec64: *align(1) const u64 = undefined;
 
     outer_loop: while (true) {
+        vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
 
         if (is_quoted) {
-            vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
-            const matches = (vec64.* ^ U64_QUOTE_MASK);
-            const mask = ((matches -% 0x0101010101010101) & ~matches & 0x8080808080808080);
-            if (mask == 0) {
-                byte_idx.* += 8;
-                continue;
-            }
             const skip_idx = getZeroByteIndex(vec64.* ^ U64_QUOTE_MASK);
             byte_idx.* += skip_idx;
             if (skip_idx == 8) continue;
@@ -148,16 +142,6 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
             break :outer_loop;
 
         } else {
-
-            vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
-            const matches = (vec64.* ^ U64_QUOTE_MASK) &
-                            (vec64.* ^ U64_NEWLINE_MASK) &
-                            (vec64.* ^ U64_COMMA_MASK);
-            const mask = ((matches -% 0x0101010101010101) & ~matches & 0x8080808080808080);
-            if (mask == 0) {
-                byte_idx.* += 8;
-                continue;
-            }
             const newline_idx = getZeroByteIndex(vec64.* ^ U64_NEWLINE_MASK);
             const comma_idx   = getZeroByteIndex(vec64.* ^ U64_COMMA_MASK);
 
@@ -308,7 +292,7 @@ pub const TokenStream = struct {
         self.tokens[search_col_idx][self.num_terms[search_col_idx]] = token_t{
             .new_doc = @intFromBool(new_doc),
             .term_pos = @truncate(term_pos),
-            .doc_id = @intCast(doc_id),
+            .doc_id = @truncate(doc_id),
         };
         self.num_terms[search_col_idx] += 1;
 
@@ -323,7 +307,9 @@ pub const TokenStream = struct {
             std.mem.asBytes(&self.num_terms[search_col_idx]),
             );
         const bytes_written = try self.output_files[search_col_idx].write(
-            std.mem.sliceAsBytes(self.tokens[search_col_idx][0..self.num_terms[search_col_idx]])
+            std.mem.sliceAsBytes(
+                self.tokens[search_col_idx][0..self.num_terms[search_col_idx]]
+                )
             );
         
         std.debug.assert(bytes_written == bytes_to_write);

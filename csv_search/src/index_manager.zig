@@ -364,7 +364,6 @@ pub const IndexManager = struct {
         );
         defer token_stream.deinit();
 
-        var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
         var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
 
         // Sort search_col_idxs
@@ -375,15 +374,15 @@ pub const IndexManager = struct {
         _ = try token_stream.input_file.read(token_stream.f_data);
         csv.stringToUpper(token_stream.f_data[0..].ptr, token_stream.f_data.len);
 
-        var last_doc_id: usize = 0;
+        var prev_doc_id: usize = 0;
         for (0.., start_doc..end_doc) |doc_id, _| {
 
             if (timer.read() >= interval_ns) {
                 const current_docs_read = total_docs_read.fetchAdd(
-                    doc_id - last_doc_id, 
+                    doc_id - prev_doc_id, 
                     .monotonic
-                    ) + (doc_id - last_doc_id);
-                last_doc_id = doc_id;
+                    ) + (doc_id - prev_doc_id);
+                prev_doc_id = doc_id;
                 timer.reset();
 
                 if (partition_idx == 0) {
@@ -391,9 +390,8 @@ pub const IndexManager = struct {
                 }
             }
 
-            var line_offset = self.index_partitions[partition_idx].line_offsets[doc_id];
-            const next_line_offset = self.index_partitions[partition_idx].line_offsets[doc_id + 1];
-            std.debug.assert(line_offset < next_line_offset);
+            // const line_offset = self.index_partitions[partition_idx].line_offsets[doc_id];
+            // const next_line_offset = self.index_partitions[partition_idx].line_offsets[doc_id + 1];
 
             var search_col_idx: usize = 0;
             var prev_col: usize = 0;
@@ -408,10 +406,7 @@ pub const IndexManager = struct {
                 try self.index_partitions[partition_idx].processDocRfc4180(
                     &token_stream,
                     @intCast(doc_id), 
-                    &line_offset, 
                     search_col_idx,
-                    &term_buffer,
-                    next_line_offset,
                     &terms_seen_bitset,
                     );
 
@@ -419,13 +414,17 @@ pub const IndexManager = struct {
                 prev_col = search_col_idxs[search_col_idx] + 1;
                 search_col_idx += 1;
             }
+            for (search_col_idxs[search_col_idx-1]+1..self.cols.items.len) |_| {
+                token_stream.iterFieldCSV(&token_stream.buffer_idx);
+                try token_stream.incBufferIdx();
+            }
         }
 
         // Flush remaining tokens.
         for (0..token_stream.num_terms.len) |search_col_idx| {
             try token_stream.flushTokenStream(search_col_idx);
         }
-        _ = total_docs_read.fetchAdd(end_doc - (start_doc + last_doc_id), .monotonic);
+        _ = total_docs_read.fetchAdd(end_doc - (start_doc + prev_doc_id), .monotonic);
 
         // Construct II
         try self.index_partitions[partition_idx].constructFromTokenStream(&token_stream);
@@ -468,8 +467,8 @@ pub const IndexManager = struct {
 
         const num_lines = line_offsets.items.len - 1;
 
-        // const num_partitions = try std.Thread.getCpuCount();
-        const num_partitions = 1;
+        const num_partitions = try std.Thread.getCpuCount();
+        // const num_partitions = 1;
 
         self.file_handles = try self.allocator.alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.allocator.alloc(BM25Partition, num_partitions);

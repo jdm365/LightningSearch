@@ -239,8 +239,8 @@ fn server_test() !void {
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
 
-    // const filename: []const u8 = "../tests/mb.csv";
-    const filename: []const u8 = "../tests/mb_small.csv";
+    const filename: []const u8 = "../tests/mb.csv";
+    // const filename: []const u8 = "../tests/mb_small.csv";
 
     var search_cols = std.ArrayList([]u8).init(allocator);
     try search_cols.append(try allocator.dupe(u8, "TITLE"));

@@ -152,7 +152,6 @@ pub const BM25Partition = struct {
 
     inline fn addTerm(
         self: *BM25Partition,
-        // term: *[MAX_TERM_LENGTH]u8,
         term: []u8,
         term_len: usize,
         doc_id: u32,
@@ -173,6 +172,7 @@ pub const BM25Partition = struct {
             self.II[col_idx].num_terms += 1;
             try self.II[col_idx].doc_freqs.append(1);
             try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*, col_idx);
+
         } else {
 
             if (!terms_seen.checkOrInsert(gop.value_ptr.*)) {
@@ -217,7 +217,6 @@ pub const BM25Partition = struct {
 
     inline fn flushLargeToken(
         self: *BM25Partition,
-        // term: *[MAX_TERM_LENGTH]u8,
         term: []u8,
         cntr: *usize,
         doc_id: u32,
@@ -247,10 +246,7 @@ pub const BM25Partition = struct {
         self: *BM25Partition,
         token_stream: *csv.TokenStream,
         doc_id: u32,
-        _: *usize,
         col_idx: usize,
-        _: *[MAX_TERM_LENGTH]u8,
-        max_byte: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
         const byte_idx: *usize = &token_stream.buffer_idx;
@@ -288,7 +284,6 @@ pub const BM25Partition = struct {
 
                     return;
                 }
-                std.debug.assert(byte_idx.* <= max_byte);
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     try self.flushLargeToken(
@@ -316,6 +311,7 @@ pub const BM25Partition = struct {
                             '"' => {
                                 if (cntr > 1) {
                                     const start_idx = byte_idx.* - 1 - @min(byte_idx.* - 1, cntr);
+
                                     try self.addToken(
                                         token_stream.f_data[start_idx..], 
                                         &cntr, 
@@ -348,6 +344,7 @@ pub const BM25Partition = struct {
 
                         const start_idx = byte_idx.* - @min(byte_idx.*, cntr);
                         // cntr -= 1;
+
                         try self.addToken(
                             token_stream.f_data[start_idx..], 
                             &cntr, 
@@ -371,7 +368,6 @@ pub const BM25Partition = struct {
 
             outer_loop: while (true) {
                 std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
-                std.debug.assert(byte_idx.* <= max_byte);
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     try self.flushLargeToken(
@@ -394,16 +390,14 @@ pub const BM25Partition = struct {
                         break :outer_loop;
                     },
                     0...9, 11...43, 45...47, 58...64, 91...96, 123...126 => {
-                        // if (cntr == 0) {
-                        if (cntr <= 1) {
+                        if (cntr == 0) {
                             byte_idx.* += 1;
                             cntr = 0;
                             continue;
                         }
 
-                        // const start_idx = byte_idx.* - @min(byte_idx.*, cntr);
                         const start_idx = byte_idx.* - @min(byte_idx.*, cntr);
-                        // cntr -= 1;
+
                         try self.addToken(
                             token_stream.f_data[start_idx..], 
                             &cntr, 
@@ -459,11 +453,14 @@ pub const BM25Partition = struct {
         token_stream: *csv.TokenStream,
         ) !void {
 
+        var term_cntr = try self.allocator.alloc(usize, self.II[0].num_terms);
+        defer self.allocator.free(term_cntr);
         for (0.., self.II) |col_idx, *II| {
             try II.resizePostings(self.allocator);
 
-            var term_cntr = try self.allocator.alloc(usize, II.num_terms);
-            defer self.allocator.free(term_cntr);
+            if (II.num_terms > term_cntr.len) {
+                term_cntr = try self.allocator.realloc(term_cntr, @as(usize, @intCast(II.num_terms)));
+            }
             @memset(term_cntr, 0);
 
             // Create index.
@@ -485,7 +482,6 @@ pub const BM25Partition = struct {
                 bytes_read = try output_file.read(
                     std.mem.sliceAsBytes(tokens.*[0..num_tokens])
                     );
-                std.debug.assert(bytes_read == 4 * num_tokens);
 
                 for (0..num_tokens) |idx| {
                     if (@as(*u32, @ptrCast(&tokens.*[idx])).* == std.math.maxInt(u32)) {
@@ -515,6 +511,7 @@ pub const BM25Partition = struct {
                     II.postings[postings_offset] = token;
                 }
             }
+            std.debug.assert(current_doc_id == II.num_docs - 1);
         }
     }
 
