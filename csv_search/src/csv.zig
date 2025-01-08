@@ -10,6 +10,32 @@ pub const token_t = packed struct(u32) {
     doc_id: u24
 };
 
+const debruijn64: u64 = 0x03f79d71b4cb0a89;
+const index64: [64]u6 = init: {
+    @setEvalBranchQuota(1000);
+    var seq: [64]u6 = undefined;
+    for (0..64) |i| {
+        seq[((debruijn64 << @as(u6, @intCast(i))) >> 58) & 63] = @intCast(i);
+    }
+    break :init seq;
+};
+
+inline fn findFirstSetBitDeBruijn(b: u64) usize {
+    const first = (b & (~b +% 1));
+    return index64[(first *% debruijn64) >> 58];
+}
+
+// inline fn getZeroByteIndex(byte: u64) usize {
+export fn getZeroByteIndex(byte: u64) usize {
+    // @ctz is twice as slow as De Bruijn.
+    const mask = ((byte -% 0x0101010101010101) & ~byte & 0x8080808080808080);
+    if (mask == 0) {
+        return 8;
+    }
+    return findFirstSetBitDeBruijn(mask) >> 3;
+    // return @divExact(@ctz(mask), 8);
+}
+
 const Vec64 = @Vector(8, u8);
 const Vec128 = @Vector(16, u8);
 pub inline fn stringToUpper(str: [*]u8, len: usize) void {
@@ -95,106 +121,94 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
     const is_quoted = buffer[byte_idx.*] == '"';
     byte_idx.* += @intFromBool(is_quoted);
 
-    // var vec128: *const Vec128 = undefined;
-    // var vec64: *const u64 = undefined;
+    var vec64: *align(1) const u64 = undefined;
 
     outer_loop: while (true) {
-        // vec128 = @as(*const Vec128, @ptrCast(@alignCast(buffer[byte_idx.*..])));
-        // vec64 = @as(*const Vec64, @ptrCast(@alignCast(buffer[byte_idx.*..])));
-        // vec64 = @as(*const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
-        // const matches = (vec64.* ^ U64_QUOTE_MASK) &
-                        // (vec64.* ^ U64_NEWLINE_MASK) &
-                        // (vec64.* ^ U64_COMMA_MASK);
-        // const mask = ((matches -% 0x0101010101010101) & ~matches & 0x8080808080808080);
-        // if (mask == 0) {
-            // byte_idx.* += 8;
-            // continue;
-        // }
-        // 
-        // byte_idx.* += @ctz(mask) >> 3;
-
-        var match_idx: u16 = undefined;
-        asm volatile (
-            \\ movdqu %[vec], %%xmm0       // Load data
-            \\ movdqu %[quote], %%xmm1     // Load quote mask
-            \\ movdqa %%xmm0, %%xmm2       // Copy data
-            \\ pcmpeqb %%xmm1, %%xmm2      // Compare with quotes, result in xmm2
-            \\ movdqu %[newline], %%xmm1   // Load newline mask
-            \\ movdqa %%xmm0, %%xmm3       // Copy data again
-            \\ pcmpeqb %%xmm1, %%xmm3      // Compare with newlines
-            \\ por %%xmm3, %%xmm2          // OR results together
-            \\ movdqu %[comma], %%xmm1     // Load comma mask
-            \\ movdqa %%xmm0, %%xmm3       // Copy data once more
-            \\ pcmpeqb %%xmm1, %%xmm3      // Compare with commas
-            \\ por %%xmm3, %%xmm2          // OR final results
-            \\ pmovmskb %%xmm2, %%edx      // Extract mask to GP register
-            \\ tzcnt %%dx, %[out]          // Count trailing zeros to get first match
-            : [out] "=r" (match_idx)        // Using general register constraint
-            : [vec] "m" (buffer[byte_idx.*..][0..16].*),
-              [quote] "m" (SIMD_QUOTE_MASK),
-              [newline] "m" (SIMD_NEWLINE_MASK),
-              [comma] "m" (SIMD_COMMA_MASK)
-            : "xmm0", "xmm1", "xmm2", "edx"
-        );
-        // byte_idx.* += @intCast(result);
-        std.debug.print("{s}\n", .{buffer[byte_idx.*..][0..16].*});
-        byte_idx.* += @intCast(match_idx);
-        std.debug.print("result: {}\n\n", .{match_idx});
 
         if (is_quoted) {
-
-            switch (buffer[byte_idx.*]) {
-                '"' => {
-                    // Iter over delimeter or escape quote.
-                    byte_idx.* += 1;
-
-                    // Check escape quote.
-                    if (buffer[byte_idx.*] == '"') {
-                        byte_idx.* += 1;
-                        continue;
-                    }
-                    byte_idx.* += 1;
-                    break :outer_loop;
-                },
-                else => byte_idx.* += 1,
+            vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
+            const matches = (vec64.* ^ U64_QUOTE_MASK);
+            const mask = ((matches -% 0x0101010101010101) & ~matches & 0x8080808080808080);
+            if (mask == 0) {
+                byte_idx.* += 8;
+                continue;
             }
+            const skip_idx = getZeroByteIndex(vec64.* ^ U64_QUOTE_MASK);
+            byte_idx.* += skip_idx;
+            if (skip_idx == 8) continue;
+            
+            byte_idx.* += 1;
+
+            // Check if escape quote.
+            if (buffer[byte_idx.*] == '"') {
+                byte_idx.* += 1;
+                continue;
+            }
+            byte_idx.* += 1;
+            break :outer_loop;
+
         } else {
-            switch (buffer[byte_idx.*]) {
-                ',', '\n' => {
-                    byte_idx.* += 1;
-                    break: outer_loop;
-                },
-                else => byte_idx.* += 1,
+
+            vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
+            const matches = (vec64.* ^ U64_QUOTE_MASK) &
+                            (vec64.* ^ U64_NEWLINE_MASK) &
+                            (vec64.* ^ U64_COMMA_MASK);
+            const mask = ((matches -% 0x0101010101010101) & ~matches & 0x8080808080808080);
+            if (mask == 0) {
+                byte_idx.* += 8;
+                continue;
             }
+            const newline_idx = getZeroByteIndex(vec64.* ^ U64_NEWLINE_MASK);
+            const comma_idx   = getZeroByteIndex(vec64.* ^ U64_COMMA_MASK);
+
+            const skip_idx = @min(newline_idx, comma_idx);
+            byte_idx.* += skip_idx;
+            if (skip_idx == 8) continue;
+            byte_idx.* += 1;
+            break :outer_loop;
         }
     }
 }
 
-pub inline fn iterLineCSV(buffer: []const u8, byte_idx: *usize) void {
+pub inline fn iterLineCSV(buffer: []const u8, byte_idx: *usize) !void {
     // Iterate to next line in compliance with RFC 4180.
-    while (true) {
-        // switch (iterUTF8(buffer, byte_idx)) {
-        byte_idx.* += 1;
+    var vec64: *align(1) const u64 = undefined;
 
-        switch (buffer[byte_idx.* - 1]) {
-            '"' => {
-                while (true) {
-                    // if (iterUTF8(buffer, byte_idx) == '"') {
-                    byte_idx.* += 1;
-                    if (buffer[byte_idx.* - 1] == '"') {
-                        if (buffer[byte_idx.*] == '"') {
-                            byte_idx.* += 1;
-                            continue;
-                        }
-                        break;
-                    }
-                }
-            },
-            '\n' => {
-                return;
-            },
-            else => {},
+    var skip_idx: usize = 0;
+    var is_newline: bool = false;
+
+    while (true) {
+        vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
+        const quote_idx   = getZeroByteIndex(vec64.* ^ U64_QUOTE_MASK);
+        const newline_idx = getZeroByteIndex(vec64.* ^ U64_NEWLINE_MASK);
+
+        if (quote_idx < newline_idx) {
+            skip_idx = quote_idx;
+            is_newline = false;
+        } else {
+            skip_idx = newline_idx;
+            is_newline = true;
         }
+        byte_idx.* += skip_idx;
+        if (skip_idx == 8) continue;
+
+        byte_idx.* += 1;
+        if (!is_newline) {
+
+            while (true) {
+                if (buffer[byte_idx.*] == '"') {
+                    byte_idx.* += 1;
+                    if (buffer[byte_idx.*] == '"') {
+                        byte_idx.* += 1;
+                        continue;
+                    }
+                    break;
+                }
+                byte_idx.* += 1;
+            }
+            continue;
+        }
+        return;
     }
 }
 

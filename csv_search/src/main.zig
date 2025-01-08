@@ -14,6 +14,7 @@ fn bench(testing: bool) !void {
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
+    // const allocator = std.heap.c_allocator;
 
     var search_cols = std.ArrayList([]u8).init(allocator);
     const title:  []u8 = try allocator.dupe(u8, "Title");

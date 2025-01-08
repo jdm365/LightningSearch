@@ -464,7 +464,7 @@ pub const IndexManager = struct {
 
         try line_offsets.append(file_pos);
         while (file_pos < file_size - 1) {
-            csv.iterLineCSV(f_data, &file_pos);
+            try csv.iterLineCSV(f_data, &file_pos);
             try line_offsets.append(file_pos);
         }
         try line_offsets.append(file_size);
@@ -475,8 +475,8 @@ pub const IndexManager = struct {
 
         const num_lines = line_offsets.items.len - 2;
 
-        // const num_partitions = try std.Thread.getCpuCount();
-        const num_partitions = 1;
+        const num_partitions = try std.Thread.getCpuCount();
+        // const num_partitions = 1;
 
         self.file_handles = try self.allocator.alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.allocator.alloc(BM25Partition, num_partitions);
