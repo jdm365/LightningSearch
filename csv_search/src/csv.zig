@@ -176,11 +176,13 @@ pub inline fn iterLineCSV(buffer: []const u8, byte_idx: *usize) !void {
 
     var skip_idx: usize = 0;
     var is_newline: bool = false;
+    var quote_idx: usize = 0;
+    var newline_idx: usize = 0;
 
     while (true) {
         vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
-        const quote_idx   = getZeroByteIndex(vec64.* ^ U64_QUOTE_MASK);
-        const newline_idx = getZeroByteIndex(vec64.* ^ U64_NEWLINE_MASK);
+        quote_idx   = getZeroByteIndex(vec64.* ^ U64_QUOTE_MASK);
+        newline_idx = getZeroByteIndex(vec64.* ^ U64_NEWLINE_MASK);
 
         if (quote_idx < newline_idx) {
             skip_idx = quote_idx;
@@ -196,15 +198,17 @@ pub inline fn iterLineCSV(buffer: []const u8, byte_idx: *usize) !void {
         if (!is_newline) {
 
             while (true) {
+                vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
+                quote_idx = getZeroByteIndex(vec64.* ^ U64_QUOTE_MASK);
+                byte_idx.* += quote_idx;
+                if (quote_idx == 8) continue;
+
+                byte_idx.* += 1;
                 if (buffer[byte_idx.*] == '"') {
                     byte_idx.* += 1;
-                    if (buffer[byte_idx.*] == '"') {
-                        byte_idx.* += 1;
-                        continue;
-                    }
-                    break;
+                    continue;
                 }
-                byte_idx.* += 1;
+                break;
             }
             continue;
         }
