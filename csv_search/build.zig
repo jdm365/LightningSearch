@@ -29,12 +29,16 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    const move_cmd = b.addSystemCommand(&.{
+        "mv",
+        "zig-out/bin/csv_search",
+        "/usr/local/bin/"
+    });
+    move_cmd.step.dependOn(b.getInstallStep());
+
     // Add install command to place binary in /usr/local/bin
-    // const install_cmd = b.addInstallArtifact(exe, .{.dest_dir = "/usr/local/bin/csv_search"});
-    const install_cmd = b.addInstallArtifact(exe, .{.dest_dir = .{
-        .override = .{ .custom = "/usr/local/bin/csv_search" },
-    }});
-    install_cmd.step.dependOn(b.getInstallStep());
+    const install_local = b.step("install_local", "Install the binary to /usr/local/bin");
+    install_local.dependOn(&move_cmd.step);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -46,8 +50,9 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const install_step = b.step("install_local", "Install the app");
-    install_step.dependOn(&install_cmd.step);
+    // const install_step = b.step("install_local", "Install the app");
+    // const install_step = b.step("install", "Install the binary in /usr/local/bin");
+    // install_step.dependOn(b.getInstallStep());
 
     const tests = b.addTest(.{
             .target = target,
