@@ -3,78 +3,64 @@ const TermPos = @import("server.zig").TermPos;
 
 pub const TOKEN_STREAM_CAPACITY = 1_048_576;
 
-
 pub const token_t = packed struct(u32) {
     new_doc: u1,
     term_pos: u7,
     doc_id: u24
 };
 
-const debruijn64: u64 = 0x03f79d71b4cb0a89;
-const index64: [64]u6 = init: {
-    @setEvalBranchQuota(1000);
-    var seq: [64]u6 = undefined;
-    for (0..64) |i| {
-        seq[((debruijn64 << @as(u6, @intCast(i))) >> 58) & 63] = @intCast(i);
-    }
-    break :init seq;
+const VEC_SIZE = 2 * (std.simd.suggestVectorLength(u8) orelse 64);
+const MASK_TYPE = switch (VEC_SIZE) {
+    16 => u16,
+    32 => u32,
+    64 => u64,
+    128 => u128,
+    else => unreachable,
 };
+const VEC = @Vector(VEC_SIZE, u8);
 
-inline fn findFirstSetBitDeBruijn(b: u64) usize {
-    const first = (b & (~b +% 1));
-    return index64[(first *% debruijn64) >> 58];
-}
-
-// inline fn getZeroByteIndex(byte: u64) usize {
-export fn getZeroByteIndex(byte: u64) usize {
-    // @ctz is twice as slow as De Bruijn. Seems wrong.
-    const mask = ((byte -% 0x0101010101010101) & ~byte & 0x8080808080808080);
-    if (mask == 0) {
-        return 8;
+pub inline fn simdFindCharIdx(
+    buffer: []const u8,
+    comptime char: u8,
+) usize {
+    if (buffer.len < VEC_SIZE) {
+        for (0.., buffer) |idx, byte| {
+            if (byte == char) return idx;
+        }
+        return buffer.len;
     }
-    return findFirstSetBitDeBruijn(mask) >> 3;
-    // return @ctz(mask) >> 3;
+
+    const char_mask: VEC = comptime @splat(char);
+
+    const vec_buffer = @as(*align(1) const VEC, @alignCast(@ptrCast(buffer[0..VEC_SIZE])));
+    const mask: MASK_TYPE = @bitCast(vec_buffer.* == char_mask);
+    return @ctz(mask);
 }
 
-const Vec64 = @Vector(8, u8);
+// const Vec64 = @Vector(8, u8);
 const Vec128 = @Vector(16, u8);
 pub inline fn stringToUpper(str: [*]u8, len: usize) void {
     var index: usize = 0;
 
-    while (index + 16 <= len) {
-        const input = @as(*Vec128, @ptrCast(@alignCast(str[index..index+16])));
+    while (index + VEC_SIZE <= len) {
+        const input = @as(*align(1) VEC, @ptrCast(@alignCast(str[index..index+VEC_SIZE])));
 
-        const ascii_a: Vec128 = @splat('a');
-        const ascii_z: Vec128 = @splat('z');
-        const case_diff: Vec128 = @splat('a' - 'A');
-        const two: Vec128       = @splat(2);
+        const ascii_a: VEC = comptime @splat('a');
+        const ascii_z: VEC = comptime @splat('z');
+        const case_diff: VEC = comptime @splat('a' - 'A');
 
         const greater_than_a = input.* >= ascii_a;
         const less_equal_z   = input.* <= ascii_z;
-        const to_sub = @as(
-            Vec128, 
-            @intFromBool(@as(Vec128, @intFromBool(greater_than_a)) + @as(Vec128, @intFromBool(less_equal_z)) == two)
-            ) * case_diff;
+        const to_sub = (@intFromBool(greater_than_a) * @intFromBool(less_equal_z)) * case_diff;
         input.* -= to_sub;
 
-        index += 16;
+        index += VEC_SIZE;
     }
 
     for (index..len) |idx| {
         str[idx] = std.ascii.toUpper(str[idx]);
     }
 }
-
-// const U64_QUOTE_MASK: Vec64     = @splat('"');
-// const U64_NEWLINE_MASK: Vec64   = @splat('\n');
-// const U64_COMMA_MASK: Vec64     = @splat(',');
-const U64_QUOTE_MASK: u64     = 0x2222222222222222;
-const U64_NEWLINE_MASK: u64   = 0x0a0a0a0a0a0a0a0a;
-const U64_COMMA_MASK: u64     = 0x2c2c2c2c2c2c2c2c;
-
-const SIMD_QUOTE_MASK: Vec128 align(16)   = @splat('"');
-const SIMD_NEWLINE_MASK: Vec128 align(16) = @splat('\n');
-const SIMD_COMMA_MASK: Vec128 align(16)   = @splat(',');
 
 pub inline fn iterUTF8(read_buffer: []const u8, read_idx: *usize) u8 {
     // Return final byte.
@@ -121,15 +107,11 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
     const is_quoted = buffer[byte_idx.*] == '"';
     byte_idx.* += @intFromBool(is_quoted);
 
-    var vec64: *align(1) const u64 = undefined;
-
     outer_loop: while (true) {
-        vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
-
         if (is_quoted) {
-            const skip_idx = getZeroByteIndex(vec64.* ^ U64_QUOTE_MASK);
+            const skip_idx = simdFindCharIdx(buffer[byte_idx.*..], '"');
             byte_idx.* += skip_idx;
-            if (skip_idx == 8) continue;
+            if (skip_idx == VEC_SIZE) continue;
             
             byte_idx.* += 1;
 
@@ -142,12 +124,12 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
             break :outer_loop;
 
         } else {
-            const newline_idx = getZeroByteIndex(vec64.* ^ U64_NEWLINE_MASK);
-            const comma_idx   = getZeroByteIndex(vec64.* ^ U64_COMMA_MASK);
+            const newline_idx = simdFindCharIdx(buffer[byte_idx.*..], '\n');
+            const comma_idx   = simdFindCharIdx(buffer[byte_idx.*..], ',');
 
             const skip_idx = @min(newline_idx, comma_idx);
             byte_idx.* += skip_idx;
-            if (skip_idx == 8) continue;
+            if (skip_idx == VEC_SIZE) continue;
             byte_idx.* += 1;
             break :outer_loop;
         }
@@ -156,7 +138,6 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
 
 pub inline fn iterLineCSV(buffer: []const u8, byte_idx: *usize) !void {
     // Iterate to next line in compliance with RFC 4180.
-    var vec64: *align(1) const u64 = undefined;
 
     var skip_idx: usize = 0;
     var is_newline: bool = false;
@@ -164,9 +145,8 @@ pub inline fn iterLineCSV(buffer: []const u8, byte_idx: *usize) !void {
     var newline_idx: usize = 0;
 
     while (true) {
-        vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
-        quote_idx   = getZeroByteIndex(vec64.* ^ U64_QUOTE_MASK);
-        newline_idx = getZeroByteIndex(vec64.* ^ U64_NEWLINE_MASK);
+        quote_idx   = simdFindCharIdx(buffer[byte_idx.*..], '"');
+        newline_idx = simdFindCharIdx(buffer[byte_idx.*..], '\n');
 
         if (quote_idx < newline_idx) {
             skip_idx = quote_idx;
@@ -176,16 +156,15 @@ pub inline fn iterLineCSV(buffer: []const u8, byte_idx: *usize) !void {
             is_newline = true;
         }
         byte_idx.* += skip_idx;
-        if (skip_idx == 8) continue;
+        if (skip_idx == VEC_SIZE) continue;
 
         byte_idx.* += 1;
         if (!is_newline) {
 
             while (true) {
-                vec64 = @as(*align(1) const u64, @alignCast(@ptrCast(buffer[byte_idx.*..])));
-                quote_idx = getZeroByteIndex(vec64.* ^ U64_QUOTE_MASK);
+                quote_idx = simdFindCharIdx(buffer[byte_idx.*..], '"');
                 byte_idx.* += quote_idx;
-                if (quote_idx == 8) continue;
+                if (quote_idx == VEC_SIZE) continue;
 
                 byte_idx.* += 1;
                 if (buffer[byte_idx.*] == '"') {
