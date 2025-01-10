@@ -9,6 +9,7 @@ pub const token_t = packed struct(u32) {
     doc_id: u24
 };
 
+// Unrolled once max SIMD lane. Fast than not unrolling in practice.
 const VEC_SIZE = 2 * (std.simd.suggestVectorLength(u8) orelse 64);
 const MASK_TYPE = switch (VEC_SIZE) {
     16 => u16,
@@ -18,6 +19,7 @@ const MASK_TYPE = switch (VEC_SIZE) {
     else => unreachable,
 };
 const VEC = @Vector(VEC_SIZE, u8);
+const VEC128 = @Vector(16, u8);
 
 pub inline fn simdFindCharIdx(
     buffer: []const u8,
@@ -37,10 +39,10 @@ pub inline fn simdFindCharIdx(
     return @ctz(mask);
 }
 
-// const Vec64 = @Vector(8, u8);
-const Vec128 = @Vector(16, u8);
 pub inline fn stringToUpper(str: [*]u8, len: usize) void {
     var index: usize = 0;
+
+    // TODO: Iter until aligned.
 
     while (index + VEC_SIZE <= len) {
         const input = @as(*align(1) VEC, @ptrCast(@alignCast(str[index..index+VEC_SIZE])));
@@ -120,6 +122,7 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
                 byte_idx.* += 1;
                 continue;
             }
+            std.debug.assert((buffer[byte_idx.*] == ',') or (buffer[byte_idx.*] == '\n'));
             byte_idx.* += 1;
             break :outer_loop;
 
@@ -130,6 +133,7 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
             const skip_idx = @min(newline_idx, comma_idx);
             byte_idx.* += skip_idx;
             if (skip_idx == VEC_SIZE) continue;
+            std.debug.assert((buffer[byte_idx.*] == ',') or (buffer[byte_idx.*] == '\n'));
             byte_idx.* += 1;
             break :outer_loop;
         }
@@ -171,6 +175,7 @@ pub inline fn iterLineCSV(buffer: []const u8, byte_idx: *usize) !void {
                     byte_idx.* += 1;
                     continue;
                 }
+                std.debug.assert((buffer[byte_idx.*] == ',') or (buffer[byte_idx.*] == '\n'));
                 break;
             }
             continue;
@@ -303,7 +308,11 @@ pub const TokenStream = struct {
                 self.f_data[0..offset_length],
                 self.f_data[self.buffer_idx..],
             );
-            _ = try self.input_file.read(self.f_data[offset_length..]);
+            const bytes_read = try self.input_file.read(self.f_data[offset_length..]);
+            if (bytes_read < self.f_data.len - offset_length) {
+                // Add newline charachter to end of file to ensure last line is parsed correctly.
+                self.f_data[bytes_read + offset_length] = '\n';
+            }
 
             const start_pos = offset_length - (offset_length % 16);
             stringToUpper(self.f_data[start_pos..].ptr, self.f_data.len - start_pos);

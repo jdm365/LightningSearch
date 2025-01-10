@@ -92,13 +92,15 @@ pub const InvertedIndex = struct {
         self.num_terms = @intCast(self.doc_freqs.items.len);
         self.term_offsets = try allocator.alloc(usize, self.num_terms);
 
+        std.debug.assert(self.num_terms == self.vocab.count());
+
         // Num terms is now known.
         var postings_size: usize = 0;
         for (0.., self.doc_freqs.items) |i, doc_freq| {
             self.term_offsets[i] = postings_size;
             postings_size += doc_freq;
         }
-        self.term_offsets[self.num_terms - 1] = postings_size;
+        // self.term_offsets[self.num_terms - 1] = postings_size;
         self.postings = try allocator.alloc(csv.token_t, postings_size + 1);
 
         var avg_doc_size: f64 = 0.0;
@@ -251,7 +253,7 @@ pub const BM25Partition = struct {
     ) !void {
         const byte_idx: *usize = &token_stream.buffer_idx;
 
-        if (token_stream.f_data[byte_idx.*] == ',') {
+        if ((token_stream.f_data[byte_idx.*] == ',') or (token_stream.f_data[byte_idx.*] == '\n')) {
             try token_stream.addToken(
                 true,
                 std.math.maxInt(u7),
@@ -296,6 +298,7 @@ pub const BM25Partition = struct {
                         terms_seen,
                         &new_doc,
                         );
+                    byte_idx.* += 1;
                     continue;
                 }
 
@@ -309,7 +312,8 @@ pub const BM25Partition = struct {
                                 break :outer_loop;
                             },
                             '"' => {
-                                if (cntr > 1) {
+                                // if (cntr > 1) {
+                                if (cntr == 0) {
                                     const start_idx = byte_idx.* - 1 - @min(byte_idx.* - 1, cntr);
 
                                     try self.addToken(
@@ -331,16 +335,16 @@ pub const BM25Partition = struct {
                         }
                     },
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
-                        // if (cntr == 0) {
-                            // byte_idx.* += 1;
-                            // continue;
-                        // }
-
-                        if (cntr <= 1) {
+                        if (cntr == 0) {
                             byte_idx.* += 1;
-                            cntr = 0;
                             continue;
                         }
+
+                        // if (cntr == 1) {
+                            // byte_idx.* += 1;
+                            // cntr = 0;
+                            // continue;
+                        // }
 
                         const start_idx = byte_idx.* - @min(byte_idx.*, cntr);
                         // cntr -= 1;
@@ -380,6 +384,7 @@ pub const BM25Partition = struct {
                         terms_seen,
                         &new_doc,
                         );
+                    byte_idx.* += 1;
                     continue;
                 }
 
@@ -534,8 +539,7 @@ pub const BM25Partition = struct {
             try record_string.resize(bytes_to_read);
         }
         _ = try file_handle.read(record_string.items[0..bytes_to_read]);
+        record_string.items[bytes_to_read - 1] = '\n';
         try csv.parseRecordCSV(record_string.items[0..bytes_to_read], result_positions);
     }
 };
-
-

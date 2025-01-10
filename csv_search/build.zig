@@ -29,17 +29,6 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    const move_cmd = b.addSystemCommand(&.{
-        "mv",
-        "zig-out/bin/csv_search",
-        "/usr/local/bin/"
-    });
-    move_cmd.step.dependOn(b.getInstallStep());
-
-    // Add install command to place binary in /usr/local/bin
-    const install_local = b.step("install_local", "Install the binary to /usr/local/bin");
-    install_local.dependOn(&move_cmd.step);
-
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
 

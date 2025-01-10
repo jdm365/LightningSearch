@@ -4,7 +4,7 @@
     .dependencies = .{
         .zap = .{
             .url = "https://github.com/zigzap/zap/archive/v0.9.1.tar.gz",
-            .hash = "12209936c3333b53b53edcf453b1670babb9ae8c2197b1ca627c01e72670e20c1a21",
+            .hash = "12200223d76ab6cd32f75bc2e31463b0b429bb5b2b6fa4ce8f68dea494ca1ec3398b",
         },
     },
 

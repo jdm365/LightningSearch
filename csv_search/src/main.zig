@@ -114,6 +114,8 @@ fn main_cli_runner() !void {
         "{s}/index.html", 
         .{index_manager.tmp_dir}
         );
+    errdefer allocator.free(output_filename);
+
     var output_file = try std.fs.cwd().createFile(
         output_filename, 
         .{ .read = true },
@@ -125,6 +127,7 @@ fn main_cli_runner() !void {
         "{s}/style.css",
         .{index_manager.tmp_dir}
         );
+
     output_file = try std.fs.cwd().createFile(
         output_filename, 
         .{ .read = true },
@@ -136,6 +139,7 @@ fn main_cli_runner() !void {
         "{s}/table.js",
         .{index_manager.tmp_dir}
         );
+
     output_file = try std.fs.cwd().createFile(
         output_filename, 
         .{ .read = true },
@@ -185,7 +189,7 @@ fn main_cli_runner() !void {
     try cmd.spawn();
     _ = try cmd.wait();
 
-    defer {
+    errdefer {
         for (search_cols.items) |col| {
             allocator.free(col);
         }

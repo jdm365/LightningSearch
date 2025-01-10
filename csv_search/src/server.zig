@@ -157,7 +157,7 @@ pub const QueryHandler = struct {
                 self.boost_factors,
                 ) catch return;
 
-            for (0..10) |idx| {
+            for (0..self.index_manager.results_arrays[0].count) |idx| {
                 self.json_objects.append(csvLineToJsonScore(
                     self.index_manager.string_arena.allocator(),
                     self.index_manager.result_strings[idx].items,

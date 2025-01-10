@@ -199,7 +199,6 @@ pub const IndexManager = struct {
 
         const file_size = try file.getEndPos();
 
-        // TODO: Remove these syscalls from every query. Terrible.
         const f_data = try std.posix.mmap(
             null,
             file_size,
@@ -263,7 +262,7 @@ pub const IndexManager = struct {
                 } else {
 
                     switch (f_data[byte_idx]) {
-                        ',' => {
+                        ',', '\n' => {
                             // ADD TERM.
                             try cols.append(
                                 try string_arena.dupe(u8, term[0..cntr])
@@ -283,32 +282,15 @@ pub const IndexManager = struct {
                                     break;
                                 }
                             }
+                            if (f_data[byte_idx] == '\n') {
+                                num_bytes.* = byte_idx + 1;
+                                return col_map;
+                            }
+
                             cntr = 0;
                             byte_idx += 1;
                             col_idx += 1;
                             continue :line;
-                        },
-                        '\n' => {
-                            // ADD TERM.
-                            try cols.append(
-                                try string_arena.dupe(u8, term[0..cntr])
-                                );
-                            for (0..search_cols.items.len) |idx| {
-                                if (std.mem.eql(u8, term[0..cntr], search_cols.items[idx])) {
-                                    std.debug.print("Found search col: {s}\n", .{search_cols.items[idx]});
-                                    const copy_term = try string_arena.dupe(u8, term[0..cntr]);
-                                    try col_map.put(
-                                        copy_term, 
-                                        Column{
-                                            .csv_idx = col_idx,
-                                            .II_idx = col_map.count(),
-                                            },
-                                        );
-                                    break;
-                                }
-                            }
-                            num_bytes.* = byte_idx + 1;
-                            return col_map;
                         },
                         else => {
                             // Add char
@@ -371,7 +353,13 @@ pub const IndexManager = struct {
 
         const start_byte = self.index_partitions[partition_idx].line_offsets[0];
         try token_stream.input_file.seekTo(start_byte);
-        _ = try token_stream.input_file.read(token_stream.f_data);
+
+        const bytes_read = try token_stream.input_file.read(token_stream.f_data);
+        if (bytes_read < token_stream.f_data.len) {
+            // Add newline charachter to end of file to ensure last line is parsed correctly.
+            token_stream.f_data[bytes_read] = '\n';
+        }
+
         csv.stringToUpper(token_stream.f_data[0..].ptr, token_stream.f_data.len);
 
         var prev_doc_id: usize = 0;
@@ -397,7 +385,6 @@ pub const IndexManager = struct {
             var prev_col: usize = 0;
 
             while (search_col_idx < num_search_cols) {
-
                 for (prev_col..search_col_idxs[search_col_idx]) |_| {
                     token_stream.iterFieldCSV(&token_stream.buffer_idx);
                     try token_stream.incBufferIdx();
@@ -414,7 +401,8 @@ pub const IndexManager = struct {
                 prev_col = search_col_idxs[search_col_idx] + 1;
                 search_col_idx += 1;
             }
-            for (search_col_idxs[search_col_idx-1]+1..self.cols.items.len) |_| {
+
+            for (prev_col..self.cols.items.len) |_| {
                 token_stream.iterFieldCSV(&token_stream.buffer_idx);
                 try token_stream.incBufferIdx();
             }
@@ -467,8 +455,7 @@ pub const IndexManager = struct {
 
         const num_lines = line_offsets.items.len - 1;
 
-        const num_partitions = try std.Thread.getCpuCount();
-        // const num_partitions = 1;
+        const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
 
         self.file_handles = try self.allocator.alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.allocator.alloc(BM25Partition, num_partitions);
