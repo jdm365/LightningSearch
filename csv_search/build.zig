@@ -39,10 +39,6 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    // const install_step = b.step("install_local", "Install the app");
-    // const install_step = b.step("install", "Install the binary in /usr/local/bin");
-    // install_step.dependOn(b.getInstallStep());
-
     const tests = b.addTest(.{
             .target = target,
             .optimize = optimize,
