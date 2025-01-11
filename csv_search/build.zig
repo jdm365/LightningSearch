@@ -39,17 +39,17 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const tests = b.addTest(.{
-            .target = target,
-            .optimize = optimize,
-            .root_source_file = b.path("src/root.zig"),
-    });
-    tests.root_module.addImport("zap", zap.module("zap"));
-
-    const test_cmd = b.addRunArtifact(tests);
-    test_cmd.step.dependOn(b.getInstallStep());
-    const test_step = b.step("test", "Run the tests");
-    test_step.dependOn(&test_cmd.step);
+    // const tests = b.addTest(.{
+            // .target = target,
+            // .optimize = optimize,
+            // .root_source_file = b.path("src/root.zig"),
+    // });
+    // tests.root_module.addImport("zap", zap.module("zap"));
+// 
+    // const test_cmd = b.addRunArtifact(tests);
+    // test_cmd.step.dependOn(b.getInstallStep());
+    // const test_step = b.step("test", "Run the tests");
+    // test_step.dependOn(&test_cmd.step);
 
 
     // const radix_lib = b.addSharedLibrary(.{

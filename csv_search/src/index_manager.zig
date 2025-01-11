@@ -434,6 +434,15 @@ pub const IndexManager = struct {
             0
         );
         defer std.posix.munmap(f_data);
+        // const f_data = try self.allocator.alloc(u8, file_size);
+        // defer self.allocator.free(f_data);
+// 
+        // const read_start = std.time.milliTimestamp();
+        // const num_bytes = try file.readAll(f_data);
+        // std.debug.assert(num_bytes == file_size);
+        // const read_end = std.time.milliTimestamp();
+        // std.debug.print("Read file in {d}ms\n", .{read_end - read_start});
+        // std.debug.print("{d}MB/s\n", .{@as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(read_end - read_start))))});
 
         var line_offsets = std.ArrayList(usize).init(self.allocator);
         defer line_offsets.deinit();
