@@ -36,8 +36,24 @@ pub inline fn simdFindCharIdx(
 
     const vec_buffer = @as(*align(1) const VEC, @alignCast(@ptrCast(buffer[0..VEC_SIZE])));
     const mask: MASK_TYPE = @bitCast(vec_buffer.* == char_mask);
+    // var mask: MASK_TYPE = @bitCast(vec_buffer.* == char_mask);
+    // if (comptime char == '"') removeDoubled(MASK_TYPE, &mask);
     return @ctz(mask);
 }
+
+inline fn removeDoubled(comptime T: type, x: *T) void {
+    comptime {
+        std.debug.assert((T == u64) or (T == u32) or (T == u16) or (T == u8));
+    }
+    const MASK: T = comptime ~@as(T, @intCast(1));
+
+    const pairs = ((x.* & MASK) >> 1) & (x.* & MASK);
+    const pair_mask = (pairs << 1) | pairs | (pairs >> 1);
+    x.* &= ~pair_mask;
+    // const keep_high = x.* & ~(x.* >> 1);
+    // x.* = (x.* & ~pair_mask) | keep_high;
+}
+
 
 pub inline fn stringToUpper(str: [*]u8, len: usize) void {
     var index: usize = 0;
@@ -325,3 +341,18 @@ pub const TokenStream = struct {
         _iterFieldCSV(self.f_data, byte_idx);
     }
 };
+
+
+test "removeDoubled" {
+    var byte: u16 = 0b10001100_01111001;
+    std.debug.print("Byte before: {b:0>16}\n", .{byte});
+    removeDoubled(@TypeOf(byte), &byte);
+    std.debug.print("Byte after:  {b:0>16}\n", .{byte});
+    std.debug.print("TCTZ:  {d}\n", .{@ctz(byte)});
+
+    var byte2: u32 = 0b10001100_01111001_00001100_00111000;
+    std.debug.print("Byte before: {b:0>32}\n", .{byte2});
+    removeDoubled(@TypeOf(byte2), &byte2);
+    std.debug.print("Byte after:  {b:0>32}\n", .{byte2});
+    std.debug.print("TCTZ:  {d}\n", .{@ctz(byte2)});
+}
