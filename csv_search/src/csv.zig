@@ -3,6 +3,36 @@ const TermPos = @import("server.zig").TermPos;
 
 pub const TOKEN_STREAM_CAPACITY = 1_048_576;
 
+
+// Keep small. Don't feel like dealing atm.
+const TABLE_TYPE = u1;
+// const TABLE_TYPE = u16;
+const PAIR_LOOKUP_TABLE = blk: {
+    const max_val = std.math.maxInt(TABLE_TYPE);
+    @setEvalBranchQuota(max_val * 2 * @bitSizeOf(TABLE_TYPE));
+
+    var table: [max_val]TABLE_TYPE = undefined;
+    var bit_idx: usize = 0;
+
+    for (0..max_val) |idx| {
+        bit_idx = 0;
+        var value = idx;
+        var other: TABLE_TYPE = 3;
+
+        while (bit_idx < @bitSizeOf(TABLE_TYPE)) {
+            if (@popCount(other & value) == 2) {
+                value &= ~other;
+                bit_idx += 1;
+                other <<= 1;
+            }
+            bit_idx += 1;
+            other <<= 1;
+        }
+        table[idx] = value;
+    }
+    break :blk table;
+};
+
 pub const token_t = packed struct(u32) {
     new_doc: u1,
     term_pos: u7,
@@ -36,23 +66,56 @@ pub inline fn simdFindCharIdx(
 
     const vec_buffer = @as(*align(1) const VEC, @alignCast(@ptrCast(buffer[0..VEC_SIZE])));
     const mask: MASK_TYPE = @bitCast(vec_buffer.* == char_mask);
-    // var mask: MASK_TYPE = @bitCast(vec_buffer.* == char_mask);
-    // if (comptime char == '"') removeDoubled(MASK_TYPE, &mask);
+
+    // REMOVE DOUBLED QUOTES:
+    // variants have only decreased performance.
+    // In practice (at least for files I've tested) quotes are 
+    // rare enough that adding the special case to every loop 
+    // instead of the occasional handling in the ugly switch statement
+    // isn't worth it.
+    return @ctz(mask);
+}
+
+pub inline fn simdFindCharIdxMasked(
+    buffer: []const u8,
+    comptime char: u8,
+    mask_idx: usize,
+) usize {
+    // Same as above but operates on aligned byte boundaries and uses
+    // a mask_idx to deal with unknown chars.
+    if (buffer.len < VEC_SIZE) {
+        for (0.., buffer) |idx, byte| {
+            if (byte == char) return idx;
+        }
+        return buffer.len;
+    }
+
+    const char_mask: VEC = comptime @splat(char);
+
+    const vec_buffer = @as(*const VEC, @ptrCast(buffer[0..VEC_SIZE]));
+    const mask: MASK_TYPE = @as(MASK_TYPE, @bitCast(vec_buffer.* == char_mask)) & ~(std.math.maxInt(MASK_TYPE) << mask_idx);
+
+    // REMOVE DOUBLED QUOTES:
+    // variants have only decreased performance.
+    // In practice (at least for files I've tested) quotes are 
+    // rare enough that adding the special case to every loop 
+    // instead of the occasional handling in the ugly switch statement
+    // isn't worth it.
     return @ctz(mask);
 }
 
 inline fn removeDoubled(comptime T: type, x: *T) void {
     comptime {
-        std.debug.assert((T == u64) or (T == u32) or (T == u16) or (T == u8));
+        std.debug.assert((T == u64) or (T == u32) or (T == u16));
     }
-    const MASK: T = comptime ~@as(T, @intCast(1));
+    const parallelism = comptime @divFloor(@bitSizeOf(T), @bitSizeOf(TABLE_TYPE));
+    const x_interp = @as([*]TABLE_TYPE, @ptrCast(@alignCast(x)))[0..parallelism];
 
-    const pairs = ((x.* & MASK) >> 1) & (x.* & MASK);
-    const pair_mask = (pairs << 1) | pairs | (pairs >> 1);
-    x.* &= ~pair_mask;
-    // const keep_high = x.* & ~(x.* >> 1);
-    // x.* = (x.* & ~pair_mask) | keep_high;
+    inline for (0..parallelism) |idx| {
+        x_interp[idx] &= PAIR_LOOKUP_TABLE[x_interp[idx]];
+    }
 }
+
 
 
 pub inline fn stringToUpper(str: [*]u8, len: usize) void {
@@ -341,18 +404,3 @@ pub const TokenStream = struct {
         _iterFieldCSV(self.f_data, byte_idx);
     }
 };
-
-
-test "removeDoubled" {
-    var byte: u16 = 0b10001100_01111001;
-    std.debug.print("Byte before: {b:0>16}\n", .{byte});
-    removeDoubled(@TypeOf(byte), &byte);
-    std.debug.print("Byte after:  {b:0>16}\n", .{byte});
-    std.debug.print("TCTZ:  {d}\n", .{@ctz(byte)});
-
-    var byte2: u32 = 0b10001100_01111001_00001100_00111000;
-    std.debug.print("Byte before: {b:0>32}\n", .{byte2});
-    removeDoubled(@TypeOf(byte2), &byte2);
-    std.debug.print("Byte after:  {b:0>32}\n", .{byte2});
-    std.debug.print("TCTZ:  {d}\n", .{@ctz(byte2)});
-}
