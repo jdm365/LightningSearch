@@ -420,29 +420,44 @@ pub const IndexManager = struct {
 
 
     pub fn readFile(self: *IndexManager) !void {
-        const file = try std.fs.cwd().openFile(self.input_filename, .{});
+        // const file = try std.fs.cwd().openFile(self.input_filename, .{});
+        // const file = try std.fs.cwd().openFileAbsolute(self.input_filename, .{});
+        const file = try std.fs.openFileAbsolute(
+            self.input_filename, 
+            .{ 
+                .mode = .read_only,
+            },
+            );
         defer file.close();
 
         const file_size = try file.getEndPos();
 
-        const f_data = try std.posix.mmap(
-            null,
-            file_size,
-            std.posix.PROT.READ,
-            .{ .TYPE = .PRIVATE },
-            file.handle,
-            0
-        );
-        defer std.posix.munmap(f_data);
-        // const f_data = try self.allocator.alloc(u8, file_size);
-        // defer self.allocator.free(f_data);
-// 
-        // const read_start = std.time.milliTimestamp();
+        // const f_data = try std.posix.mmap(
+            // null,
+            // file_size,
+            // std.posix.PROT.READ,
+            // .{ .TYPE = .PRIVATE },
+            // file.handle,
+            // 0
+        // );
+        // defer std.posix.munmap(f_data);
+        const f_data = try self.allocator.alignedAlloc(u8, @intCast(std.mem.page_size), file_size);
+        defer self.allocator.free(f_data);
+
+        const read_start = std.time.milliTimestamp();
         // const num_bytes = try file.readAll(f_data);
+        const _chunk_size: usize = 1024 * 1024;
+        var total_read: usize = 0;
+        while (total_read < file_size) {
+            const to_read = @min(_chunk_size, file_size - total_read);
+            const bytes_read = try file.read(f_data[total_read..total_read + to_read]);
+            if (bytes_read == 0) break;
+            total_read += bytes_read;
+        }
         // std.debug.assert(num_bytes == file_size);
-        // const read_end = std.time.milliTimestamp();
-        // std.debug.print("Read file in {d}ms\n", .{read_end - read_start});
-        // std.debug.print("{d}MB/s\n", .{@as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(read_end - read_start))))});
+        const read_end = std.time.milliTimestamp();
+        std.debug.print("Read file in {d}ms\n", .{read_end - read_start});
+        std.debug.print("{d}MB/s\n", .{@as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(read_end - read_start))))});
 
         var touch_pos: usize = 0;
         var sum: u8 = 0;
