@@ -4,6 +4,8 @@ const builtin = @import("builtin");
 const csv = @import("csv.zig");
 const TermPos = @import("server.zig").TermPos;
 const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
+const PruningRadixTrie = @import("pruning_radix_trie.zig").PruningRadixTrie;
+const RadixTrie = @import("radix_trie.zig").RadixTrie;
 
 pub const MAX_TERM_LENGTH = 256;
 pub const MAX_NUM_TERMS   = 4096;
@@ -37,8 +39,9 @@ const SHM = struct {
 
 pub const InvertedIndex = struct {
     postings: []csv.token_t,
-    // vocab: std.StringHashMap(u32),
     vocab: std.hash_map.HashMap([]const u8, u32, SHM, 80),
+    prt_vocab: PruningRadixTrie(u32),
+    // prt_vocab: RadixTrie(u32),
     term_offsets: []usize,
     doc_freqs: std.ArrayList(u32),
     doc_sizes: []u16,
@@ -60,6 +63,8 @@ pub const InvertedIndex = struct {
         const II = InvertedIndex{
             .postings = &[_]csv.token_t{},
             .vocab = vocab,
+            .prt_vocab = try PruningRadixTrie(u32).init(allocator),
+            // .prt_vocab = try RadixTrie(u32).init(allocator),
             .term_offsets = &[_]usize{},
             .doc_freqs = try std.ArrayList(u32).initCapacity(
                 allocator, @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
@@ -79,6 +84,7 @@ pub const InvertedIndex = struct {
         ) void {
         allocator.free(self.postings);
         self.vocab.deinit();
+        self.prt_vocab.deinit();
 
         allocator.free(self.term_offsets);
         self.doc_freqs.deinit();
@@ -109,6 +115,25 @@ pub const InvertedIndex = struct {
         }
         avg_doc_size /= @floatFromInt(self.num_docs);
         self.avg_doc_size = @floatCast(avg_doc_size);
+
+        // try self.buildPRT();
+    }
+
+    pub fn buildPRT(self: *InvertedIndex) !void {
+        const start = std.time.milliTimestamp();
+        var vocab_iterator = self.vocab.iterator();
+        while (vocab_iterator.next()) |val| {
+            const df = @as(f32, @floatFromInt(self.doc_freqs.items[val.value_ptr.*]));
+            if (df >= 2.0) {
+                try self.prt_vocab.insert(
+                    val.key_ptr.*, 
+                    val.value_ptr.*, 
+                    df,
+                    );
+            }
+        }
+        const end = std.time.milliTimestamp();
+        std.debug.print("Build PRT in {}ms\n", .{end - start});
     }
 };
 
