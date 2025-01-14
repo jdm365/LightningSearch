@@ -449,6 +449,7 @@ pub const IndexManager = struct {
         // std.debug.print("Read file in {d}ms\n", .{read_end - read_start});
         // std.debug.print("{d}MB/s\n", .{@as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(read_end - read_start))))});
 
+
         var line_offsets = std.ArrayList(usize).init(self.allocator);
         defer line_offsets.deinit();
 
