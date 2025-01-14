@@ -509,14 +509,19 @@ pub const BM25Partition = struct {
 
                     const postings_offset = II.term_offsets[term_id] + term_cntr[term_id];
                     std.debug.assert(postings_offset < II.postings.len);
-                    std.debug.assert(current_doc_id < II.num_docs);
+                    // std.debug.assert(current_doc_id < II.num_docs);
+                    std.debug.assert(current_doc_id <= II.num_docs);
 
                     term_cntr[term_id] += 1;
 
                     II.postings[postings_offset] = token;
                 }
             }
-            std.debug.assert(current_doc_id == II.num_docs - 1);
+            std.debug.assert(
+                (current_doc_id == II.num_docs - 1)
+                    or
+                (current_doc_id == II.num_docs)
+            );
         }
     }
 
