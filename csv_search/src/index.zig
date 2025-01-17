@@ -201,9 +201,10 @@ pub const BM25Partition = struct {
 
         } else {
 
-            if (!terms_seen.checkOrInsert(gop.value_ptr.*)) {
-                self.II[col_idx].doc_freqs.items[gop.value_ptr.*] += 1;
-                try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*, col_idx);
+            const val = gop.value_ptr.*;
+            if (!terms_seen.checkOrInsert(val)) {
+                self.II[col_idx].doc_freqs.items[val] += 1;
+                try token_stream.addToken(new_doc.*, term_pos, val, col_idx);
             }
         }
 

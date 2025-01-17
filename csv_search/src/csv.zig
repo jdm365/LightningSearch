@@ -121,8 +121,6 @@ inline fn removeDoubled(comptime T: type, x: *T) void {
 pub inline fn stringToUpper(str: [*]u8, len: usize) void {
     var index: usize = 0;
 
-    // TODO: Iter until aligned.
-
     while (index + VEC_SIZE <= len) {
         const input = @as(*align(1) VEC, @ptrCast(@alignCast(str[index..index+VEC_SIZE])));
 
