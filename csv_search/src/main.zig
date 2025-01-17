@@ -9,8 +9,8 @@ const IndexManager = @import("index_manager.zig").IndexManager;
 
 
 fn bench(testing: bool) !void {
-    // const filename: []const u8 = "../tests/mb_small.csv";
-    const filename: []const u8 = "../tests/mb.csv";
+    const filename: []const u8 = "../tests/mb_small.csv";
+    // const filename: []const u8 = "../tests/mb.csv";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -240,29 +240,24 @@ fn server_test() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){};
     const allocator = gpa.allocator();
 
-    var args = try std.process.argsWithAllocator(allocator);
-    defer args.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
-    const filename: []const u8 = "../tests/mb.csv";
-    // const filename: []const u8 = "../tests/mb_small.csv";
+    const arena_allocator = arena.allocator();
 
-    var search_cols = std.ArrayList([]u8).init(allocator);
-    try search_cols.append(try allocator.dupe(u8, "TITLE"));
-    try search_cols.append(try allocator.dupe(u8, "ARTIST"));
-    try search_cols.append(try allocator.dupe(u8, "ALBUM"));
-    defer {
-        for (search_cols.items) |col| {
-            allocator.free(col);
-        }
-        search_cols.deinit();
-    }
+    // const filename: []const u8 = "../tests/mb.csv";
+    const filename: []const u8 = "../tests/mb_small.csv";
+
+    var search_cols = std.ArrayList([]u8).init(arena_allocator);
+    try search_cols.append(try arena_allocator.dupe(u8, "TITLE"));
+    try search_cols.append(try arena_allocator.dupe(u8, "ARTIST"));
+    try search_cols.append(try arena_allocator.dupe(u8, "ALBUM"));
 
     var index_manager = try IndexManager.init(filename, &search_cols, allocator);
     try index_manager.readFile();
 
     // Write files to disk
     var output_filename = try std.fmt.allocPrint(
-        index_manager.allocator, 
+        arena_allocator,
         "{s}/index.html", 
         .{index_manager.tmp_dir}
         );
@@ -273,7 +268,7 @@ fn server_test() !void {
     _ = try output_file.write(index_html);
 
     output_filename = try std.fmt.allocPrint(
-        index_manager.allocator, 
+        arena_allocator,
         "{s}/style.css",
         .{index_manager.tmp_dir}
         );
@@ -284,7 +279,7 @@ fn server_test() !void {
     _ = try output_file.write(style_css);
 
     output_filename = try std.fmt.allocPrint(
-        index_manager.allocator, 
+        arena_allocator,
         "{s}/table.js",
         .{index_manager.tmp_dir}
         );
@@ -294,8 +289,8 @@ fn server_test() !void {
         );
     _ = try output_file.write(table_js);
 
-    var query_map = std.StringHashMap([]const u8).init(allocator);
-    var boost_factors = std.ArrayList(f32).init(allocator);
+    var query_map = std.StringHashMap([]const u8).init(arena_allocator);
+    var boost_factors = std.ArrayList(f32).init(arena_allocator);
 
     for (search_cols.items) |col| {
         try query_map.put(col, "");
@@ -306,7 +301,7 @@ fn server_test() !void {
         &index_manager,
         boost_factors,
         query_map,
-        allocator,
+        arena_allocator,
     );
 
 
@@ -329,21 +324,18 @@ fn server_test() !void {
     try listener.listen();
 
     const full_path = try std.mem.concat(
-        index_manager.string_arena.allocator(),
+        arena_allocator,
         u8, 
         &[_][]const u8{index_manager.tmp_dir, "/index.html"}
         );
 
-    var cmd = std.process.Child.init(&[_][]const u8{"open", full_path}, allocator);
+    var cmd = std.process.Child.init(&[_][]const u8{"open", full_path}, arena_allocator);
     try cmd.spawn();
     _ = try cmd.wait();
 
     defer {
-        for (search_cols.items) |col| {
-            allocator.free(col);
-        }
-
         search_cols.deinit();
+
         query_map.deinit();
         boost_factors.deinit();
 
@@ -352,6 +344,7 @@ fn server_test() !void {
 
         index_manager.deinit() catch {};
         _ = gpa.deinit();
+        arena.deinit();
     }
 
 
