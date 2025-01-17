@@ -1,8 +1,6 @@
 const std = @import("std");
 const print = std.debug.print;
 
-const SortedArray = @import("sorted_array.zig").SortedScoreArray;
-
 // TODO: Define second node type for nodes with more than ~48 values.
 //       Use all charachter frequencies here and do popCount with AVX2 instructions.
 

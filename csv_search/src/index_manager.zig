@@ -16,7 +16,8 @@ const ScoringInfo     = @import("index.zig").ScoringInfo;
 const MAX_TERM_LENGTH = @import("index.zig").MAX_TERM_LENGTH;
 const MAX_NUM_TERMS   = @import("index.zig").MAX_NUM_TERMS;
 
-const SortedScoreArray = @import("sorted_array.zig").SortedScoreArray;
+// const SortedScoreArray = @import("sorted_array.zig").SortedScoreArray;
+const SortedScoreMultiArray = @import("sorted_array.zig").SortedScoreMultiArray;
 const ScorePair        = @import("sorted_array.zig").ScorePair;
 
 const AtomicCounter = std.atomic.Value(u64);
@@ -52,7 +53,7 @@ pub const IndexManager = struct {
     tmp_dir: []const u8,
     result_positions: [MAX_NUM_RESULTS][]TermPos,
     result_strings: [MAX_NUM_RESULTS]std.ArrayList(u8),
-    results_arrays: []SortedScoreArray(QueryResult),
+    results_arrays: []SortedScoreMultiArray(QueryResult),
     // thread_pool: std.Thread.Pool,
     header_bytes: usize,
 
@@ -474,10 +475,10 @@ pub const IndexManager = struct {
 
         self.file_handles = try self.allocator.alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.allocator.alloc(BM25Partition, num_partitions);
-        self.results_arrays = try self.allocator.alloc(SortedScoreArray(QueryResult), num_partitions);
+        self.results_arrays = try self.allocator.alloc(SortedScoreMultiArray(QueryResult), num_partitions);
         for (0..num_partitions) |idx| {
             self.file_handles[idx]   = try std.fs.cwd().openFile(self.input_filename, .{});
-            self.results_arrays[idx] = try SortedScoreArray(QueryResult).init(self.allocator, MAX_NUM_RESULTS);
+            self.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.allocator, MAX_NUM_RESULTS);
         }
 
         std.debug.print("Writing {d} partitions\n", .{num_partitions});
@@ -572,7 +573,7 @@ pub const IndexManager = struct {
         queries: std.StringHashMap([]const u8),
         boost_factors: std.ArrayList(f32),
         partition_idx: usize,
-        query_results: *SortedScoreArray(QueryResult),
+        query_results: *SortedScoreMultiArray(QueryResult),
     ) !void {
         const num_search_cols = self.search_cols.count();
         std.debug.assert(num_search_cols > 0);
@@ -662,7 +663,7 @@ pub const IndexManager = struct {
         var doc_scores: *std.AutoHashMap(u32, ScoringInfo) = &self.index_partitions[partition_idx].doc_score_map;
         doc_scores.clearRetainingCapacity();
 
-        var sorted_scores = try SortedScoreArray(score_f32).init(
+        var sorted_scores = try SortedScoreMultiArray(void).init(
             self.allocator, 
             query_results.capacity,
             );
@@ -727,16 +728,14 @@ pub const IndexManager = struct {
                     result.*.term_pos = term_pos;
 
                     const score_copy = result.*.score;
-                    sorted_scores.insert(score_f32{
-                        .score = score_copy,
-                    });
+                    sorted_scores.insert({}, score_copy);
 
                 } else {
                     if (!done and !is_high_df_term) {
 
                         if (sorted_scores.count == sorted_scores.capacity - 1) {
-                            const min_score = sorted_scores.items[sorted_scores.count - 1];
-                            if (min_score.score > idf_remaining) {
+                            const min_score = sorted_scores.scores[sorted_scores.count - 1];
+                            if (min_score > idf_remaining) {
                                 done = true;
                                 continue;
                             }
@@ -749,9 +748,7 @@ pub const IndexManager = struct {
                                 .term_pos = term_pos,
                             }
                         );
-                        sorted_scores.insert(score_f32{
-                            .score = score,
-                        });
+                        sorted_scores.insert({}, score);
                     }
                 }
             }
@@ -767,12 +764,11 @@ pub const IndexManager = struct {
         var score_it = doc_scores.iterator();
         while (score_it.next()) |entry| {
 
-            const score_pair = QueryResult{
+            const result = QueryResult{
                 .doc_id = entry.key_ptr.*,
-                .score = entry.value_ptr.*.score,
-                .partition_idx = partition_idx,
+                .partition_idx = @intCast(partition_idx),
             };
-            query_results.insert(score_pair);
+            query_results.insert(result, entry.value_ptr.*.score);
         }
     }
 
@@ -814,8 +810,8 @@ pub const IndexManager = struct {
 
         if (self.index_partitions.len > 1) {
             for (self.results_arrays[1..]) |*tr| {
-                for (tr.items[0..tr.count]) |r| {
-                    self.results_arrays[0].insert(r);
+                for (0.., tr.items[0..tr.count]) |idx, r| {
+                    self.results_arrays[0].insert(r, tr.scores[idx]);
                 }
             }
         }
@@ -830,7 +826,7 @@ pub const IndexManager = struct {
                 result,
                 @constCast(&self.result_strings[idx]),
             );
-            std.debug.print("Score {d}: {d} - Doc id: {d}\n", .{idx, self.results_arrays[0].items[idx].score, self.results_arrays[0].items[idx].doc_id});
+            std.debug.print("Score {d}: {d} - Doc id: {d}\n", .{idx, self.results_arrays[0].scores[idx], self.results_arrays[0].items[idx].doc_id});
         }
         std.debug.print("\n", .{});
     }

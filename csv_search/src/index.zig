@@ -18,10 +18,9 @@ pub const ScoringInfo = packed struct {
     term_pos: u8,
 };
 
-pub const QueryResult = struct {
+pub const QueryResult = packed struct(u64){
     doc_id: u32,
-    score: f32,
-    partition_idx: usize,
+    partition_idx: u32,
 };
 
 // const SHM = std.HashMap([]const u8, u32, std.hash.XxHash64, 80);
