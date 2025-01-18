@@ -435,25 +435,31 @@ pub const QueryHandlerLocal = struct {
     }
 };
 
-pub export fn get_query_handler_local() *anyopaque {
-    const filename: []const u8 = "../tests/mb.csv";
-    // const filename: []const u8 = "../tests/mb_small.csv";
 
-    // var index_manager = try IndexManager.init(filename);
-    var index_manager = IndexManager.init(filename) catch @panic("BAD\n");
+var global_arena: std.heap.ArenaAllocator = undefined;
+pub export fn init_allocators() void {
+    global_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    std.debug.print("Zig: Arena initialized\n", .{});
+}
+
+pub export fn deinit_allocators() void {
+    global_arena.deinit();
+}
+
+pub export fn get_query_handler_local() *anyopaque {
+    // const filename: []const u8 = "../tests/mb.csv";
+    const filename: []const u8 = "../tests/mb_small.csv";
+
+    var index_manager = global_arena.allocator().create(IndexManager) catch @panic("BAD\n");
+    index_manager.* = IndexManager.init(filename) catch @panic("BAD\n");
 
     var arena = index_manager.string_arena.allocator();
 
     var search_cols = std.ArrayList([]u8).init(arena);
-    // try search_cols.append(try arena.dupe(u8, "TITLE"));
-    // try search_cols.append(try arena.dupe(u8, "ARTIST"));
-    // try search_cols.append(try arena.dupe(u8, "ALBUM"));
     search_cols.append(arena.dupe(u8, "TITLE") catch @panic("BAD\n")) catch @panic("BAD\n");
     search_cols.append(arena.dupe(u8, "ARTIST") catch @panic("BAD\n")) catch @panic("BAD\n");
     search_cols.append(arena.dupe(u8, "ALBUM") catch @panic("BAD\n")) catch @panic("BAD\n");
 
-    // try index_manager.readHeader(&search_cols);
-    // try index_manager.readFile();
     index_manager.readHeader(&search_cols) catch @panic("BAD\n");
     index_manager.readFile() catch @panic("BAD\n");
 
@@ -461,22 +467,20 @@ pub export fn get_query_handler_local() *anyopaque {
     var boost_factors = std.ArrayList(f32).init(arena);
 
     for (search_cols.items) |col| {
-        // try query_map.put(col, "");
-        // try boost_factors.append(1.0);
         query_map.put(col, "") catch @panic("BAD\n");
         boost_factors.append(1.0) catch @panic("BAD\n");
     }
 
-    // const query_handler = try QueryHandlerLocal.init(
-    var query_handler = QueryHandlerLocal.init(
-        &index_manager,
+    const query_handler = global_arena.allocator().create(QueryHandlerLocal) catch @panic("BAD\n");
+    query_handler.* = QueryHandlerLocal.init(
+        index_manager,
         boost_factors,
         query_map,
         search_cols,
         arena,
     ) catch @panic("BAD\n");
 
-    return @ptrCast(&query_handler);
+    return @ptrCast(query_handler);
 }
 
 export fn search(
@@ -503,12 +507,15 @@ export fn search(
 }
 
 pub export fn get_column_names(
-    query_handler: *QueryHandlerLocal, 
+    query_handler: *const QueryHandlerLocal, 
     column_names: [*][*:0]u8,
     num_columns: *u32,
     ) void {
-    num_columns.*   = @intCast(query_handler.index_manager.cols.items.len);
-    column_names[0] = @ptrCast(&query_handler.index_manager.cols.items[0]);
+    num_columns.* = @truncate(query_handler.index_manager.cols.items.len);
+    for (0.., query_handler.index_manager.cols.items) |idx, item| {
+        @memcpy(column_names[idx], item);
+        column_names[idx][item.len] = 0;
+    }
 }
 
 

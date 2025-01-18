@@ -3,8 +3,13 @@ import Foundation
 
 // Bridge to C functions
 private let searchLib = dlopen(nil, RTLD_NOW)
+
+private let init_allocators = dlsym(searchLib, "init_allocators")
+    .map { unsafeBitCast($0, to: (@convention(c) () -> Void).self) }
+
 private let get_handler = dlsym(searchLib, "get_query_handler_local")
     .map { unsafeBitCast($0, to: (@convention(c) () -> UnsafeMutableRawPointer?).self) }
+
 private let search_func = dlsym(searchLib, "search")
     .map { unsafeBitCast($0, to: (@convention(c) (
         UnsafeMutableRawPointer?,
@@ -17,8 +22,8 @@ private let search_func = dlsym(searchLib, "search")
 
 private let get_names = dlsym(searchLib, "get_column_names")
     .map { unsafeBitCast($0, to: (@convention(c) (
-        UnsafeMutableRawPointer?,
-        UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+        UnsafeRawPointer,
+        UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
         UnsafeMutablePointer<UInt32>
     ) -> Void).self) }
 
@@ -26,20 +31,50 @@ class SearchBridge {
     private var queryHandler: UnsafeMutableRawPointer?
     
     init() {
-        queryHandler = get_handler?()
+        if let initFn = init_allocators {
+            print("Initializing allocators")
+            initFn()
+        } else {
+            print("Failed to get init_allocators function")
+        }
+
+        if let handlerFn = get_handler {
+            queryHandler = handlerFn()
+            print("QueryHandler initialized: \(String(describing: queryHandler))")
+        } else {
+            print("Failed to get handler function")
+        }
     }
 
     func getColumnNames() -> [String] {
-        var names: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>? = nil
+        guard let handler = queryHandler else {
+            print("QueryHandler is nil")
+            return []
+        }
+
+        let names = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: 128)
+        defer {
+            // First free each string buffer
+            for i in 0..<128 {
+                if let ptr = names[i] {
+                    ptr.deallocate()
+                }
+            }
+            // Then free the array of pointers
+            names.deallocate()
+        }
+        
+        // Allocate buffers for each potential string (assuming max length of 256 chars)
+        for i in 0..<128 {
+            names[i] = UnsafeMutablePointer<CChar>.allocate(capacity: 256)
+        }
+        
         var count: UInt32 = 0
         
         if let fn = get_names {
-            // Initialize the memory to prevent undefined behavior
-            for i in 0..<100 {
-                names[i] = nil
-            }
-            
-            fn(queryHandler, names, &count)
+            print("Swift: about to call with handler address: \(String(describing: handler))")
+    fn(handler, names, &count)
+            fn(handler, names, &count)
             
             var columnNames: [String] = []
             for i in 0..<Int(count) {
@@ -51,7 +86,6 @@ class SearchBridge {
         }
         
         return []
-
     }
     
     func performSearch(query: String) -> [[String]] {
