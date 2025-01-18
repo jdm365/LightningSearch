@@ -432,6 +432,7 @@ pub const QueryHandlerLocal = struct {
             25,
             self.boost_factors,
             );
+        std.debug.print("Finished query\n", .{});
     }
 };
 
@@ -486,15 +487,22 @@ pub export fn get_query_handler_local() *anyopaque {
 export fn search(
     query_handler: *QueryHandlerLocal, 
     query_string: [*:0]const u8,
+    result_count: *u32,
     start_positions: [*]u32,
     lengths: [*]u32,
     result_buffers: [*][*]u8,
     ) void {
-    query_handler.search(query_string) catch @panic("BAD\n");
+    query_handler.search(query_string) catch {
+        std.debug.print("Search for {s} failed\n.", .{query_string});
+        @panic("Search failed\n.");
+    };
 
     const m = &query_handler.index_manager;
 
-    for (0..m.*.results_arrays[0].count) |doc_idx| {
+    std.debug.assert(m.*.results_arrays[0].count < MAX_NUM_RESULTS);
+    result_count.* = @intCast(m.*.results_arrays[0].count);
+
+    for (0..result_count.*) |doc_idx| {
         const start_idx = doc_idx * m.*.cols.items.len;
         const end_idx   = start_idx + m.*.cols.items.len;
 

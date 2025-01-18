@@ -24,6 +24,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/server.zig"),
         .target = target,
         .optimize = .ReleaseSafe,
+        // .optimize = .Debug,
     });
     const shared_install = b.addInstallArtifact(shared_lib, .{});
     b.installArtifact(shared_lib);

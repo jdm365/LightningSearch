@@ -29,6 +29,11 @@ private let get_names = dlsym(searchLib, "get_column_names")
 
 class SearchBridge {
     private var queryHandler: UnsafeMutableRawPointer?
+    private var resultCount: UInt32 = 0
+    private var startPositions = [UInt32](repeating: 0, count: 100 * 3)
+    private var lengths = [UInt32](repeating: 0, count: 100 * 3)
+    private var resultBuffers = [UnsafeMutablePointer<CChar>?](repeating: nil, count: 100)
+    private var numColumns: UInt32 = 0
     
     init() {
         if let initFn = init_allocators {
@@ -69,15 +74,13 @@ class SearchBridge {
             names[i] = UnsafeMutablePointer<CChar>.allocate(capacity: 256)
         }
         
-        var count: UInt32 = 0
-        
         if let fn = get_names {
             print("Swift: about to call with handler address: \(String(describing: handler))")
-    fn(handler, names, &count)
-            fn(handler, names, &count)
+    fn(handler, names, &numColumns)
+            fn(handler, names, &numColumns)
             
             var columnNames: [String] = []
-            for i in 0..<Int(count) {
+            for i in 0..<Int(numColumns) {
                 if let namePtr = names[i] {
                     columnNames.append(String(cString: namePtr))
                 }
@@ -89,11 +92,14 @@ class SearchBridge {
     }
     
     func performSearch(query: String) -> [[String]] {
-        var resultCount: UInt32 = 0
-        var startPositions = [UInt32](repeating: 0, count: 100 * 3)
-        var lengths = [UInt32](repeating: 0, count: 100 * 3)
-        var resultBuffers = [UnsafeMutablePointer<CChar>?](repeating: nil, count: 100)
+        // var resultCount: UInt32 = 0
+        // var startPositions = [UInt32](repeating: 0, count: 100 * 3)
+        // var lengths = [UInt32](repeating: 0, count: 100 * 3)
+        // var resultBuffers = [UnsafeMutablePointer<CChar>?](repeating: nil, count: 100)
+        resultCount = 0
         
+        print("Query: \(query)")
+        var startTime = CFAbsoluteTimeGetCurrent()
         query.withCString { queryStr in
             search_func?(
                 queryHandler,
@@ -104,13 +110,16 @@ class SearchBridge {
                 &resultBuffers
             )
         }
-        
+        var timeElapsed = CFAbsoluteTimeGetCurrent() - startTime
+        print("Time elapsed: \(timeElapsed) seconds")
+        print("Found \(resultCount) results")
+        startTime = CFAbsoluteTimeGetCurrent()
         var results: [[String]] = []
         for i in 0..<Int(resultCount) {
             var row: [String] = []
-            for j in 0..<3 {
-                let start = Int(startPositions[i * 3 + j])
-                let length = Int(lengths[i * 3 + j])
+            for j in 0..<Int(numColumns) {
+                let start = Int(startPositions[i * Int(numColumns) + j])
+                let length = Int(lengths[i * Int(numColumns) + j])
                 if let buffer = resultBuffers[i] {
                     let data = Data(bytes: buffer.advanced(by: start), count: length)
                     if let str = String(data: data, encoding: .utf8) {
@@ -120,6 +129,8 @@ class SearchBridge {
             }
             results.append(row)
         }
+        timeElapsed = CFAbsoluteTimeGetCurrent() - startTime
+        print("Time elapsed populate: \(timeElapsed) seconds")
         
         return results
     }
@@ -130,6 +141,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
     var tableView: NSTableView!
     var searchFields: [NSSearchField] = []
     var searchResults: [[String]] = []
+    var searchStrings: [String] = []
     let searchBridge = SearchBridge()
     
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -143,22 +155,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             defer: false
         )
 
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-
         if let firstSearchField = searchFields.first {
             window.makeFirstResponder(firstSearchField)
         }
         
         // Create search container
-        let searchContainer = NSView(frame: NSRect(x: 0, y: 0, width: 1000, height: 50))
+        let searchContainer = NSView(
+            frame: NSRect(x: 0, y: 0, width: 1000, height: 50)
+        )
         window.contentView?.addSubview(searchContainer)
         searchContainer.translatesAutoresizingMaskIntoConstraints = false
         
         // Add search fields
+        let colPadding = 20
+        let colWidth   = CGFloat(1000 / columnNames.count) * 2
         for i in 0..<columnNames.count {
-            let searchField = NSSearchField(frame: NSRect(x: CGFloat(20 + i * 320), y: 10, width: 300, height: 30))
+            let searchField = NSSearchField(
+                frame: NSRect(x: colPadding + i * (colPadding + Int(colWidth)), y: 10, width: Int(colWidth), height: 30)
+            )
             searchField.placeholderString = "Search \(columnNames[i])..."
+            searchField.sendsSearchStringImmediately = true
             searchContainer.addSubview(searchField)
             searchField.target = self
             searchField.action = #selector(searchFieldChanged(_:))
@@ -167,7 +183,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         }
         
         // Create scroll view and table
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 1000, height: 550))
+        let scrollView = NSScrollView(
+            frame: NSRect(x: 0, y: 0, width: 1000, height: 550)
+        )
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         
@@ -177,10 +195,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         
         // Add columns
         for i in 0..<columnNames.count {
-            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("column\(i)"))
+            let column = NSTableColumn(
+                identifier: NSUserInterfaceItemIdentifier("column\(i)")
+            )
             column.title = columnNames[i]
-            column.width = 300
+            column.width = colWidth;
             tableView.addTableColumn(column)
+
+            searchStrings.append("")
         }
         
         scrollView.documentView = tableView
@@ -206,23 +228,54 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         
         window.title = "Music Search"
         window.center()
+
+        // tableView.backgroundColor = .clear
+        // tableView.enclosingScrollView?.drawsBackground = false
+        window.appearance = NSAppearance(named: .vibrantDark)
+
+        NSApp.setActivationPolicy(.regular)
         window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let firstSearchField = searchFields.first {
+            window.makeFirstResponder(firstSearchField)
+        }
+
+        ProcessInfo.processInfo.enableSuddenTermination()
     }
     
     @objc func searchFieldChanged(_ sender: NSSearchField) {
+        let startTime = Date()
+
         let column = sender.tag
         let query = sender.stringValue
+
+        searchStrings[column] = query
         
         // Build query string
         var queryParts = ["TITLE=", "ARTIST=", "ALBUM="]
-        queryParts[column] = queryParts[column] + query
+        for i in 0..<3 {
+            queryParts[i] += searchStrings[i]
+        }
         let queryString = queryParts.joined(separator: "&")
         
         DispatchQueue.global(qos: .userInitiated).async {
+            let searchStartTime = Date()
             let results = self.searchBridge.performSearch(query: queryString)
+            let searchTime = -searchStartTime.timeIntervalSinceNow
+            
             DispatchQueue.main.async {
+                let reloadStartTime = Date()
                 self.searchResults = results
                 self.tableView.reloadData()
+                let reloadTime = -reloadStartTime.timeIntervalSinceNow
+                
+                let totalTime = -startTime.timeIntervalSinceNow
+
+                print("Search Performance Breakdown:")
+                print("- Backend Search Time: \(searchTime * 1000) ms")
+                print("- Table Reload Time: \(reloadTime * 1000) ms")
+                print("- Total Time: \(totalTime * 1000) ms")
             }
         }
     }

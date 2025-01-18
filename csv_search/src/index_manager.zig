@@ -131,12 +131,10 @@ pub const IndexManager = struct {
             );
         std.debug.assert(self.cols.items.len > 0);
 
-        var result_positions: [MAX_NUM_RESULTS][]TermPos = undefined;
-        var result_strings: [MAX_NUM_RESULTS]std.ArrayList(u8) = undefined;
         for (0..MAX_NUM_RESULTS) |idx| {
-            result_positions[idx] = try self.gpa.allocator().alloc(TermPos, self.cols.items.len);
-            result_strings[idx] = try std.ArrayList(u8).initCapacity(self.gpa.allocator(), 4096);
-            try result_strings[idx].resize(4096);
+            self.result_positions[idx] = try self.gpa.allocator().alloc(TermPos, self.cols.items.len);
+            self.result_strings[idx] = try std.ArrayList(u8).initCapacity(self.gpa.allocator(), 4096);
+            try self.result_strings[idx].resize(4096);
         }
     }
 
@@ -469,6 +467,7 @@ pub const IndexManager = struct {
         const num_lines = line_offsets.items.len - 1;
 
         const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
+        // const num_partitions = 1;
 
         self.file_handles = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
@@ -812,16 +811,18 @@ pub const IndexManager = struct {
                 }
             }
         }
+        std.debug.print("FOUND {d} results\n", .{self.results_arrays[0].count});
         if (self.results_arrays[0].count == 0) return;
 
         for (0..self.results_arrays[0].count) |idx| {
             const result = self.results_arrays[0].items[idx];
 
+            std.debug.assert(self.result_strings[idx].capacity > 0);
             try self.index_partitions[result.partition_idx].fetchRecords(
                 self.result_positions[idx],
                 &self.file_handles[result.partition_idx],
                 result,
-                @constCast(&self.result_strings[idx]),
+                &self.result_strings[idx],
             );
             std.debug.print("Score {d}: {d} - Doc id: {d}\n", .{idx, self.results_arrays[0].scores[idx], self.results_arrays[0].items[idx].doc_id});
         }
