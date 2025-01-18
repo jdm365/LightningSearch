@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const zap = @import("zap");
 
 const QueryHandler = @import("server.zig").QueryHandler;
+const get_query_handler_local = @import("server.zig").get_query_handler_local;
 
 const IndexManager = @import("index_manager.zig").IndexManager;
 
@@ -25,7 +26,8 @@ fn bench(testing: bool) !void {
     try search_cols.append(artist);
     try search_cols.append(album);
 
-    var index_manager = try IndexManager.init(filename, &search_cols, allocator);
+    // var index_manager = try IndexManager.init(filename, &search_cols, allocator);
+    var index_manager = try IndexManager.init(filename, &search_cols);
     try index_manager.readFile();
 
     try index_manager.printDebugInfo();
@@ -105,7 +107,8 @@ fn main_cli_runner() !void {
     }
 
 
-    var index_manager = try IndexManager.init(filename, &search_cols, allocator);
+    // var index_manager = try IndexManager.init(filename, &search_cols, allocator);
+    var index_manager = try IndexManager.init(filename, &search_cols);
     try index_manager.readFile();
 
     // Write files to disk
@@ -252,7 +255,8 @@ fn server_test() !void {
     try search_cols.append(try arena_allocator.dupe(u8, "ARTIST"));
     try search_cols.append(try arena_allocator.dupe(u8, "ALBUM"));
 
-    var index_manager = try IndexManager.init(filename, &search_cols, allocator);
+    // var index_manager = try IndexManager.init(filename, &search_cols, allocator);
+    var index_manager = try IndexManager.init(filename, &search_cols);
     try index_manager.readFile();
 
     // Write files to disk
@@ -361,5 +365,6 @@ fn server_test() !void {
 pub fn main() !void {
     // try main_cli_runner();
     // try server_test();
-    try bench(true);
+    // try bench(true);
+    _ = get_query_handler_local();
 }

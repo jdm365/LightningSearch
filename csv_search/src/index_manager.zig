@@ -45,7 +45,7 @@ const score_f32 = struct {
 pub const IndexManager = struct {
     index_partitions: []BM25Partition,
     input_filename: []const u8,
-    allocator: std.mem.Allocator,
+    gpa: std.heap.GeneralPurposeAllocator(.{}),
     string_arena: std.heap.ArenaAllocator,
     search_cols: std.StringHashMap(Column),
     cols: std.ArrayList([]const u8),
@@ -59,24 +59,10 @@ pub const IndexManager = struct {
 
     pub fn init(
         input_filename: []const u8,
-        search_cols: *std.ArrayList([]u8),
-        allocator: std.mem.Allocator,
+        // search_cols: *std.ArrayList([]u8),
         ) !IndexManager {
-
+        var gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){};
         var string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        var cols = std.ArrayList([]const u8).init(allocator);
-
-        var header_bytes: usize = 0;
-
-        const search_col_map = try readCSVHeader(
-            input_filename, 
-            search_cols, 
-            &cols,
-            allocator,
-            string_arena.allocator(),
-            &header_bytes,
-            );
-
 
         const file_hash = blk: {
             var hash: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
@@ -84,7 +70,7 @@ pub const IndexManager = struct {
             break :blk hash;
         };
         const dir_name = try std.fmt.allocPrint(
-            allocator,
+            gpa.allocator(),
             ".{x:0>32}", .{std.fmt.fmtSliceHexLower(file_hash[0..16])}
             );
 
@@ -93,29 +79,19 @@ pub const IndexManager = struct {
             try std.fs.cwd().makeDir(dir_name);
         };
 
-        std.debug.assert(cols.items.len > 0);
-
-        var result_positions: [MAX_NUM_RESULTS][]TermPos = undefined;
-        var result_strings: [MAX_NUM_RESULTS]std.ArrayList(u8) = undefined;
-        for (0..MAX_NUM_RESULTS) |idx| {
-            result_positions[idx] = try allocator.alloc(TermPos, cols.items.len);
-            result_strings[idx] = try std.ArrayList(u8).initCapacity(allocator, 4096);
-            try result_strings[idx].resize(4096);
-        }
-
         return IndexManager{
             .index_partitions = undefined,
             .input_filename = input_filename,
-            .allocator = allocator,
+            .gpa = gpa,
             .string_arena = string_arena,
-            .search_cols = search_col_map,
-            .cols = cols,
+            .search_cols = std.StringHashMap(Column).init(string_arena.allocator()),
+            .cols = std.ArrayList([]const u8).init(string_arena.allocator()),
             .tmp_dir = dir_name,
             .file_handles = undefined,
-            .result_positions = result_positions,
-            .result_strings = result_strings,
+            .result_positions = undefined,
+            .result_strings = undefined,
             .results_arrays = undefined,
-            .header_bytes = header_bytes,
+            .header_bytes = undefined,
         };
     }
     
@@ -125,22 +101,43 @@ pub const IndexManager = struct {
             self.index_partitions[idx].deinit();
             self.file_handles[idx].close();
         }
-        self.allocator.free(self.file_handles);
-        self.allocator.free(self.index_partitions);
-        self.allocator.free(self.results_arrays);
+        self.gpa.allocator().free(self.file_handles);
+        self.gpa.allocator().free(self.index_partitions);
+        self.gpa.allocator().free(self.results_arrays);
 
         self.search_cols.deinit();
         self.cols.deinit();
 
         try std.fs.cwd().deleteTree(self.tmp_dir);
-        self.allocator.free(self.tmp_dir);
+        self.gpa.allocator().free(self.tmp_dir);
 
         for (0..MAX_NUM_RESULTS) |idx| {
-            self.allocator.free(self.result_positions[idx]);
+            self.gpa.allocator().free(self.result_positions[idx]);
             self.result_strings[idx].deinit();
         }
 
         self.string_arena.deinit();
+        _ = self.gpa.deinit();
+    }
+
+    pub fn readHeader(self: *IndexManager, search_cols: *std.ArrayList([]u8)) !void {
+        self.search_cols = try readCSVHeader(
+            self.input_filename, 
+            search_cols, 
+            &self.cols,
+            self.gpa.allocator(),
+            self.string_arena.allocator(),
+            &self.header_bytes,
+            );
+        std.debug.assert(self.cols.items.len > 0);
+
+        var result_positions: [MAX_NUM_RESULTS][]TermPos = undefined;
+        var result_strings: [MAX_NUM_RESULTS]std.ArrayList(u8) = undefined;
+        for (0..MAX_NUM_RESULTS) |idx| {
+            result_positions[idx] = try self.gpa.allocator().alloc(TermPos, self.cols.items.len);
+            result_strings[idx] = try std.ArrayList(u8).initCapacity(self.gpa.allocator(), 4096);
+            try result_strings[idx].resize(4096);
+        }
     }
 
     pub fn printDebugInfo(self: *const IndexManager) !void {
@@ -150,7 +147,7 @@ pub const IndexManager = struct {
         var num_docs: usize = 0;
         var avg_doc_size: f32 = 0.0;
 
-        var num_terms_all_cols = std.ArrayList(u32).init(self.allocator);
+        var num_terms_all_cols = std.ArrayList(u32).init(self.gpa.allocator());
         defer num_terms_all_cols.deinit();
 
         for (0..self.index_partitions.len) |idx| {
@@ -333,16 +330,16 @@ pub const IndexManager = struct {
         const end_doc   = start_doc + current_chunk_size;
 
         const output_filename = try std.fmt.allocPrint(
-            self.allocator, 
+            self.gpa.allocator(), 
             "{s}/output_{d}", 
             .{self.tmp_dir, partition_idx}
             );
-        defer self.allocator.free(output_filename);
+        defer self.gpa.allocator().free(output_filename);
 
         var token_stream = try csv.TokenStream.init(
             self.input_filename,
             output_filename,
-            self.allocator,
+            self.gpa.allocator(),
             search_col_idxs.len,
         );
         defer token_stream.deinit();
@@ -436,8 +433,8 @@ pub const IndexManager = struct {
         );
         defer std.posix.munmap(f_data);
 
-        // const f_data = try self.allocator.alignedAlloc(u8, @intCast(std.mem.page_size), file_size);
-        // defer self.allocator.free(f_data);
+        // const f_data = try self.gpa.allocator().alignedAlloc(u8, @intCast(std.mem.page_size), file_size);
+        // defer self.gpa.allocator().free(f_data);
 
         // const read_start = std.time.milliTimestamp();
         // const num_bytes = try file.readAll(f_data);
@@ -451,7 +448,7 @@ pub const IndexManager = struct {
         // std.debug.print("{d}MB/s\n", .{@as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(read_end - read_start))))});
 
 
-        var line_offsets = std.ArrayList(usize).init(self.allocator);
+        var line_offsets = std.ArrayList(usize).init(self.gpa.allocator());
         defer line_offsets.deinit();
 
         var file_pos: usize = self.header_bytes;
@@ -473,12 +470,12 @@ pub const IndexManager = struct {
 
         const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
 
-        self.file_handles = try self.allocator.alloc(std.fs.File, num_partitions);
-        self.index_partitions = try self.allocator.alloc(BM25Partition, num_partitions);
-        self.results_arrays = try self.allocator.alloc(SortedScoreMultiArray(QueryResult), num_partitions);
+        self.file_handles = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
+        self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
+        self.results_arrays = try self.gpa.allocator().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
         for (0..num_partitions) |idx| {
             self.file_handles[idx]   = try std.fs.cwd().openFile(self.input_filename, .{});
-            self.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.allocator, MAX_NUM_RESULTS);
+            self.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa.allocator(), MAX_NUM_RESULTS);
         }
 
         std.debug.print("Writing {d} partitions\n", .{num_partitions});
@@ -489,7 +486,7 @@ pub const IndexManager = struct {
         const chunk_size: usize = num_lines / num_partitions;
         const final_chunk_size: usize = chunk_size + (num_lines % num_partitions);
 
-        var partition_boundaries = std.ArrayList(usize).init(self.allocator);
+        var partition_boundaries = std.ArrayList(usize).init(self.gpa.allocator());
         defer partition_boundaries.deinit();
 
         const num_search_cols = self.search_cols.count();
@@ -505,11 +502,11 @@ pub const IndexManager = struct {
             const start = i * chunk_size;
             const end   = start + current_chunk_size + 1;
 
-            const partition_line_offsets = try self.allocator.alloc(usize, current_chunk_size + 1);
+            const partition_line_offsets = try self.gpa.allocator().alloc(usize, current_chunk_size + 1);
             @memcpy(partition_line_offsets, line_offsets.items[start..end]);
 
             self.index_partitions[i] = try BM25Partition.init(
-                self.allocator, 
+                self.gpa.allocator(), 
                 num_search_cols, 
                 partition_line_offsets
                 );
@@ -518,8 +515,8 @@ pub const IndexManager = struct {
 
         std.debug.assert(partition_boundaries.items.len == num_partitions + 1);
 
-        const search_col_idxs = try self.allocator.alloc(usize, num_search_cols);
-        defer self.allocator.free(search_col_idxs);
+        const search_col_idxs = try self.gpa.allocator().alloc(usize, num_search_cols);
+        defer self.gpa.allocator().free(search_col_idxs);
         
         var map_it = self.search_cols.iterator();
         var idx: usize = 0;
@@ -530,8 +527,8 @@ pub const IndexManager = struct {
 
         const time_start = std.time.milliTimestamp();
 
-        var threads = try self.allocator.alloc(std.Thread, num_partitions);
-        defer self.allocator.free(threads);
+        var threads = try self.gpa.allocator().alloc(std.Thread, num_partitions);
+        defer self.gpa.allocator().free(threads);
 
         var total_docs_read = AtomicCounter.init(0);
         var progress_bar = progress.ProgressBar.init(num_lines);
@@ -569,7 +566,7 @@ pub const IndexManager = struct {
     }
 
     pub fn queryPartitionOrdered(
-        self: *const IndexManager,
+        self: *IndexManager,
         queries: std.StringHashMap([]const u8),
         boost_factors: std.ArrayList(f32),
         partition_idx: usize,
@@ -579,7 +576,7 @@ pub const IndexManager = struct {
         std.debug.assert(num_search_cols > 0);
 
         // Tokenize query.
-        var tokens = std.ArrayList(ColTokenPair).init(self.allocator);
+        var tokens = std.ArrayList(ColTokenPair).init(self.gpa.allocator());
         defer tokens.deinit();
 
         var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
@@ -664,14 +661,14 @@ pub const IndexManager = struct {
         doc_scores.clearRetainingCapacity();
 
         var sorted_scores = try SortedScoreMultiArray(void).init(
-            self.allocator, 
+            self.gpa.allocator(), 
             query_results.capacity,
             );
         defer sorted_scores.deinit();
 
 
-        var token_scores = try self.allocator.alloc(f32, tokens.items.len);
-        defer self.allocator.free(token_scores);
+        var token_scores = try self.gpa.allocator().alloc(f32, tokens.items.len);
+        defer self.gpa.allocator().free(token_scores);
 
         var idf_remaining: f32 = 0.0;
         for (0.., tokens.items) |idx, _token| {
@@ -773,7 +770,7 @@ pub const IndexManager = struct {
     }
 
     pub fn query(
-        self: *const IndexManager,
+        self: *IndexManager,
         queries: std.StringHashMap([]const u8),
         k: usize,
         boost_factors: std.ArrayList(f32),
@@ -785,8 +782,8 @@ pub const IndexManager = struct {
 
         // Init num_partitions threads.
         const num_partitions = self.index_partitions.len;
-        var threads = try self.allocator.alloc(std.Thread, num_partitions);
-        defer self.allocator.free(threads);
+        var threads = try self.gpa.allocator().alloc(std.Thread, num_partitions);
+        defer self.gpa.allocator().free(threads);
 
         for (0..num_partitions) |partition_idx| {
             self.results_arrays[partition_idx].clear();

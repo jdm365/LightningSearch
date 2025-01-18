@@ -352,6 +352,158 @@ pub const QueryHandler = struct {
     }
 };
 
+pub const QueryHandlerLocal = struct {
+    index_manager: *IndexManager,
+    boost_factors: std.ArrayList(f32),
+    query_map: std.StringHashMap([]const u8),
+    search_cols: std.ArrayList([]u8),
+    allocator: std.mem.Allocator,
+
+    pub fn init(
+        index_manager: *IndexManager,
+        boost_factors: std.ArrayList(f32),
+        query_map: std.StringHashMap([]const u8),
+        search_cols: std.ArrayList([]u8),
+        allocator: std.mem.Allocator,
+    ) !QueryHandlerLocal {
+        return QueryHandlerLocal{
+            .index_manager = index_manager,
+            .boost_factors = boost_factors,
+            .query_map = query_map,
+            .search_cols = search_cols,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *QueryHandlerLocal) void {
+        self.index_manager.deinit();
+        self.boost_factors.deinit();
+        self.query_map.deinit();
+        self.search_cols.deinit();
+    }
+
+    inline fn parseQueryString(
+        self: *QueryHandlerLocal,
+        query_string: []const u8,
+        ) !void {
+        // Format key=value
+        var scratch_buffer: [4096]u8 = undefined;
+        var count: usize = 0;
+        var idx: usize = 0;
+
+        while (idx < query_string.len) {
+            if (query_string[idx] == '=') {
+                idx += 1;
+
+                const result = self.query_map.getPtr(
+                    scratch_buffer[0..count]
+                    );
+
+                count = 0;
+                while ((idx < query_string.len) and (query_string[idx] != '&')) {
+                    scratch_buffer[count] = std.ascii.toUpper(query_string[idx]);
+                    count += 1;
+                    idx   += 1;
+                }
+                if (result != null) {
+                    const value_copy = try self.allocator.dupe(
+                        u8, 
+                        scratch_buffer[0..count],
+                        );
+                    result.?.* = value_copy;
+                }
+                count = 0;
+                idx += 1;
+                continue;
+            }
+            scratch_buffer[count] = std.ascii.toUpper(query_string[idx]);
+            count += 1;
+            idx   += 1;
+        }
+    }
+
+    pub fn search(
+        self: *QueryHandlerLocal,
+        query_string: [*:0]const u8,
+        ) !void {
+        try self.parseQueryString(std.mem.span(query_string));
+        try self.index_manager.query(
+            self.query_map,
+            25,
+            self.boost_factors,
+            );
+    }
+};
+
+pub export fn get_query_handler_local() *anyopaque {
+    const filename: []const u8 = "../tests/mb.csv";
+    // const filename: []const u8 = "../tests/mb_small.csv";
+
+    // var index_manager = try IndexManager.init(filename);
+    var index_manager = IndexManager.init(filename) catch @panic("BAD\n");
+
+    var arena = index_manager.string_arena.allocator();
+
+    var search_cols = std.ArrayList([]u8).init(arena);
+    // try search_cols.append(try arena.dupe(u8, "TITLE"));
+    // try search_cols.append(try arena.dupe(u8, "ARTIST"));
+    // try search_cols.append(try arena.dupe(u8, "ALBUM"));
+    search_cols.append(arena.dupe(u8, "TITLE") catch @panic("BAD\n")) catch @panic("BAD\n");
+    search_cols.append(arena.dupe(u8, "ARTIST") catch @panic("BAD\n")) catch @panic("BAD\n");
+    search_cols.append(arena.dupe(u8, "ALBUM") catch @panic("BAD\n")) catch @panic("BAD\n");
+
+    // try index_manager.readHeader(&search_cols);
+    // try index_manager.readFile();
+    index_manager.readHeader(&search_cols) catch @panic("BAD\n");
+    index_manager.readFile() catch @panic("BAD\n");
+
+    var query_map = std.StringHashMap([]const u8).init(arena);
+    var boost_factors = std.ArrayList(f32).init(arena);
+
+    for (search_cols.items) |col| {
+        // try query_map.put(col, "");
+        // try boost_factors.append(1.0);
+        query_map.put(col, "") catch @panic("BAD\n");
+        boost_factors.append(1.0) catch @panic("BAD\n");
+    }
+
+    // const query_handler = try QueryHandlerLocal.init(
+    var query_handler = QueryHandlerLocal.init(
+        &index_manager,
+        boost_factors,
+        query_map,
+        search_cols,
+        arena,
+    ) catch @panic("BAD\n");
+
+    return @ptrCast(&query_handler);
+}
+
+export fn search(
+    query_handler: *QueryHandlerLocal, 
+    query_string: [*:0]const u8,
+    start_positions: [*]u32,
+    lengths: [*]u32,
+    result_buffers: [*][*]u8,
+    ) void {
+    query_handler.search(query_string) catch @panic("BAD\n");
+
+    const m = &query_handler.index_manager;
+
+    for (0..m.*.results_arrays[0].count) |doc_idx| {
+        const start_idx = doc_idx * m.*.cols.items.len;
+        const end_idx   = start_idx + m.*.cols.items.len;
+
+        for (0.., start_idx..end_idx) |col_idx, i| {
+            start_positions[i] = m.*.result_positions[doc_idx][col_idx].start_pos;
+            lengths[i] = m.*.result_positions[doc_idx][col_idx].field_len;
+        }
+        result_buffers[doc_idx] = m.*.result_strings[doc_idx].items.ptr;
+    }
+}
+
+
+
 test "csv_parse" {
     const csv_line = "26859,13859,1,1,WoM27813813,006,Under My Skin (You Go To My Head (Set One)),02:44,David McAlmont,You_Go_To_My_Head_(Set_One),2005,,";
 
