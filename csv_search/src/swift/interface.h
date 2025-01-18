@@ -11,3 +11,8 @@ void search(
 		uint32_t* lengths,
 		char** result_buffers 
 		);
+void get_column_names(
+		QueryHandlerLocal* query_handler, 
+		char** column_names, 
+		uint32_t* num_columns 
+		);

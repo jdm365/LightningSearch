@@ -19,6 +19,15 @@ pub fn build(b: *std.Build) void {
     lib.root_module.addImport("zap", zap.module("zap"));
     b.installArtifact(lib);
 
+    const shared_lib = b.addSharedLibrary(.{
+        .name = "search_app",
+        .root_source_file = b.path("src/server.zig"),
+        .target = target,
+        .optimize = .ReleaseSafe,
+    });
+    const shared_install = b.addInstallArtifact(shared_lib, .{});
+    b.installArtifact(shared_lib);
+
     const exe = b.addExecutable(.{
         .name = "csv_search",
         .root_source_file = b.path("src/main.zig"),
@@ -38,6 +47,14 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const lib_step = b.step("lib", "Build the static library");
+    const shared_step = b.step("shared", "Build the shared library");
+    const exe_step = b.step("exe", "Build the executable");
+    lib_step.dependOn(&lib.step);
+    shared_step.dependOn(&shared_lib.step);
+    shared_step.dependOn(&shared_install.step);
+    exe_step.dependOn(&exe.step);
 
     // const tests = b.addTest(.{
             // .target = target,

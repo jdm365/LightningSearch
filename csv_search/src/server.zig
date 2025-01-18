@@ -502,6 +502,14 @@ export fn search(
     }
 }
 
+pub export fn get_column_names(
+    query_handler: *QueryHandlerLocal, 
+    column_names: [*][*:0]u8,
+    num_columns: *u32,
+    ) void {
+    num_columns.*   = @intCast(query_handler.index_manager.cols.items.len);
+    column_names[0] = @ptrCast(&query_handler.index_manager.cols.items[0]);
+}
 
 
 test "csv_parse" {
