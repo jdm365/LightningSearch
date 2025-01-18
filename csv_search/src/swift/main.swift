@@ -20,11 +20,17 @@ private let search_func = dlsym(searchLib, "search")
         UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
     ) -> Void).self) }
 
-private let get_names = dlsym(searchLib, "get_column_names")
+private let get_cols = dlsym(searchLib, "get_column_names")
     .map { unsafeBitCast($0, to: (@convention(c) (
         UnsafeRawPointer,
         UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
         UnsafeMutablePointer<UInt32>
+    ) -> Void).self) }
+
+private let get_search_cols = dlsym(searchLib, "get_search_columns")
+    .map { unsafeBitCast($0, to: (@convention(c) (
+        UnsafeRawPointer,
+        UnsafeMutablePointer<CChar>
     ) -> Void).self) }
 
 class SearchBridge {
@@ -74,18 +80,46 @@ class SearchBridge {
             names[i] = UnsafeMutablePointer<CChar>.allocate(capacity: 256)
         }
         
-        if let fn = get_names {
-            print("Swift: about to call with handler address: \(String(describing: handler))")
-    fn(handler, names, &numColumns)
+        if let fn = get_cols {
             fn(handler, names, &numColumns)
             
-            var columnNames: [String] = []
+            var localColumnNames: [String] = []
             for i in 0..<Int(numColumns) {
                 if let namePtr = names[i] {
-                    columnNames.append(String(cString: namePtr))
+                    localColumnNames.append(String(cString: namePtr))
                 }
             }
-            return columnNames
+            return localColumnNames
+        }
+        
+        return []
+    }
+
+    func getSearchColumns(columnNames: [String]) -> [String] {
+        guard let handler = queryHandler else {
+            print("QueryHandler is nil")
+            return []
+        }
+
+        let colMask = UnsafeMutablePointer<CChar>.allocate(capacity: columnNames.count)
+        defer {
+            colMask.deallocate()
+        }
+
+        for i in 0..<columnNames.count {
+            colMask[i] = 0;
+        }
+
+        if let fn = get_search_cols {
+            fn(handler, colMask)
+            
+            var localSearchColumnNames: [String] = []
+            for i in 0..<Int(columnNames.count) {
+                if colMask[i] == 1 {
+                    localSearchColumnNames.append(columnNames[i])
+                }
+            }
+            return localSearchColumnNames
         }
         
         return []
@@ -143,9 +177,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
     var searchResults: [[String]] = []
     var searchStrings: [String] = []
     let searchBridge = SearchBridge()
+    var columnNames: [String] = []
+    var searchColumnNames: [String] = []
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let columnNames = searchBridge.getColumnNames()
+        columnNames = searchBridge.getColumnNames()
+        searchColumnNames = searchBridge.getSearchColumns(columnNames: columnNames)
 
         // Create window
         window = NSWindow(
@@ -167,19 +204,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         searchContainer.translatesAutoresizingMaskIntoConstraints = false
         
         // Add search fields
-        let colPadding = 20
-        let colWidth   = CGFloat(1000 / columnNames.count) * 2
-        for i in 0..<columnNames.count {
+        let searchColPadding = 20
+        let searchColWidth   = CGFloat(1000 / searchColumnNames.count)
+        for i in 0..<searchColumnNames.count {
             let searchField = NSSearchField(
-                frame: NSRect(x: colPadding + i * (colPadding + Int(colWidth)), y: 10, width: Int(colWidth), height: 30)
+                frame: NSRect(x: searchColPadding + i * (searchColPadding + Int(searchColWidth)), y: 10, width: Int(searchColWidth), height: 30)
             )
-            searchField.placeholderString = "Search \(columnNames[i])..."
+            searchField.placeholderString = "Search \(searchColumnNames[i])..."
             searchField.sendsSearchStringImmediately = true
             searchContainer.addSubview(searchField)
             searchField.target = self
             searchField.action = #selector(searchFieldChanged(_:))
             searchField.tag = i
             searchFields.append(searchField)
+
+            searchStrings.append("")
         }
         
         // Create scroll view and table
@@ -194,6 +233,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         tableView.delegate = self
         
         // Add columns
+        let colWidth = CGFloat(1000 / columnNames.count)
         for i in 0..<columnNames.count {
             let column = NSTableColumn(
                 identifier: NSUserInterfaceItemIdentifier("column\(i)")
@@ -201,8 +241,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             column.title = columnNames[i]
             column.width = colWidth;
             tableView.addTableColumn(column)
-
-            searchStrings.append("")
         }
         
         scrollView.documentView = tableView
@@ -253,9 +291,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         searchStrings[column] = query
         
         // Build query string
-        var queryParts = ["TITLE=", "ARTIST=", "ALBUM="]
-        for i in 0..<3 {
-            queryParts[i] += searchStrings[i]
+        var queryParts = searchColumnNames
+        for i in 0..<searchColumnNames.count {
+            queryParts[i] += "=" + searchStrings[i]
         }
         let queryString = queryParts.joined(separator: "&")
         

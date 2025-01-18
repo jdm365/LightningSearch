@@ -526,6 +526,16 @@ pub export fn get_column_names(
     }
 }
 
+pub export fn get_search_columns(
+    query_handler: *const QueryHandlerLocal, 
+    col_mask: [*]u8,
+    ) void {
+    var iterator = query_handler.index_manager.search_cols.iterator();
+    while (iterator.next()) |item| {
+        col_mask[item.value_ptr.*.csv_idx] = 1;
+    }
+}
+
 
 test "csv_parse" {
     const csv_line = "26859,13859,1,1,WoM27813813,006,Under My Skin (You Go To My Head (Set One)),02:44,David McAlmont,You_Go_To_My_Head_(Set_One),2005,,";

@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef struct QueryHandlerLocal QueryHandlerLocal;
 
@@ -15,6 +16,10 @@ void get_column_names(
 		QueryHandlerLocal const* query_handler, 
 		char** column_names, 
 		uint32_t* num_columns 
+		);
+void get_search_columns(
+		QueryHandlerLocal const* query_handler, 
+		uint8_t* col_mask
 		);
 void init_allocators();
 void deinit_allocators();
