@@ -63,8 +63,10 @@ class SearchBridge {
     private var lengths = [UInt32](repeating: 0, count: 100 * 3)
     private var resultBuffers = [UnsafeMutablePointer<CChar>?](repeating: nil, count: 100)
     private var numColumns: UInt32 = 0
+
     var columnNames: [String] = []
     var searchColumnNames: [String] = []
+    var searchColMask: [Int] = []
     
     init() {
         if let initFn = init_allocators {
@@ -115,33 +117,6 @@ class SearchBridge {
         }
     }
 
-    func getSearchColumns() -> Void {
-        guard let handler = queryHandler else {
-            print("QueryHandler is nil")
-            return
-        }
-
-        let colMask = UnsafeMutablePointer<CChar>.allocate(capacity: columnNames.count)
-        defer {
-            colMask.deallocate()
-        }
-
-        for i in 0..<columnNames.count {
-            colMask[i] = 0;
-        }
-
-        if let fn = get_search_cols {
-            fn(handler, colMask)
-            
-            for i in 0..<Int(columnNames.count) {
-                if colMask[i] == 1 {
-                    searchColumnNames.append(columnNames[i])
-                }
-            }
-            return
-        }
-    }
-    
     func performSearch(query: String) -> [[String]] {
         resultCount = 0
         
@@ -165,6 +140,8 @@ class SearchBridge {
         for i in 0..<Int(resultCount) {
             var row: [String] = []
             for j in 0..<Int(numColumns) {
+            // for j in searchColMask {
+
                 let start = Int(startPositions[i * Int(numColumns) + j])
                 let length = Int(lengths[i * Int(numColumns) + j])
                 if let buffer = resultBuffers[i] {
@@ -195,6 +172,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
    var searchContainer: NSView!
    var scrollView: NSScrollView!
    var fileSelectionView: NSView!
+
+   // Side panel data
+   var splitView: NSSplitView!
+   var detailsView: NSScrollView!
+   var detailsTable: NSTableView!
+   var selectedRowData: [String: String] = [:]
    
    func applicationDidFinishLaunching(_ notification: Notification) {
        print("Application Started.")
@@ -332,6 +315,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        searchBridge.searchColumnNames = checkboxes.enumerated()
            .filter { $0.element.state == .on }
            .map { searchBridge.columnNames[$0.offset] }
+       searchBridge.searchColMask = checkboxes.enumerated()
+           .filter { $0.element.state == .on }
+           .map { $0.offset }
        
        if searchBridge.searchColumnNames.isEmpty {
            let alert = NSAlert()
@@ -384,69 +370,172 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        }
    }
 
-   private func setupSearchInterface() {
-       fileSelectionView.removeFromSuperview()
+    private func setupSearchInterface() {
+        fileSelectionView.removeFromSuperview()
+
+        // Create split view to hold table and details
+        splitView = NSSplitView()
+        splitView.isVertical = true
+        splitView.dividerStyle = .thin
+        splitView.autoresizingMask = [.width]
+        window.contentView?.addSubview(splitView)
+        splitView.translatesAutoresizingMaskIntoConstraints = false
+
+        // Create container for search and table
+        let tableContainer = NSView()
+        tableContainer.translatesAutoresizingMaskIntoConstraints = false
+        splitView.addArrangedSubview(tableContainer)
+
+        // Add search container to table container
+        searchContainer = NSView()
+        tableContainer.addSubview(searchContainer)
+        searchContainer.translatesAutoresizingMaskIntoConstraints = false
+
+        tableView = NSTableView()
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.target = self
+        tableView.action = #selector(tableViewClicked(_:))
+        tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
+
+        let searchColPadding = CGFloat(20)
+
+        NSLayoutConstraint.activate([
+            splitView.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
+            splitView.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
+            splitView.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
+            splitView.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor)
+        ])
+        window.layoutIfNeeded()
+        print("splitView frame width: \(tableContainer.frame.width)")
+
+        // Create details view
+        detailsView = NSScrollView()
+        detailsView.hasVerticalScroller = true
+        detailsTable = NSTableView()
+        detailsTable.addTableColumn(
+            NSTableColumn(identifier: NSUserInterfaceItemIdentifier("key"))
+            )
+        detailsTable.addTableColumn(
+            NSTableColumn(identifier: NSUserInterfaceItemIdentifier("value"))
+            )
+        detailsTable.headerView = nil
+        detailsTable.dataSource = self
+        detailsTable.delegate = self
+        detailsView.documentView = detailsTable
+        detailsView.contentInsets = NSEdgeInsets(
+            top: 10, 
+            left: 0, 
+            bottom: 10, 
+            right: 0
+            )
+        splitView.addArrangedSubview(tableContainer)
+        splitView.addArrangedSubview(detailsView)
        
-       searchContainer = NSView()
-       window.contentView?.addSubview(searchContainer)
-       searchContainer.translatesAutoresizingMaskIntoConstraints = false
-       
-       let searchColPadding = 20
-       let searchColWidth = CGFloat(WINDOW_WIDTH / searchBridge.searchColumnNames.count)
-       for i in 0..<searchBridge.searchColumnNames.count {
-           let searchField = NSSearchField()
-           searchField.placeholderString = "Search \(searchBridge.searchColumnNames[i])..."
-           searchField.sendsSearchStringImmediately = true
-           searchContainer.addSubview(searchField)
-           searchField.target = self
-           searchField.action = #selector(searchFieldChanged(_:))
-           searchField.tag = i
-           searchField.translatesAutoresizingMaskIntoConstraints = false
+        // Set the initial division
+        splitView.setPosition(window.frame.width * 0.7, ofDividerAt: 0)
+        window.layoutIfNeeded()
+
+        // Then set up tableContainer constraints
+        NSLayoutConstraint.activate([
+            tableContainer.widthAnchor.constraint(equalTo: splitView.widthAnchor, multiplier: 0.7),
+            tableContainer.heightAnchor.constraint(equalTo: splitView.heightAnchor),
+            tableContainer.topAnchor.constraint(equalTo: splitView.topAnchor),
+            tableContainer.leadingAnchor.constraint(equalTo: splitView.leadingAnchor)
+        ])
+        window.layoutIfNeeded()
+        print("Table Container frame width: \(tableContainer.frame.width)")
+
+        NSLayoutConstraint.activate([
+            searchContainer.widthAnchor.constraint(equalTo: tableContainer.widthAnchor),
+            searchContainer.topAnchor.constraint(equalTo: tableContainer.topAnchor),
+            searchContainer.leadingAnchor.constraint(equalTo: tableContainer.leadingAnchor),
+            searchContainer.trailingAnchor.constraint(equalTo: tableContainer.trailingAnchor),
+            searchContainer.heightAnchor.constraint(equalToConstant: 50)
+        ])
+        window.layoutIfNeeded()
+        print("Search Container frame width: \(searchContainer.frame.width)")
+
+        let numCols = searchBridge.searchColumnNames.count
+        let searchWidth = searchContainer.frame.width
+        let columnWidth = (searchWidth / CGFloat(numCols)) - searchColPadding * 2
+        for i in 0..<searchBridge.searchColumnNames.count {
+            let searchField = NSSearchField()
+            searchField.placeholderString = "Search \(searchBridge.searchColumnNames[i])..."
+            searchField.sendsSearchStringImmediately = true
+            searchContainer.addSubview(searchField)
+            searchField.target = self
+            searchField.action = #selector(searchFieldChanged(_:))
+            searchField.tag = i
+            searchField.translatesAutoresizingMaskIntoConstraints = false
+
+            let xPosition = searchColPadding + 
+                            (CGFloat(i) * (columnWidth + searchColPadding * 2))
+            NSLayoutConstraint.activate([
+                searchField.leadingAnchor.constraint(
+                    equalTo: searchContainer.leadingAnchor, 
+                    constant: xPosition
+                ),
+                searchField.centerYAnchor.constraint(
+                    equalTo: searchContainer.centerYAnchor
+                ),
+                searchField.widthAnchor.constraint(equalToConstant: columnWidth),
+                searchField.heightAnchor.constraint(equalToConstant: 30)
+            ])
            
-           NSLayoutConstraint.activate([
-               searchField.leadingAnchor.constraint(equalTo: searchContainer.leadingAnchor, constant: CGFloat(searchColPadding + i * (searchColPadding + Int(searchColWidth)))),
-               searchField.centerYAnchor.constraint(equalTo: searchContainer.centerYAnchor),
-               searchField.widthAnchor.constraint(equalToConstant: searchColWidth),
-               searchField.heightAnchor.constraint(equalToConstant: 30)
-           ])
-           
-           searchFields.append(searchField)
-           searchStrings.append("")
+            searchFields.append(searchField)
+            searchStrings.append("")
        }
+
+        scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        tableContainer.addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
        
-       scrollView = NSScrollView()
-       scrollView.hasVerticalScroller = true
-       scrollView.hasHorizontalScroller = true
-       window.contentView?.addSubview(scrollView)
-       scrollView.translatesAutoresizingMaskIntoConstraints = false
+        for i in 0..<searchBridge.searchColumnNames.count {
+            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("column\(i)"))
+            column.title = searchBridge.searchColumnNames[i]
+            column.width = columnWidth 
+            column.resizingMask = [.userResizingMask, .autoresizingMask]
+            tableView.addTableColumn(column)
+        }
        
-       tableView = NSTableView()
-       tableView.dataSource = self
-       tableView.delegate = self
-       
-       let colWidth = CGFloat(WINDOW_WIDTH / searchBridge.columnNames.count)
-       for i in 0..<searchBridge.columnNames.count {
-           let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("column\(i)"))
-           column.title = searchBridge.columnNames[i]
-           column.width = colWidth
-           tableView.addTableColumn(column)
-       }
-       
-       scrollView.documentView = tableView
-       
-       if let contentView = window.contentView {
-           NSLayoutConstraint.activate([
-               searchContainer.topAnchor.constraint(equalTo: contentView.topAnchor),
-               searchContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-               searchContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-               searchContainer.heightAnchor.constraint(equalToConstant: 50),
-               
-               scrollView.topAnchor.constraint(equalTo: searchContainer.bottomAnchor),
-               scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-               scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-               scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-           ])
-       }
+        scrollView.documentView = tableView
+
+        // Set up constraints
+        if let contentView = window.contentView {
+            NSLayoutConstraint.activate([
+                scrollView.topAnchor.constraint(equalTo: searchContainer.bottomAnchor),
+                scrollView.leadingAnchor.constraint(equalTo: tableContainer.leadingAnchor),
+                scrollView.trailingAnchor.constraint(equalTo: tableContainer.trailingAnchor),
+                scrollView.bottomAnchor.constraint(equalTo: tableContainer.bottomAnchor)
+            ])
+        }
+
+        // NotificationCenter.default.addObserver(
+            // forName: NSView.frameDidChangeNotification, 
+            // object: splitView, 
+            // queue: nil
+            // ) { [weak self] _ in
+            // guard let self = self else { return }
+            // let numCols = self.searchBridge.searchColumnNames.count
+            // let searchWidth = searchContainer.frame.width
+            // let columnWidth = (searchWidth / CGFloat(numCols)) - searchColPadding * 2
+           //  
+            // for (i, searchField) in self.searchFields.enumerated() {
+                // let xPosition = searchColPadding + (CGFloat(i) * (columnWidth + searchColPadding * 2))
+                // if let constraint = searchField.constraints.first(where: { $0.firstAttribute == .leading }) {
+                    // constraint.constant = xPosition
+                // }
+                // if let constraint = searchField.constraints.first(where: { $0.firstAttribute == .width }) {
+                    // constraint.constant = columnWidth
+                // }
+            // }
+        // }
+    
+        // Set initial split view proportions
+        // splitView.setPosition(window.frame.width * 0.7, ofDividerAt: 0)
        
        if let firstSearchField = searchFields.first {
            window.makeFirstResponder(firstSearchField)
@@ -455,12 +544,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
    }
+
+    // Add data source methods for details table
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        if tableView == self.tableView {
+            return searchResults.count
+        } else if tableView == detailsTable {
+            return selectedRowData.count
+        }
+        return 0
+    }
+
+    // Add row selection handler
+    @objc func tableViewClicked(_ sender: NSTableView) {
+        if (sender.selectedRow < 0) || (sender.selectedRow >= searchResults.count) {
+            return
+        }
+        let rowData = searchResults[sender.selectedRow]
+        selectedRowData.removeAll()
+        
+        // Map column names to values
+        for (index, name) in searchBridge.columnNames.enumerated() {
+            selectedRowData[name] = rowData[index]
+        }
+        
+        detailsTable.reloadData()
+    }
    
    @objc func searchFieldChanged(_ sender: NSSearchField) {
        let startTime = Date()
 
        let column = sender.tag
-       let query = sender.stringValue
+       let query  = sender.stringValue
 
        searchStrings[column] = query
        
@@ -491,15 +606,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        }
    }
    
-   func numberOfRows(in tableView: NSTableView) -> Int {
-       return searchResults.count
-   }
-   
    func tableView(_ tableView: NSTableView, objectValueFor tableColumn: NSTableColumn?, row: Int) -> Any? {
-       guard let columnIdentifier = tableColumn?.identifier else { return nil }
-       let rowData = searchResults[row]
-       let columnIndex = Int(columnIdentifier.rawValue.dropFirst(6))!
-       return rowData[columnIndex]
+       if tableView == self.tableView {
+
+            guard let columnIdentifier = tableColumn?.identifier else { return nil }
+            let rowData = searchResults[row]
+
+            // Drop 6 charachters column in columnX string.
+            let columnIndex = searchBridge.searchColMask[Int(columnIdentifier.rawValue.dropFirst(6))!]
+            return rowData[columnIndex]
+       } else if tableView == detailsTable {
+
+            let sortedKeys = selectedRowData.keys.sorted()
+            if tableColumn?.identifier.rawValue == "key" {
+                return sortedKeys[row]
+            } else {
+                return selectedRowData[sortedKeys[row]]
+            }
+       }
+       return nil
    }
 
    func applicationWillTerminate(_ notification: Notification) {
