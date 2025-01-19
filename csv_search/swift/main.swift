@@ -1,6 +1,11 @@
-import Cocoa
+// import Cocoa
+import AppKit 
 import Foundation
 import UniformTypeIdentifiers
+
+let WINDOW_WIDTH  = 1200
+let WINDOW_HEIGHT = 900 
+
 
 // Bridge to C functions
 private let searchLib = dlopen(nil, RTLD_NOW)
@@ -63,7 +68,6 @@ class SearchBridge {
     
     init() {
         if let initFn = init_allocators {
-            print("Initializing allocators")
             initFn()
         } else {
             print("Failed to get init_allocators function")
@@ -71,7 +75,6 @@ class SearchBridge {
 
         if let handlerFn = get_handler {
             queryHandler = handlerFn()
-            print("QueryHandler initialized: \(String(describing: queryHandler))")
         } else {
             print("Failed to get handler function")
         }
@@ -186,7 +189,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
    var searchFields: [NSSearchField] = []
    var searchResults: [[String]] = []
    var searchStrings: [String] = []
-   let searchBridge = SearchBridge()
+   var searchBridge: SearchBridge!
    var columnSelectionWindow: NSWindow!
    var checkboxes: [NSButton] = []
    var searchContainer: NSView!
@@ -194,8 +197,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
    var fileSelectionView: NSView!
    
    func applicationDidFinishLaunching(_ notification: Notification) {
+       print("Application Started.")
        window = NSWindow(
-           contentRect: NSRect(x: 0, y: 0, width: 1000, height: 600),
+           contentRect: NSRect(x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT),
            styleMask: [.titled, .closable, .miniaturizable, .resizable],
            backing: .buffered,
            defer: false
@@ -245,6 +249,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        NSApp.activate(ignoringOtherApps: true)
        window.makeKeyAndOrderFront(nil)
        window.level = .floating
+
+       searchBridge = SearchBridge()
    }
 
    @objc func chooseFile() {
@@ -335,20 +341,47 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
            return
        }
 
-       for i in 0..<searchBridge.searchColumnNames.count {
-           guard let cString = searchBridge.searchColumnNames[i].cString(using: .utf8) else {
-               print("Failed to convert column name to C string")
-               continue
-           }
-           add_search_col?(handler, cString)
-       }
-
        window.endSheet(columnSelectionWindow)
        columnSelectionWindow = nil
-       
-       index_file?(handler)
-       
-       setupSearchInterface()
+
+       for subview in fileSelectionView.subviews {
+           subview.isHidden = true
+       }
+
+       let label = NSTextField()
+       label.isEditable = false
+       label.isBordered = false
+       label.drawsBackground = false
+       label.stringValue = "Indexing file..."
+       label.font = .systemFont(ofSize: 16)
+       label.alignment = .center
+       label.translatesAutoresizingMaskIntoConstraints = false
+        
+       window.contentView?.addSubview(label)
+       NSLayoutConstraint.activate([
+           label.centerXAnchor.constraint(equalTo: window.contentView!.centerXAnchor),
+           label.centerYAnchor.constraint(equalTo: window.contentView!.centerYAnchor)
+       ])
+
+       // Do the indexing work asynchronously
+       DispatchQueue.global(qos: .userInitiated).async {
+           // Add columns and index in background
+           for i in 0..<self.searchBridge.searchColumnNames.count {
+               guard let cString = self.searchBridge.searchColumnNames[i].cString(using: .utf8) else {
+                   print("Failed to convert column name to C string")
+                   continue
+               }
+               add_search_col?(handler, cString)
+           }
+
+           index_file?(handler)
+           
+           // Set up UI on main thread
+           DispatchQueue.main.async {
+               label.removeFromSuperview()
+               self.setupSearchInterface()
+           }
+       }
    }
 
    private func setupSearchInterface() {
@@ -359,7 +392,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        searchContainer.translatesAutoresizingMaskIntoConstraints = false
        
        let searchColPadding = 20
-       let searchColWidth = CGFloat(1000 / searchBridge.searchColumnNames.count)
+       let searchColWidth = CGFloat(WINDOW_WIDTH / searchBridge.searchColumnNames.count)
        for i in 0..<searchBridge.searchColumnNames.count {
            let searchField = NSSearchField()
            searchField.placeholderString = "Search \(searchBridge.searchColumnNames[i])..."
@@ -391,7 +424,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        tableView.dataSource = self
        tableView.delegate = self
        
-       let colWidth = CGFloat(1000 / searchBridge.columnNames.count)
+       let colWidth = CGFloat(WINDOW_WIDTH / searchBridge.columnNames.count)
        for i in 0..<searchBridge.columnNames.count {
            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("column\(i)"))
            column.title = searchBridge.columnNames[i]
@@ -468,9 +501,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        let columnIndex = Int(columnIdentifier.rawValue.dropFirst(6))!
        return rowData[columnIndex]
    }
+
+   func applicationWillTerminate(_ notification: Notification) {
+       NSApp.setActivationPolicy(.prohibited)
+       NSApp.hide(nil)
+       DispatchQueue.main.async {
+           exit(0)
+       }
+   }
+
+   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+       NSApp.hide(nil)
+       return .terminateNow
+    }
    
    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-       return true
+       return true;
    }
 }
 
