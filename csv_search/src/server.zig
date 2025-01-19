@@ -1,6 +1,7 @@
 const std = @import("std");
 const parseRecordCSV = @import("csv.zig").parseRecordCSV;
 const zap = @import("zap");
+const csv = @import("csv.zig");
 
 const IndexManager    = @import("index_manager.zig").IndexManager;
 const MAX_NUM_RESULTS = @import("index_manager.zig").MAX_NUM_RESULTS;
@@ -255,7 +256,7 @@ pub const QueryHandler = struct {
         r.sendJson(self.output_buffer.items) catch return;
     }
 
-    pub fn get_search_columns(
+    pub fn getSearchColumns(
         self: *QueryHandler,
         r: zap.Request,
     ) void {
@@ -361,16 +362,13 @@ pub const QueryHandlerLocal = struct {
 
     pub fn init(
         index_manager: *IndexManager,
-        boost_factors: std.ArrayList(f32),
-        query_map: std.StringHashMap([]const u8),
-        search_cols: std.ArrayList([]u8),
         allocator: std.mem.Allocator,
     ) !QueryHandlerLocal {
         return QueryHandlerLocal{
             .index_manager = index_manager,
-            .boost_factors = boost_factors,
-            .query_map = query_map,
-            .search_cols = search_cols,
+            .boost_factors = std.ArrayList(f32).init(allocator),
+            .query_map = std.StringHashMap([]const u8).init(allocator),
+            .search_cols = undefined,
             .allocator = allocator,
         };
     }
@@ -380,6 +378,15 @@ pub const QueryHandlerLocal = struct {
         self.boost_factors.deinit();
         self.query_map.deinit();
         self.search_cols.deinit();
+    }
+
+    export fn readHeader(
+        self: *QueryHandlerLocal,
+        filename: [*:0]const u8,
+    ) void {
+        self.index_manager.readHeader(std.mem.span(filename)) catch {
+            @panic("Failed to read CSV header.\n");
+        };
     }
 
     inline fn parseQueryString(
@@ -447,41 +454,48 @@ pub export fn deinit_allocators() void {
     global_arena.deinit();
 }
 
-pub export fn get_query_handler_local() *anyopaque {
-    // const filename: []const u8 = "../tests/mb.csv";
-    const filename: []const u8 = "../tests/mb_small.csv";
-
+pub export fn getQueryHandlerLocal() *anyopaque {
     var index_manager = global_arena.allocator().create(IndexManager) catch @panic("BAD\n");
-    index_manager.* = IndexManager.init(filename) catch @panic("BAD\n");
+    index_manager.* = IndexManager.init() catch @panic("BAD\n");
 
-    var arena = index_manager.string_arena.allocator();
-
-    var search_cols = std.ArrayList([]u8).init(arena);
-    search_cols.append(arena.dupe(u8, "TITLE") catch @panic("BAD\n")) catch @panic("BAD\n");
-    search_cols.append(arena.dupe(u8, "ARTIST") catch @panic("BAD\n")) catch @panic("BAD\n");
-    search_cols.append(arena.dupe(u8, "ALBUM") catch @panic("BAD\n")) catch @panic("BAD\n");
-
-    index_manager.readHeader(&search_cols) catch @panic("BAD\n");
-    index_manager.readFile() catch @panic("BAD\n");
-
-    var query_map = std.StringHashMap([]const u8).init(arena);
-    var boost_factors = std.ArrayList(f32).init(arena);
-
-    for (search_cols.items) |col| {
-        query_map.put(col, "") catch @panic("BAD\n");
-        boost_factors.append(1.0) catch @panic("BAD\n");
-    }
+    const arena = index_manager.string_arena.allocator();
 
     const query_handler = global_arena.allocator().create(QueryHandlerLocal) catch @panic("BAD\n");
     query_handler.* = QueryHandlerLocal.init(
         index_manager,
-        boost_factors,
-        query_map,
-        search_cols,
         arena,
     ) catch @panic("BAD\n");
 
     return @ptrCast(query_handler);
+}
+
+export fn indexFile(query_handler: *QueryHandlerLocal) void {
+    std.debug.assert(query_handler.index_manager.search_cols.count() > 0);
+
+    query_handler.index_manager.readFile() catch {
+        @panic("Error indexing file.\n");
+    };
+}
+
+export fn addSearchCol(
+    query_handler: *QueryHandlerLocal,
+    col_name: [*:0]const u8,
+) void {
+    const upper_col = query_handler.index_manager.string_arena.allocator().dupe(
+        u8,
+        std.mem.span(col_name)
+    ) catch @panic("Failed to copy input string.\n");
+    csv.stringToUpper(upper_col.ptr, upper_col.len);
+
+    query_handler.index_manager.addSearchCol(upper_col) catch {
+        @panic("Failed to add search col.\n");
+    };
+    query_handler.query_map.put(upper_col, "") catch {
+        @panic("Failed to add search col to query_map.\n");
+    };
+    query_handler.boost_factors.append(1.0) catch {
+        @panic("Failed to add boost factor.\n");
+    };
 }
 
 export fn search(
@@ -514,7 +528,7 @@ export fn search(
     }
 }
 
-pub export fn get_column_names(
+pub export fn getColumnNames(
     query_handler: *const QueryHandlerLocal, 
     column_names: [*][*:0]u8,
     num_columns: *u32,
@@ -526,7 +540,7 @@ pub export fn get_column_names(
     }
 }
 
-pub export fn get_search_columns(
+pub export fn getSearchColumns(
     query_handler: *const QueryHandlerLocal, 
     col_mask: [*]u8,
     ) void {

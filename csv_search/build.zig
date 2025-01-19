@@ -23,6 +23,7 @@ pub fn build(b: *std.Build) void {
         .name = "search_app",
         .root_source_file = b.path("src/server.zig"),
         .target = target,
+        // .optimize = .ReleaseFast,
         .optimize = .ReleaseSafe,
         // .optimize = .Debug,
     });

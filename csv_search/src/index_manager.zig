@@ -57,42 +57,27 @@ pub const IndexManager = struct {
     // thread_pool: std.Thread.Pool,
     header_bytes: usize,
 
-    pub fn init(
-        input_filename: []const u8,
-        // search_cols: *std.ArrayList([]u8),
-        ) !IndexManager {
-        var gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){};
-        var string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-
-        const file_hash = blk: {
-            var hash: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
-            std.crypto.hash.sha2.Sha256.hash(input_filename, &hash, .{});
-            break :blk hash;
-        };
-        const dir_name = try std.fmt.allocPrint(
-            gpa.allocator(),
-            ".{x:0>32}", .{std.fmt.fmtSliceHexLower(file_hash[0..16])}
-            );
-
-        std.fs.cwd().makeDir(dir_name) catch {
-            try std.fs.cwd().deleteTree(dir_name);
-            try std.fs.cwd().makeDir(dir_name);
-        };
-
-        return IndexManager{
+    pub fn init() !IndexManager {
+        var manager = IndexManager{
             .index_partitions = undefined,
-            .input_filename = input_filename,
-            .gpa = gpa,
-            .string_arena = string_arena,
-            .search_cols = std.StringHashMap(Column).init(string_arena.allocator()),
-            .cols = std.ArrayList([]const u8).init(string_arena.allocator()),
-            .tmp_dir = dir_name,
+            .input_filename = undefined,
+            // .gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){},
+            .gpa = std.heap.GeneralPurposeAllocator(.{}){},
+            .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+            .search_cols = undefined,
+            .cols = undefined,
+            .tmp_dir = undefined,
             .file_handles = undefined,
             .result_positions = undefined,
             .result_strings = undefined,
             .results_arrays = undefined,
             .header_bytes = undefined,
         };
+        manager.search_cols = std.StringHashMap(Column).init(manager.gpa.allocator());
+        try manager.search_cols.ensureTotalCapacity(50);
+        manager.cols = try std.ArrayList([]const u8).initCapacity(manager.gpa.allocator(), 128);
+
+        return manager;
     }
     
     pub fn deinit(self: *IndexManager) !void {
@@ -120,13 +105,32 @@ pub const IndexManager = struct {
         _ = self.gpa.deinit();
     }
 
-    pub fn readHeader(self: *IndexManager, search_cols: *std.ArrayList([]u8)) !void {
-        self.search_cols = try readCSVHeader(
-            self.input_filename, 
-            search_cols, 
-            &self.cols,
+
+    pub fn readHeader(
+        self: *IndexManager, 
+        filename: []const u8,
+        ) !void {
+        self.input_filename = try self.string_arena.allocator().dupe(u8, filename);
+
+        const file_hash = blk: {
+            var hash: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+            std.crypto.hash.sha2.Sha256.hash(self.input_filename, &hash, .{});
+            break :blk hash;
+        };
+        self.tmp_dir = try std.fmt.allocPrint(
             self.gpa.allocator(),
-            self.string_arena.allocator(),
+            ".{x:0>32}", .{std.fmt.fmtSliceHexLower(file_hash[0..16])}
+            );
+
+        std.fs.cwd().makeDir(self.tmp_dir) catch {
+            try std.fs.cwd().deleteTree(self.tmp_dir);
+            try std.fs.cwd().makeDir(self.tmp_dir);
+        };
+
+        try readCSVHeader(
+            self.input_filename, 
+            &self.cols,
+            &self.string_arena,
             &self.header_bytes,
             );
         std.debug.assert(self.cols.items.len > 0);
@@ -136,6 +140,30 @@ pub const IndexManager = struct {
             self.result_strings[idx] = try std.ArrayList(u8).initCapacity(self.gpa.allocator(), 4096);
             try self.result_strings[idx].resize(4096);
         }
+    }
+
+    pub fn addSearchCol(
+        self: *IndexManager,
+        col_name: []const u8,
+    ) !void {
+        const col_name_upper = try self.string_arena.allocator().dupe(u8, col_name);
+        csv.stringToUpper(
+            col_name_upper.ptr,
+            col_name_upper.len,
+        );
+
+        for (0.., self.cols.items) |idx, col| {
+            if (std.mem.eql(u8, col, col_name_upper)) {
+                try self.search_cols.put(
+                    col_name_upper,
+                    Column{
+                        .csv_idx = idx,
+                        .II_idx = self.search_cols.count(),
+                    });
+                return;
+            }
+        }
+        return error.ColumnNotFound;
     }
 
     pub fn printDebugInfo(self: *const IndexManager) !void {
@@ -180,14 +208,11 @@ pub const IndexManager = struct {
 
     fn readCSVHeader(
         input_filename: []const u8,
-        search_cols: *std.ArrayList([]u8),
         cols: *std.ArrayList([]const u8),
-        allocator: std.mem.Allocator,
-        string_arena: std.mem.Allocator,
+        string_arena: *std.heap.ArenaAllocator,
         num_bytes: *usize,
-        ) !std.StringHashMap(Column) {
+        ) !void {
 
-        var col_map = std.StringHashMap(Column).init(allocator);
         var col_idx: usize = 0;
 
         const file = try std.fs.cwd().openFile(input_filename, .{});
@@ -208,41 +233,25 @@ pub const IndexManager = struct {
         var term: [MAX_TERM_LENGTH]u8 = undefined;
         var cntr: usize = 0;
 
-        for (search_cols.items) |*col| {
-            _ = std.ascii.upperString(col.*, col.*);
-        }
-
-
         var byte_idx: usize = 0;
         line: while (true) {
             const is_quoted = f_data[byte_idx] == '"';
             byte_idx += @intFromBool(is_quoted);
 
             while (true) {
+                std.debug.assert(cntr < MAX_TERM_LENGTH);
+
                 if (is_quoted) {
 
                     if (f_data[byte_idx] == '"') {
+                        std.debug.assert(cntr < MAX_TERM_LENGTH);
                         byte_idx += 2;
                         if (f_data[byte_idx - 1] != '"') {
                             // ADD TERM
                             try cols.append(
-                                try string_arena.dupe(u8, term[0..cntr])
+                                try string_arena.allocator().dupe(u8, term[0..cntr])
                                 );
 
-                            for (0..search_cols.items.len) |idx| {
-                                if (std.mem.eql(u8, term[0..cntr], search_cols.items[idx])) {
-                                    std.debug.print("Found search col: {s}\n", .{search_cols.items[idx]});
-                                    const copy_term = try string_arena.dupe(u8, term[0..cntr]);
-                                    try col_map.put(
-                                        copy_term, 
-                                        Column{
-                                            .csv_idx = col_idx,
-                                            .II_idx = col_map.count(),
-                                            },
-                                        );
-                                    break;
-                                }
-                            }
                             cntr = 0;
                             byte_idx += 1;
                             col_idx += 1;
@@ -260,27 +269,14 @@ pub const IndexManager = struct {
                     switch (f_data[byte_idx]) {
                         ',', '\n' => {
                             // ADD TERM.
+                            std.debug.assert(cntr > 0);
                             try cols.append(
-                                try string_arena.dupe(u8, term[0..cntr])
+                                try string_arena.allocator().dupe(u8, term[0..cntr])
                                 );
 
-                            for (0..search_cols.items.len) |idx| {
-                                if (std.mem.eql(u8, term[0..cntr], search_cols.items[idx])) {
-                                    std.debug.print("Found search col: {s}\n", .{search_cols.items[idx]});
-                                    const copy_term = try string_arena.dupe(u8, term[0..cntr]);
-                                    try col_map.put(
-                                        copy_term, 
-                                        Column{
-                                            .csv_idx = col_idx,
-                                            .II_idx = col_map.count(),
-                                            },
-                                        );
-                                    break;
-                                }
-                            }
                             if (f_data[byte_idx] == '\n') {
                                 num_bytes.* = byte_idx + 1;
-                                return col_map;
+                                return;
                             }
 
                             cntr = 0;
