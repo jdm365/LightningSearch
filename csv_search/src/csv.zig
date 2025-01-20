@@ -131,7 +131,9 @@ pub inline fn stringToUpper(str: [*]u8, len: usize) void {
         const greater_than_a = input.* >= ascii_a;
         const less_equal_z   = input.* <= ascii_z;
         const to_sub = (@intFromBool(greater_than_a) * @intFromBool(less_equal_z)) * case_diff;
-        input.* -= to_sub;
+        // Doing this without underflow wrapping causes issues on ARM
+        // even though underflows never happen.
+        input.* -%= to_sub;
 
         index += VEC_SIZE;
     }

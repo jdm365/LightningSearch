@@ -531,7 +531,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         scrollView.documentView = tableView
 
         // Set up constraints
-        if let contentView = window.contentView {
+        if let _ = window.contentView {
             NSLayoutConstraint.activate([
                 scrollView.topAnchor.constraint(equalTo: searchContainer.bottomAnchor),
                 scrollView.leadingAnchor.constraint(equalTo: tableContainer.leadingAnchor),
