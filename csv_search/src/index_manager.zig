@@ -42,6 +42,191 @@ const score_f32 = struct {
 };
 
 
+// const DoubleBufferedReader = struct {
+    // file: std.fs.File,
+    // buffers: []u8,
+    // overflow_buffer: []u8,
+    // single_buffer_size: usize,
+    // current_buffer: usize,
+   //  
+    // pub fn init(allocator: std.mem.Allocator, file: std.fs.File) !DoubleBufferedReader {
+        // const buffer_size = 1 << 22;
+        // const overflow_size = 16384;
+// 
+        // // Make buffers larger to accommodate overlap
+        // const buffers = try allocator.alloc(u8, 2 * buffer_size);
+        // const overflow_buffer = try allocator.alloc(u8, 2 * overflow_size);
+// 
+        // _ = try file.read(buffers);
+        // @memcpy(
+            // overflow_buffer[0..overflow_size], 
+            // buffers[(2 * buffer_size) - overflow_size..],
+            // );
+       //  
+        // return DoubleBufferedReader{
+            // .file = file,
+            // .buffers = buffers,
+            // .overflow_buffer = overflow_buffer,
+            // .single_buffer_size = buffer_size,
+            // .current_buffer = 0,
+        // };
+    // }
+// 
+    // pub fn deinit(self: *DoubleBufferedReader, allocator: std.mem.Allocator) void {
+        // allocator.free(self.buffers);
+        // allocator.free(self.overflow_buffer);
+    // }
+// 
+    // pub inline fn getBuffer(
+        // self: *DoubleBufferedReader, 
+        // file_pos: usize,
+        // ) ![]u8 {
+        // const index = file_pos % self.buffers.len;
+// 
+        // if (index >= self.single_buffer_size) {
+            // if (self.current_buffer == 0) {
+                // _ = try self.file.read(self.buffers[0..self.single_buffer_size]);
+                // self.current_buffer = 1;
+// 
+                // const overflow_size = @divFloor(self.overflow_buffer.len, 2);
+                // @memcpy(
+                    // self.overflow_buffer[overflow_size..], 
+                    // self.buffers[0..overflow_size],
+                    // );
+            // }
+        // } else {
+            // if (self.current_buffer == 1) {
+                // _ = try self.file.read(self.buffers[self.single_buffer_size..]);
+                // self.current_buffer = 0;
+// 
+                // const overflow_size = @divFloor(self.overflow_buffer.len, 2);
+                // @memcpy(
+                    // self.overflow_buffer[0..overflow_size], 
+                    // self.buffers[self.buffers.len - overflow_size..],
+                    // );
+            // }
+        // }
+        // const bytes_from_end = self.buffers.len - index;
+        // if (bytes_from_end <= 16384) {
+            // return self.overflow_buffer[16384 - bytes_from_end..];
+        // }
+        // return self.buffers[index..];
+    // }
+// };
+
+const DoubleBufferedReader = struct {
+    file: std.fs.File,
+    buffers: []u8,
+    overflow_buffer: []u8,
+    single_buffer_size: usize,
+    current_buffer: usize,
+    thread: ?std.Thread = null,
+    
+    pub fn init(allocator: std.mem.Allocator, file: std.fs.File) !DoubleBufferedReader {
+        const buffer_size = 1 << 22;
+        const overflow_size = 16384;
+        const buffers = try allocator.alloc(u8, 2 * buffer_size);
+        const overflow_buffer = try allocator.alloc(u8, 2 * overflow_size);
+        _ = try file.read(buffers);
+        @memcpy(
+            overflow_buffer[0..overflow_size], 
+            buffers[(2 * buffer_size) - overflow_size..],
+        );
+        
+        return DoubleBufferedReader{
+            .file = file,
+            .buffers = buffers,
+            .overflow_buffer = overflow_buffer,
+            .single_buffer_size = buffer_size,
+            .current_buffer = 0,
+        };
+    }
+
+    pub fn deinit(self: *DoubleBufferedReader, allocator: std.mem.Allocator) void {
+        if (self.thread) |thread| {
+            thread.join();
+        }
+        allocator.free(self.buffers);
+        allocator.free(self.overflow_buffer);
+    }
+
+    fn readBufferThread(
+        reader: *DoubleBufferedReader,
+        buffer: []u8,
+        overflow_dest: []u8,
+        overflow_size: usize,
+        current_buffer: usize,
+    ) void {
+        _ = reader.file.read(buffer) catch return;
+        if (current_buffer == 0) {
+            @memcpy(
+                overflow_dest, 
+                buffer[buffer.len - overflow_size..],
+                );
+        } else {
+            @memcpy(overflow_dest, buffer[0..overflow_size]);
+        }
+    }
+
+    pub fn getBuffer(
+        self: *DoubleBufferedReader, 
+        file_pos: usize,
+    ) ![]u8 {
+        const index = file_pos % self.buffers.len;
+        
+        if (index >= self.single_buffer_size) {
+            if (self.current_buffer == 0) {
+                self.current_buffer = 1;
+                if (self.thread) |thread| {
+                    thread.join();
+                    self.thread = null;
+                }
+                const overflow_size = @divFloor(self.overflow_buffer.len, 2);
+                
+                self.thread = try std.Thread.spawn(
+                    .{},
+                    readBufferThread,
+                    .{
+                        self,
+                        self.buffers[0..self.single_buffer_size],
+                        self.overflow_buffer[overflow_size..],
+                        overflow_size,
+                        self.current_buffer,
+                    },
+                );
+            }
+        } else {
+            if (self.current_buffer == 1) {
+                self.current_buffer = 0;
+                if (self.thread) |thread| {
+                    thread.join();
+                    self.thread = null;
+                }
+                const overflow_size = @divFloor(self.overflow_buffer.len, 2);
+                
+                self.thread = try std.Thread.spawn(
+                    .{},
+                    readBufferThread,
+                    .{
+                        self,
+                        self.buffers[self.single_buffer_size..],
+                        self.overflow_buffer[0..overflow_size],
+                        overflow_size,
+                        self.current_buffer,
+                    },
+                );
+            }
+        }
+
+        const bytes_from_end = self.buffers.len - index;
+        if (bytes_from_end <= 16384) {
+            return self.overflow_buffer[16384 - bytes_from_end..];
+        }
+        return self.buffers[index..];
+    }
+};
+
+
 pub const IndexManager = struct {
     index_partitions: []BM25Partition,
     input_filename: []const u8,
@@ -417,15 +602,15 @@ pub const IndexManager = struct {
 
         const file_size = try file.getEndPos();
 
-        const f_data = try std.posix.mmap(
-            null,
-            file_size,
-            std.posix.PROT.READ,
-            .{ .TYPE = .PRIVATE },
-            file.handle,
-            0
-        );
-        defer std.posix.munmap(f_data);
+        // const f_data = try std.posix.mmap(
+            // null,
+            // file_size,
+            // std.posix.PROT.READ,
+            // .{ .TYPE = .PRIVATE },
+            // file.handle,
+            // 0
+        // );
+        // defer std.posix.munmap(f_data);
 
         // const f_data = try self.gpa.allocator().alignedAlloc(u8, @intCast(std.mem.page_size), file_size);
         // defer self.gpa.allocator().free(f_data);
@@ -437,10 +622,12 @@ pub const IndexManager = struct {
         // std.debug.print("Read file in {d}ms\n", .{read_end - read_start});
         // std.debug.print("{d}MB/s\n", .{@as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(read_end - read_start))))});
 
-        // const read_end = std.time.milliTimestamp();
-        // std.debug.print("Read file in {d}ms\n", .{read_end - read_start});
-        // std.debug.print("{d}MB/s\n", .{@as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(read_end - read_start))))});
-
+        var buffered_reader = try DoubleBufferedReader.init(
+        // var buffered_reader = try BufferReader.init(
+            self.gpa.allocator(),
+            file,
+        );
+        defer buffered_reader.deinit(self.gpa.allocator());
 
         var line_offsets = std.ArrayList(usize).init(self.gpa.allocator());
         defer line_offsets.deinit();
@@ -452,7 +639,15 @@ pub const IndexManager = struct {
 
         while (file_pos < file_size - 1) {
             try line_offsets.append(file_pos);
-            try csv.iterLineCSV(f_data, &file_pos);
+            const buffer = try buffered_reader.getBuffer(file_pos);
+
+            var index: usize = 0;
+            try csv.iterLineCSV(
+                buffer,
+                // &file_pos,
+                &index,
+                );
+            file_pos += index;
         }
         try line_offsets.append(file_size);
 
