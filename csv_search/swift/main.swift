@@ -51,6 +51,10 @@ private let add_search_col = dlsym(searchLib, "addSearchCol")
         UnsafePointer<CChar>
     ) -> Void).self) }
 
+private let scan_file = dlsym(searchLib, "scanFile")
+    .map { unsafeBitCast($0, to: (@convention(c) (
+        UnsafeRawPointer
+    ) -> Void).self) }
 private let index_file = dlsym(searchLib, "indexFile")
     .map { unsafeBitCast($0, to: (@convention(c) (
         UnsafeRawPointer
@@ -260,9 +264,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
            print("QueryHandler is nil")
            return
        }
-       read_header!(handler, cPath)
-       searchBridge.getColumnNames()
-       showColumnSelection()
+        read_header!(handler, cPath)
+        searchBridge.getColumnNames()
+
+        let group = DispatchGroup()
+        
+        // Launch scan operation
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            scan_file?(handler)
+            group.leave()
+        }
+        
+        // Launch UI update
+        group.enter()
+        DispatchQueue.main.async {
+            self.showColumnSelection()
+            group.leave()
+        }
+        
+        // Wait for both to complete
+        group.notify(queue: .main) {
+            // Both operations are now complete
+            // Put any completion handling code here
+        }
    }
 
    private func showColumnSelection() {
@@ -604,6 +629,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
                print("- Total Time: \(totalTime * 1000) ms")
            }
        }
+        if searchResults.count == 0 {
+            return
+        }
+
+        // Click first result.
+        tableView.selectRowIndexes(
+            IndexSet(integer: 0), 
+            byExtendingSelection: false
+            )
+
+        // Call the click handler manually
+        tableViewClicked(tableView)
    }
    
    func tableView(_ tableView: NSTableView, objectValueFor tableColumn: NSTableColumn?, row: Int) -> Any? {

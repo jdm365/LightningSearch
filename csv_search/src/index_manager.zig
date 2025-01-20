@@ -411,7 +411,7 @@ pub const IndexManager = struct {
     }
 
 
-    pub fn readFile(self: *IndexManager) !void {
+    pub fn scanFile(self: *IndexManager) !void {
         const file = try std.fs.cwd().openFile(self.input_filename, .{});
         defer file.close();
 
@@ -473,18 +473,11 @@ pub const IndexManager = struct {
             self.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa.allocator(), MAX_NUM_RESULTS);
         }
 
-        std.debug.print("Writing {d} partitions\n", .{num_partitions});
-
-        std.debug.print("Read {d} lines in {d}ms\n", .{num_lines, execution_time_ms});
-        std.debug.print("{d}MB/s\n", .{mb_s});
-
         const chunk_size: usize = num_lines / num_partitions;
         const final_chunk_size: usize = chunk_size + (num_lines % num_partitions);
 
         var partition_boundaries = std.ArrayList(usize).init(self.gpa.allocator());
         defer partition_boundaries.deinit();
-
-        const num_search_cols = self.search_cols.count();
 
         for (0..num_partitions) |i| {
             try partition_boundaries.append(line_offsets.items[i * chunk_size]);
@@ -502,7 +495,7 @@ pub const IndexManager = struct {
 
             self.index_partitions[i] = try BM25Partition.init(
                 self.gpa.allocator(), 
-                num_search_cols, 
+                1, 
                 partition_line_offsets
                 );
         }
@@ -510,14 +503,17 @@ pub const IndexManager = struct {
 
         std.debug.assert(partition_boundaries.items.len == num_partitions + 1);
 
-        const search_col_idxs = try self.gpa.allocator().alloc(usize, num_search_cols);
-        defer self.gpa.allocator().free(search_col_idxs);
-        
-        var map_it = self.search_cols.iterator();
-        var idx: usize = 0;
-        while (map_it.next()) |*item| {
-            search_col_idxs[idx] = item.value_ptr.csv_idx;
-            idx += 1;
+        std.debug.print("Read {d} lines in {d}ms\n", .{num_lines, execution_time_ms});
+        std.debug.print("{d}MB/s\n", .{mb_s});
+    }
+
+    pub fn indexFile(self: *IndexManager) !void {
+        const num_partitions = self.index_partitions.len;
+        std.debug.print("Indexing {d} partitions\n", .{num_partitions});
+
+        var num_lines: usize = 0;
+        for (self.index_partitions) |*p| {
+            num_lines += p.line_offsets.len - 1;
         }
 
         const time_start = std.time.milliTimestamp();
@@ -528,16 +524,32 @@ pub const IndexManager = struct {
         var total_docs_read = AtomicCounter.init(0);
         var progress_bar = progress.ProgressBar.init(num_lines);
 
-        for (0..num_partitions) |partition_idx| {
+        const num_search_cols = self.search_cols.count();
+        const search_col_idxs = try self.gpa.allocator().alloc(
+            usize, 
+            num_search_cols
+            );
+        defer self.gpa.allocator().free(search_col_idxs);
+        
+        var map_it = self.search_cols.iterator();
+        var idx: usize = 0;
+        while (map_it.next()) |*item| {
+            search_col_idxs[idx] = item.value_ptr.csv_idx;
+            idx += 1;
+        }
 
+        for (0..num_partitions) |partition_idx| {
+            try self.index_partitions[partition_idx].resizeNumSearchCols(
+                num_search_cols
+                );
             threads[partition_idx] = try std.Thread.spawn(
                 .{},
                 readPartition,
                 .{
                     self,
                     partition_idx,
-                    chunk_size,
-                    final_chunk_size,
+                    self.index_partitions[0].line_offsets.len - 1,
+                    self.index_partitions[num_partitions - 1].line_offsets.len - 1,
                     num_partitions,
                     num_search_cols,
                     search_col_idxs,
@@ -552,6 +564,7 @@ pub const IndexManager = struct {
         }
 
         const _total_docs_read = total_docs_read.load(.acquire);
+        std.debug.print("Processed {d} documents\n", .{_total_docs_read});
         std.debug.assert(_total_docs_read == num_lines);
         progress_bar.update(_total_docs_read);
 

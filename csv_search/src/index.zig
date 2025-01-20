@@ -160,7 +160,11 @@ pub const BM25Partition = struct {
         };
 
         for (0..num_search_cols) |idx| {
-            partition.II[idx] = try InvertedIndex.init(allocator, line_offsets.len - 1);
+            partition.II[idx] = try InvertedIndex.init(
+                allocator, 
+                line_offsets.len - 1,
+                // line_offsets.len,
+                );
         }
 
         return partition;
@@ -174,6 +178,20 @@ pub const BM25Partition = struct {
         self.allocator.free(self.II);
         self.string_arena.deinit();
         self.doc_score_map.deinit();
+    }
+
+    pub fn resizeNumSearchCols(self: *BM25Partition, num_search_cols: usize) !void {
+        const current_length = self.II.len;
+        if (num_search_cols <= current_length) return;
+
+        self.II = try self.allocator.realloc(self.II, num_search_cols);
+        for (current_length..num_search_cols) |idx| {
+            self.II[idx] = try InvertedIndex.init(
+                self.allocator, 
+                self.line_offsets.len - 1,
+                // self.line_offsets.len,
+                );
+        }
     }
 
     inline fn addTerm(

@@ -469,10 +469,18 @@ pub export fn getQueryHandlerLocal() *anyopaque {
     return @ptrCast(query_handler);
 }
 
+export fn scanFile(query_handler: *QueryHandlerLocal) void {
+    std.debug.assert(query_handler.index_manager.cols.items.len > 0);
+
+    query_handler.index_manager.scanFile() catch {
+        @panic("Error scanning file.\n");
+    };
+}
+
 export fn indexFile(query_handler: *QueryHandlerLocal) void {
     std.debug.assert(query_handler.index_manager.search_cols.count() > 0);
 
-    query_handler.index_manager.readFile() catch {
+    query_handler.index_manager.indexFile() catch {
         @panic("Error indexing file.\n");
     };
 }
