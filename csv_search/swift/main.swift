@@ -182,6 +182,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
    var detailsView: NSScrollView!
    var detailsTable: NSTableView!
    var selectedRowData: [String: String] = [:]
+
+   private let searchQueue = DispatchQueue(label: "com.search.queue")
    
    func applicationDidFinishLaunching(_ notification: Notification) {
        print("Application Started.")
@@ -610,25 +612,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        }
        let queryString = queryParts.joined(separator: "&")
        
-       DispatchQueue.global(qos: .userInitiated).async {
-           let searchStartTime = Date()
-           let results = self.searchBridge.performSearch(query: queryString)
-           let searchTime = -searchStartTime.timeIntervalSinceNow
-           
-           DispatchQueue.main.async {
-               let reloadStartTime = Date()
-               self.searchResults = results
-               self.tableView.reloadData()
-               let reloadTime = -reloadStartTime.timeIntervalSinceNow
-               
-               let totalTime = -startTime.timeIntervalSinceNow
+       // DispatchQueue.global(qos: .userInitiated).async {
+       searchQueue.async { [weak self] in
+            guard let self = self else { return }
 
-               print("Search Performance Breakdown:")
-               print("- Backend Search Time: \(searchTime * 1000) ms")
-               print("- Table Reload Time: \(reloadTime * 1000) ms")
-               print("- Total Time: \(totalTime * 1000) ms")
-           }
-       }
+            let searchStartTime = Date()
+            let results = self.searchBridge.performSearch(query: queryString)
+            let searchTime = -searchStartTime.timeIntervalSinceNow
+           
+            DispatchQueue.main.async {
+                let reloadStartTime = Date()
+                self.searchResults = results
+                self.tableView.reloadData()
+                let reloadTime = -reloadStartTime.timeIntervalSinceNow
+               
+                let totalTime = -startTime.timeIntervalSinceNow
+
+                print("Search Performance Breakdown:")
+                print("- Backend Search Time: \(searchTime * 1000) ms")
+                print("- Table Reload Time: \(reloadTime * 1000) ms")
+                print("- Total Time: \(totalTime * 1000) ms")
+            }
+        }
         if searchResults.count == 0 {
             return
         }
