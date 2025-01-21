@@ -11,7 +11,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const lib = b.addStaticLibrary(.{
-        .name = "csv_search",
+        .name = "search_anything",
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(shared_lib);
 
     const exe = b.addExecutable(.{
-        .name = "csv_search",
+        .name = "search_anything",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
