@@ -385,11 +385,7 @@ test "sorted_multi_arr" {
     defer arr.deinit();
 
     for (0..10) |idx| {
-        const item = ScorePair{ 
-            .doc_id = @intCast(idx + 1), 
-            .score = 1.0 - 0.1 * @as(f32, @floatFromInt(idx)) 
-        };
-        arr.insert(item);
+        arr.insert(@intCast(idx + 1), 1.0 - 0.1 * @as(f32, @floatFromInt(idx)));
         arr.check();
     }
 
@@ -401,8 +397,7 @@ test "sorted_multi_arr" {
 
     // std.debug.print("MIN SCORE: {d}\n", .{arr.getMinScore()});
 
-    const item = ScorePair{ .doc_id = 42069, .score = 10000.0 };
-    arr.insert(item);
+    arr.insert(42069, 10000.0);
     try std.testing.expectEqual(10, arr.count);
     try std.testing.expectEqual(42069, arr.items[0]);
     try std.testing.expectEqual(10000.0, arr.scores[0]);
@@ -446,11 +441,7 @@ test "bench" {
     // Generate M random integers and insert them into the array.
     start_time = std.time.milliTimestamp();
     for (0..M) |idx| {
-        const item = ScorePair{ 
-            .doc_id = @intCast(idx + 1), 
-            .score = rand_floats[idx],
-        };
-        arr2.insert(item);
+        arr2.insert(@intCast(idx + 1), rand_floats[idx]);
     }
     end_time = std.time.milliTimestamp();
     elapsed_time = end_time - start_time;

@@ -558,6 +558,22 @@ pub export fn getSearchColumns(
     }
 }
 
+pub export fn getIndexingProgress(
+    query_handler: *const QueryHandlerLocal, 
+    ) u64 {
+    return @intCast(query_handler.index_manager.last_progress);
+}
+
+pub export fn getNumDocs(
+    query_handler: *const QueryHandlerLocal, 
+    ) u64 {
+    var num_docs: usize = 0;
+    for (query_handler.index_manager.index_partitions) |*p| {
+        num_docs += p.line_offsets.len - 1;
+    }
+    return @intCast(num_docs);
+}
+
 
 test "csv_parse" {
     const csv_line = "26859,13859,1,1,WoM27813813,006,Under My Skin (You Go To My Head (Set One)),02:44,David McAlmont,You_Go_To_My_Head_(Set_One),2005,,";

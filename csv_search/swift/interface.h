@@ -3,6 +3,8 @@
 
 typedef struct QueryHandlerLocal QueryHandlerLocal;
 
+void init_allocators();
+void deinit_allocators();
 QueryHandlerLocal* getQueryHandlerLocal();
 void readHeader(
 		QueryHandlerLocal* query_handler,
@@ -31,5 +33,9 @@ void getSearchColumns(
 		QueryHandlerLocal const* query_handler, 
 		uint8_t* col_mask
 		);
-void init_allocators();
-void deinit_allocators();
+uint64_t getNumDocs(
+		QueryHandlerLocal const* query_handler
+		);
+uint64_t getIndexingProgress(
+		QueryHandlerLocal const* query_handler
+		);

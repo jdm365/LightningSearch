@@ -59,6 +59,14 @@ private let index_file = dlsym(searchLib, "indexFile")
     .map { unsafeBitCast($0, to: (@convention(c) (
         UnsafeRawPointer
     ) -> Void).self) }
+private let get_indexing_progress = dlsym(searchLib, "getIndexingProgress")
+    .map { unsafeBitCast($0, to: (@convention(c) (
+        UnsafeRawPointer
+    ) -> UInt64).self) }
+private let get_num_docs = dlsym(searchLib, "getNumDocs")
+    .map { unsafeBitCast($0, to: (@convention(c) (
+        UnsafeRawPointer
+    ) -> UInt64).self) }
 
 class SearchBridge {
     var queryHandler: UnsafeMutableRawPointer?
@@ -361,20 +369,84 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
            subview.isHidden = true
        }
 
-       let label = NSTextField()
-       label.isEditable = false
-       label.isBordered = false
-       label.drawsBackground = false
-       label.stringValue = "Indexing file..."
-       label.font = .systemFont(ofSize: 16)
-       label.alignment = .center
-       label.translatesAutoresizingMaskIntoConstraints = false
+       // let label = NSTextField()
+       // label.isEditable = false
+       // label.isBordered = false
+       // label.drawsBackground = false
+       // label.stringValue = "Indexing file..."
+       // label.font = .systemFont(ofSize: 16)
+       // label.alignment = .center
+       // label.translatesAutoresizingMaskIntoConstraints = false
+       //  
+       // window.contentView?.addSubview(label)
+       // NSLayoutConstraint.activate([
+           // label.centerXAnchor.constraint(equalTo: window.contentView!.centerXAnchor),
+           // label.centerYAnchor.constraint(equalTo: window.contentView!.centerYAnchor)
+       // ])
+
+        let totalDocs = Double(get_num_docs!(handler) / 1000)
+
+        // Create progress bar
+        let progressBar = NSProgressIndicator()
+        progressBar.style = .bar
+        progressBar.isIndeterminate = false
+        progressBar.minValue = 0
+        progressBar.maxValue = totalDocs
+        progressBar.translatesAutoresizingMaskIntoConstraints = false
         
-       window.contentView?.addSubview(label)
-       NSLayoutConstraint.activate([
-           label.centerXAnchor.constraint(equalTo: window.contentView!.centerXAnchor),
-           label.centerYAnchor.constraint(equalTo: window.contentView!.centerYAnchor)
-       ])
+        // Create progress label
+        let progressLabel = NSTextField()
+        progressLabel.isEditable = false
+        progressLabel.isBordered = false
+        progressLabel.drawsBackground = false
+        progressLabel.stringValue = "Processed 0K documents"
+        progressLabel.font = .systemFont(ofSize: 14)
+        progressLabel.alignment = .center
+        progressLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        window.contentView?.addSubview(progressBar)
+        window.contentView?.addSubview(progressLabel)
+        
+        // Set up constraints
+        NSLayoutConstraint.activate([
+            progressBar.centerXAnchor.constraint(equalTo: window.contentView!.centerXAnchor),
+            progressBar.centerYAnchor.constraint(equalTo: window.contentView!.centerYAnchor),
+            progressBar.widthAnchor.constraint(equalToConstant: 300),
+            
+            progressLabel.centerXAnchor.constraint(equalTo: window.contentView!.centerXAnchor),
+            progressLabel.topAnchor.constraint(equalTo: progressBar.bottomAnchor, constant: 10)
+        ])
+
+        // Create a timer to update progress
+        var progressTimer: Timer?
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { [weak self] timer in
+            guard let _ = self else {
+                timer.invalidate()
+                return
+            }
+            
+            if let progress = get_indexing_progress?(handler) {
+                DispatchQueue.main.async {
+                    // Update progress bar
+                    progressBar.doubleValue = Double(progress) / 1000
+                    
+                    // Update label
+                    // progressLabel.stringValue = "Processed \(Int(progress / 1000)) / \(Int(totalDocs))K documents"
+                    let totalDocsDigits = String(Int(totalDocs/1000)).count
+
+                    // Use string format with width specification
+                    let text = String(format: "Processed %\(totalDocsDigits)d / %dK documents", 
+                        Int(progress/1000), 
+                        Int(totalDocs))
+
+                    progressLabel.attributedStringValue = NSAttributedString(
+                        string: text,
+                        attributes: [.font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)]
+    )
+                }
+            }
+        }
+
 
        // Do the indexing work asynchronously
        DispatchQueue.global(qos: .userInitiated).async {
@@ -391,8 +463,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
            
            // Set up UI on main thread
            DispatchQueue.main.async {
-               label.removeFromSuperview()
-               self.setupSearchInterface()
+                // label.removeFromSuperview()
+                progressTimer?.invalidate()
+                progressTimer = nil
+                progressBar.removeFromSuperview()
+                progressLabel.removeFromSuperview()
+                self.setupSearchInterface()
            }
        }
    }
