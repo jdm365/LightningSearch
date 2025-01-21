@@ -1,5 +1,6 @@
 const std   = @import("std");
 const print = std.debug.print;
+const string_utils = @import("string_utils.zig");
 
 const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
 
@@ -16,15 +17,13 @@ const ScoringInfo     = @import("index.zig").ScoringInfo;
 const MAX_TERM_LENGTH = @import("index.zig").MAX_TERM_LENGTH;
 const MAX_NUM_TERMS   = @import("index.zig").MAX_NUM_TERMS;
 
-// const SortedScoreArray = @import("sorted_array.zig").SortedScoreArray;
 const SortedScoreMultiArray = @import("sorted_array.zig").SortedScoreMultiArray;
-const ScorePair        = @import("sorted_array.zig").ScorePair;
+const ScorePair             = @import("sorted_array.zig").ScorePair;
 
 const AtomicCounter = std.atomic.Value(u64);
 
 pub const MAX_NUM_RESULTS = 1000;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
-// const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(10);
 
 const Column = struct {
     csv_idx: usize,
@@ -49,7 +48,10 @@ const SingleThreadedDoubleBufferedReader = struct {
     single_buffer_size: usize,
     current_buffer: usize,
     
-    pub fn init(allocator: std.mem.Allocator, file: std.fs.File) !SingleThreadedDoubleBufferedReader {
+    pub fn init(
+        allocator: std.mem.Allocator, 
+        file: std.fs.File,
+        ) !SingleThreadedDoubleBufferedReader {
         const buffer_size = 1 << 22;
         const overflow_size = 16384;
 
@@ -250,8 +252,7 @@ pub const IndexManager = struct {
         var manager = IndexManager{
             .index_partitions = undefined,
             .input_filename = undefined,
-            // .gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){},
-            .gpa = std.heap.GeneralPurposeAllocator(.{}){},
+            .gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){},
             .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
             .search_cols = undefined,
             .cols = undefined,
@@ -337,7 +338,7 @@ pub const IndexManager = struct {
         col_name: []const u8,
     ) !void {
         const col_name_upper = try self.string_arena.allocator().dupe(u8, col_name);
-        csv.stringToUpper(
+        string_utils.stringToUpper(
             col_name_upper.ptr,
             col_name_upper.len,
         );
@@ -542,7 +543,7 @@ pub const IndexManager = struct {
             token_stream.f_data[bytes_read] = '\n';
         }
 
-        csv.stringToUpper(token_stream.f_data[0..].ptr, token_stream.f_data.len);
+        string_utils.stringToUpper(token_stream.f_data[0..].ptr, token_stream.f_data.len);
 
         var prev_doc_id: usize = 0;
         for (0.., start_doc..end_doc) |doc_id, _| {
@@ -1039,7 +1040,7 @@ pub const IndexManager = struct {
 };
 
 
-test "index" {
+test "index_csv" {
     // const filename: []const u8 = "../tests/mb_small.csv";
     const filename: []const u8 = "../tests/mb.csv";
 
