@@ -123,7 +123,7 @@ pub const InvertedIndex = struct {
         var vocab_iterator = self.vocab.iterator();
         while (vocab_iterator.next()) |val| {
             const df = @as(f32, @floatFromInt(self.doc_freqs.items[val.value_ptr.*]));
-            if (df >= 2.0) {
+            if (df >= 5.0) {
                 try self.prt_vocab.insert(
                     val.key_ptr.*, 
                     val.value_ptr.*, 
