@@ -74,7 +74,10 @@ const SingleThreadedDoubleBufferedReader = struct {
         };
     }
 
-    pub fn deinit(self: *SingleThreadedDoubleBufferedReader, allocator: std.mem.Allocator) void {
+    pub fn deinit(
+        self: *SingleThreadedDoubleBufferedReader, 
+        allocator: std.mem.Allocator,
+        ) void {
         allocator.free(self.buffers);
         allocator.free(self.overflow_buffer);
     }
@@ -128,7 +131,10 @@ const DoubleBufferedReader = struct {
 
     active_read: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     
-    pub fn init(allocator: std.mem.Allocator, file: std.fs.File) !DoubleBufferedReader {
+    pub fn init(
+        allocator: std.mem.Allocator, 
+        file: std.fs.File,
+        ) !DoubleBufferedReader {
         const buffer_size = 1 << 22;
         const overflow_size = 16384;
         const buffers = try allocator.alloc(u8, 2 * buffer_size);
@@ -281,16 +287,17 @@ pub const IndexManager = struct {
         self.gpa.allocator().free(self.index_partitions);
         self.gpa.allocator().free(self.results_arrays);
 
-        self.search_cols.deinit();
-        self.cols.deinit();
-
         try std.fs.cwd().deleteTree(self.tmp_dir);
-        self.gpa.allocator().free(self.tmp_dir);
 
         for (0..MAX_NUM_RESULTS) |idx| {
-            self.gpa.allocator().free(self.result_positions[idx]);
+            if (self.result_positions[idx].len > 0) {
+                self.gpa.allocator().free(self.result_positions[idx]);
+            }
             self.result_strings[idx].deinit();
         }
+
+        self.search_cols.deinit();
+        self.cols.deinit();
 
         self.string_arena.deinit();
         _ = self.gpa.deinit();
@@ -309,7 +316,7 @@ pub const IndexManager = struct {
             break :blk hash;
         };
         self.tmp_dir = try std.fmt.allocPrint(
-            self.gpa.allocator(),
+            self.string_arena.allocator(),
             ".{x:0>32}", .{std.fmt.fmtSliceHexLower(file_hash[0..16])}
             );
 
@@ -327,8 +334,14 @@ pub const IndexManager = struct {
         std.debug.assert(self.cols.items.len > 0);
 
         for (0..MAX_NUM_RESULTS) |idx| {
-            self.result_positions[idx] = try self.gpa.allocator().alloc(TermPos, self.cols.items.len);
-            self.result_strings[idx] = try std.ArrayList(u8).initCapacity(self.gpa.allocator(), 4096);
+            self.result_positions[idx] = try self.gpa.allocator().alloc(
+                TermPos, 
+                self.cols.items.len,
+                );
+            self.result_strings[idx] = try std.ArrayList(u8).initCapacity(
+                self.gpa.allocator(), 
+                4096,
+                );
             try self.result_strings[idx].resize(4096);
         }
     }
@@ -338,6 +351,7 @@ pub const IndexManager = struct {
         col_name: []const u8,
     ) !void {
         const col_name_upper = try self.string_arena.allocator().dupe(u8, col_name);
+
         string_utils.stringToUpper(
             col_name_upper.ptr,
             col_name_upper.len,
@@ -515,11 +529,11 @@ pub const IndexManager = struct {
         const end_doc   = start_doc + current_chunk_size;
 
         const output_filename = try std.fmt.allocPrint(
-            self.gpa.allocator(), 
+            self.string_arena.allocator(), 
             "{s}/output_{d}", 
             .{self.tmp_dir, partition_idx}
             );
-        defer self.gpa.allocator().free(output_filename);
+        defer self.string_arena.allocator().free(output_filename);
 
         var token_stream = try csv.TokenStream.init(
             self.input_filename,
@@ -608,26 +622,6 @@ pub const IndexManager = struct {
         defer file.close();
 
         const file_size = try file.getEndPos();
-
-        // const f_data = try std.posix.mmap(
-            // null,
-            // file_size,
-            // std.posix.PROT.READ,
-            // .{ .TYPE = .PRIVATE },
-            // file.handle,
-            // 0
-        // );
-        // defer std.posix.munmap(f_data);
-
-        // const f_data = try self.gpa.allocator().alignedAlloc(u8, @intCast(std.mem.page_size), file_size);
-        // defer self.gpa.allocator().free(f_data);
-
-        // const read_start = std.time.milliTimestamp();
-        // const num_bytes = try file.readAll(f_data);
-        // std.debug.assert(num_bytes == file_size);
-        // const read_end = std.time.milliTimestamp();
-        // std.debug.print("Read file in {d}ms\n", .{read_end - read_start});
-        // std.debug.print("{d}MB/s\n", .{@as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(read_end - read_start))))});
 
         var buffered_reader = try DoubleBufferedReader.init(
             self.gpa.allocator(),
@@ -1041,42 +1035,19 @@ pub const IndexManager = struct {
 
 
 test "index_csv" {
-    // const filename: []const u8 = "../tests/mb_small.csv";
-    const filename: []const u8 = "../tests/mb.csv";
-
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    // const allocator = std.heap.c_allocator;
-
-    var search_cols = std.ArrayList([]u8).init(allocator);
-    const title:  []u8 = try allocator.dupe(u8, "Title");
-    const artist: []u8 = try allocator.dupe(u8, "ARTIST");
-    const album:  []u8 = try allocator.dupe(u8, "ALBUM");
-
-    try search_cols.append(title);
-    try search_cols.append(artist);
-    try search_cols.append(album);
+    const filename: []const u8 = "../data/mb_small.csv";
+    // const filename: []const u8 = "../data/mb.csv";
 
     var index_manager = try IndexManager.init();
 
     try index_manager.readHeader(filename);
     try index_manager.scanFile();
 
-    try index_manager.addSearchCol(title);
-    try index_manager.addSearchCol(artist);
-    try index_manager.addSearchCol(album);
+    try index_manager.addSearchCol("title");
+    try index_manager.addSearchCol("artist");
+    try index_manager.addSearchCol("album");
 
     try index_manager.indexFile();
 
-    try index_manager.printDebugInfo();
-
-    defer {
-        allocator.free(title);
-        allocator.free(artist);
-        allocator.free(album);
-
-        search_cols.deinit();
-        index_manager.deinit() catch {};
-        _ = gpa.deinit();
-    }
+    try index_manager.deinit();
 }

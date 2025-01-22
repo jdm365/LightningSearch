@@ -4,11 +4,11 @@ pub fn build(b: *std.Build) void {
     const target   = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const zap = b.dependency("zap", .{
-        .target = target,
-        .optimize = optimize,
-        .openssl = false, // set to true to enable TLS support
-    });
+    // const zap = b.dependency("zap", .{
+        // .target = target,
+        // .optimize = optimize,
+        // .openssl = false, // set to true to enable TLS support
+    // });
 
     const lib = b.addStaticLibrary(.{
         .name = "search_anything",
@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    lib.root_module.addImport("zap", zap.module("zap"));
+    // lib.root_module.addImport("zap", zap.module("zap"));
     b.installArtifact(lib);
 
     const shared_lib = b.addSharedLibrary(.{
@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addImport("zap", zap.module("zap"));
+    // exe.root_module.addImport("zap", zap.module("zap"));
 
     b.installArtifact(exe);
 
