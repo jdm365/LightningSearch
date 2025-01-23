@@ -545,11 +545,12 @@ pub const IndexManager = struct {
         var line_offsets = std.ArrayList(usize).init(self.gpa.allocator());
         defer line_offsets.deinit();
 
+        const start_time = std.time.milliTimestamp();
+
         var file_pos: usize = 0;
         const buf = try buffered_reader.getBuffer(file_pos);
         while (buf[file_pos] != '{') file_pos += 1;
 
-        try line_offsets.append(file_pos);
         while (file_pos < file_size) {
             try line_offsets.append(file_pos);
             const buffer = try buffered_reader.getBuffer(file_pos);
@@ -563,13 +564,19 @@ pub const IndexManager = struct {
                 );
             file_pos += index;
         }
-
         try line_offsets.append(file_size);
+
+        const end_time = std.time.milliTimestamp();
+        const execution_time_ms = end_time - start_time;
+        const mb_s: usize = @as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(execution_time_ms))));
 
         var iterator = unique_keys.iterator();
         while (iterator.next()) |item| {
             try self.cols.append(item.key_ptr.*);
         }
+
+        std.debug.print("Read {d} lines in {d}ms\n", .{line_offsets.items.len - 1, execution_time_ms});
+        std.debug.print("{d}MB/s\n", .{mb_s});
     }
         
 
@@ -1214,6 +1221,7 @@ test "index_json" {
     var index_manager = try IndexManager.init();
 
     try index_manager.readHeader(filename, FileType.JSON);
+    @panic("Stop\n");
     // try index_manager.scanJSONFile();
 
     // try index_manager.addSearchCol("title");

@@ -206,8 +206,8 @@ pub inline fn iterLineJSONGetUniqueKeys(
                     key_idx    += 1;
                 }
 
+                // Consider using radix trie.
                 const gop = try unique_keys.getOrPut(KEY_BUFFER[0..key_idx]);
-
                 if (!gop.found_existing) {
                     gop.key_ptr.* = try unique_keys.allocator.dupe(
                         u8,
