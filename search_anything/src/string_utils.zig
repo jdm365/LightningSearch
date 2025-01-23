@@ -96,6 +96,45 @@ pub inline fn simdFindCharIdxEscaped(
     return @ctz(char_mask);
 }
 
+pub inline fn simdFindCharIdxEscapedFull(
+    buffer: []const u8,
+    comptime char: u8,
+) usize {
+    var remaining = buffer;
+    var total_offset: usize = 0;
+
+    while (remaining.len >= VEC_SIZE) {
+        const _char_mask:   VEC = @splat(char);
+        const _escape_mask: VEC = @splat('\\');
+
+        const vec_buffer = @as(*align(1) const VEC, @alignCast(@ptrCast(remaining[0..VEC_SIZE])));
+        var char_mask:     MASK_TYPE = @bitCast(vec_buffer.* == _char_mask);
+        const escape_mask: MASK_TYPE = @bitCast(vec_buffer.* == _escape_mask);
+
+        char_mask &= ~(escape_mask >> 1);
+
+        const index = @ctz(char_mask);
+        if (index != VEC_SIZE) {
+            return total_offset + index;
+        }
+
+        remaining = remaining[VEC_SIZE..];
+        total_offset += VEC_SIZE;
+    }
+
+    // Handle remaining bytes
+    var idx: usize = 0;
+    while (idx < remaining.len) {
+        if (remaining[idx] == '\\') {
+            idx += 2;
+            continue;
+        }
+        if (remaining[idx] == char) return total_offset + idx;
+        idx += 1;
+    }
+    return buffer.len;
+}
+
 pub inline fn simdFindCharIdxMasked(
     buffer: []const u8,
     comptime char: u8,

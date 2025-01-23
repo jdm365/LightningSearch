@@ -1,5 +1,6 @@
 const std = @import("std");
 const string_utils = @import("string_utils.zig");
+const MAX_TERM_LENGTH = @import("index.zig").MAX_TERM_LENGTH;
 
 
 pub inline fn nextPoint(buffer: []const u8, byte_idx: *usize) void {
@@ -8,6 +9,35 @@ pub inline fn nextPoint(buffer: []const u8, byte_idx: *usize) void {
             or 
         (buffer[byte_idx.*] == '\n')) {
         byte_idx.* += 1;
+    }
+}
+
+pub inline fn iterValueJSON(buffer: []const u8, byte_idx: *usize) !void {
+    while (true) {
+        switch (buffer[byte_idx.*]) {
+            '\\' => byte_idx.* += 2,
+            'n', 't', 'f', '-', '0'...'9' => {
+                byte_idx.* += 1;
+                while (
+                    (buffer[byte_idx.*] != '}')
+                       and 
+                    (buffer[byte_idx.*] != ',')
+                ) {
+                    byte_idx.* += 1;
+                }
+                return;
+            },
+            '"' => {
+                byte_idx.* += 1;
+                const skip_idx = string_utils.simdFindCharIdxEscapedFull(
+                    buffer[byte_idx.*..],
+                    '"',
+                );
+                byte_idx.* += skip_idx + 1;
+                return;
+            },
+            else => byte_idx.* += 1, 
+        }
     }
 }
 
@@ -136,6 +166,83 @@ pub inline fn iterLineJSON(buffer: []const u8, byte_idx: *usize) !void {
     return error.InvalidJson;
 }
 
+pub inline fn iterLineJSONGetUniqueKeys(
+    buffer: []const u8, 
+    byte_idx: *usize,
+    unique_keys: *std.StringHashMap(void),
+    comptime uppercase: bool,
+    ) !void {
+    // Just do charachter by charachter for now.
+    // Assume starting from '{'
+
+    std.debug.assert(buffer[byte_idx.*] == '{');
+    byte_idx.* += 1;
+
+    var KEY_BUFFER: [MAX_TERM_LENGTH]u8 = undefined;
+    var key_idx: usize = 0;
+
+    while (true) {
+        switch (buffer[byte_idx.*]) {
+            '\\' => byte_idx.* += 2,
+            '"' => {
+                byte_idx.* += 1;
+
+                while (buffer[byte_idx.*] != '"') {
+
+                    if (buffer[byte_idx.*] == '\\') {
+                        byte_idx.* += 1;
+                        if (uppercase) {
+                            KEY_BUFFER[key_idx] = std.ascii.toUpper(buffer[byte_idx.*]);
+                        }
+
+                        byte_idx.* += 1;
+                        key_idx    += 1;
+                        continue;
+                    }
+
+                    KEY_BUFFER[key_idx] = std.ascii.toUpper(buffer[byte_idx.*]);
+
+                    byte_idx.* += 1;
+                    key_idx    += 1;
+                }
+
+                const gop = try unique_keys.getOrPut(KEY_BUFFER[0..key_idx]);
+
+                if (!gop.found_existing) {
+                    gop.key_ptr.* = try unique_keys.allocator.dupe(
+                        u8,
+                        KEY_BUFFER[0..key_idx],
+                    );
+                }
+
+                key_idx = 0;
+                byte_idx.* += 2;
+
+                try iterValueJSON(buffer, byte_idx);
+
+                byte_idx.* += 1;
+                if (buffer[byte_idx.* - 1] == '}') return;
+            },
+            'n', 't', 'f', '-', '0'...'9' => {
+                byte_idx.* += 1;
+                while (
+                    (buffer[byte_idx.*] != '}')
+                       and 
+                    (buffer[byte_idx.*] != ',')
+                ) {
+                    byte_idx.* += 1;
+                }
+
+                byte_idx.* += 1;
+                if (buffer[byte_idx.* - 1] == '}') return;
+            },
+            else => byte_idx.* += 1,
+        }
+    }
+
+    return error.InvalidJson;
+}
+
 
 
 
@@ -182,4 +289,38 @@ test "iter_field" {
     std.debug.print("Fourth json_string: {s}\n", .{json_string[byte_idx..]});
     try _iterFieldJSON(json_string[0..], &byte_idx);
     std.debug.print("Fifth json_string: {s}\n", .{json_string[byte_idx..]});
+}
+
+
+test "get_unique_keys" {
+    const json_string = \\{
+    \\  "stringValue": "hello",
+    \\  "numberValue": 42,
+    \\  "booleanValue": true,
+    \\  "booleanValue": true,
+    \\  "nullValue": null
+    \\}
+    \\{
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    std.debug.print("Start json_string: {s}\n", .{json_string});
+    var unique_keys = std.StringHashMap(void).init(arena.allocator());
+
+    var byte_idx: usize = 0;
+    try iterLineJSONGetUniqueKeys(
+        json_string[0..], 
+        &byte_idx,
+        &unique_keys,
+        true
+        );
+
+    var iterator = unique_keys.iterator();
+    std.debug.print("unique_keys\n", .{});
+    while (iterator.next()) |item| {
+        std.debug.print("{s}\n", .{item.key_ptr.*});
+    }
+        
+    std.debug.print("Start json_string: {s}\n", .{json_string[byte_idx..]});
 }

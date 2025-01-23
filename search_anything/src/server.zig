@@ -2,10 +2,12 @@ const std = @import("std");
 const parseRecordCSV = @import("csv.zig").parseRecordCSV;
 const csv = @import("csv.zig");
 
+
 const string_utils = @import("string_utils.zig");
 
 const IndexManager    = @import("index_manager.zig").IndexManager;
 const MAX_NUM_RESULTS = @import("index_manager.zig").MAX_NUM_RESULTS;
+const FileType        = @import("index_manager.zig").FileType;
 
 var float_buf: [1000][64]u8 = undefined;
 
@@ -127,7 +129,10 @@ pub const QueryHandlerLocal = struct {
         self: *QueryHandlerLocal,
         filename: [*:0]const u8,
     ) void {
-        self.index_manager.readHeader(std.mem.span(filename)) catch {
+        self.index_manager.readHeader(
+            std.mem.span(filename),
+            FileType.CSV,
+            ) catch {
             @panic("Failed to read CSV header.\n");
         };
     }
@@ -212,10 +217,10 @@ pub export fn getQueryHandlerLocal() *anyopaque {
     return @ptrCast(query_handler);
 }
 
-export fn scanFile(query_handler: *QueryHandlerLocal) void {
+export fn scanCSVFile(query_handler: *QueryHandlerLocal) void {
     std.debug.assert(query_handler.index_manager.cols.items.len > 0);
 
-    query_handler.index_manager.scanFile() catch {
+    query_handler.index_manager.scanCSVFile() catch {
         @panic("Error scanning file.\n");
     };
 }

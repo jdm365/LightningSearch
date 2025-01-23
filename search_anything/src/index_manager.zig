@@ -1,12 +1,12 @@
 const std   = @import("std");
-const print = std.debug.print;
 const string_utils = @import("string_utils.zig");
 
 const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
 
 const progress = @import("progress.zig");
 
-const csv = @import("csv.zig");
+const csv  = @import("csv.zig");
+const json = @import("json.zig");
 
 const TermPos = @import("server.zig").TermPos;
 
@@ -21,6 +21,11 @@ const SortedScoreMultiArray = @import("sorted_array.zig").SortedScoreMultiArray;
 const ScorePair             = @import("sorted_array.zig").ScorePair;
 
 const AtomicCounter = std.atomic.Value(u64);
+
+pub const FileType = enum {
+    CSV,
+    JSON,
+};
 
 pub const MAX_NUM_RESULTS = 1000;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
@@ -126,6 +131,7 @@ const DoubleBufferedReader = struct {
     single_buffer_size: usize,
     current_buffer: usize,
     thread: ?std.Thread = null,
+    end_token: u8,
 
     semaphore: std.Thread.Semaphore,
 
@@ -134,7 +140,9 @@ const DoubleBufferedReader = struct {
     pub fn init(
         allocator: std.mem.Allocator, 
         file: std.fs.File,
+        comptime end_token: u8,
         ) !DoubleBufferedReader {
+
         const buffer_size = 1 << 22;
         const overflow_size = 16384;
         const buffers = try allocator.alloc(u8, 2 * buffer_size);
@@ -152,6 +160,7 @@ const DoubleBufferedReader = struct {
             .single_buffer_size = buffer_size,
             .current_buffer = 0,
             .semaphore = .{},
+            .end_token = end_token,
         };
     }
 
@@ -174,7 +183,7 @@ const DoubleBufferedReader = struct {
             std.debug.print("Error reading file\n", .{});
             return;
         };
-        if (bytes_read != buffer.len) buffer[bytes_read] = '\n';
+        if (bytes_read != buffer.len) buffer[bytes_read] = reader.end_token;
 
         const start_idx = (buffer.len - overflow_size) * (1 - current_buffer);
         const end_idx   = start_idx + overflow_size;
@@ -307,6 +316,7 @@ pub const IndexManager = struct {
     pub fn readHeader(
         self: *IndexManager, 
         filename: []const u8,
+        filetype: FileType,
         ) !void {
         self.input_filename = try self.string_arena.allocator().dupe(u8, filename);
 
@@ -325,12 +335,20 @@ pub const IndexManager = struct {
             try std.fs.cwd().makeDir(self.tmp_dir);
         };
 
-        try readCSVHeader(
-            self.input_filename, 
-            &self.cols,
-            &self.string_arena,
-            &self.header_bytes,
-            );
+        switch (filetype) {
+            FileType.CSV => {
+                try readCSVHeader(
+                    self.input_filename, 
+                    &self.cols,
+                    &self.string_arena,
+                    &self.header_bytes,
+                    );
+            },
+            FileType.JSON => {
+                try self.getUniqueJSONKeys();
+            },
+        }
+
         std.debug.assert(self.cols.items.len > 0);
 
         for (0..MAX_NUM_RESULTS) |idx| {
@@ -504,6 +522,53 @@ pub const IndexManager = struct {
 
         num_bytes.* = byte_idx;
     }
+
+
+    fn getUniqueJSONKeys(self: *IndexManager) !void {
+        var unique_keys = std.StringHashMap(
+            void,
+        ).init(self.string_arena.allocator());
+        defer unique_keys.deinit();
+
+        const file = try std.fs.cwd().openFile(self.input_filename, .{});
+        defer file.close();
+
+        const file_size = try file.getEndPos();
+
+        var buffered_reader = try DoubleBufferedReader.init(
+            self.gpa.allocator(),
+            file,
+            '{',
+        );
+        defer buffered_reader.deinit(self.gpa.allocator());
+
+        var line_offsets = std.ArrayList(usize).init(self.gpa.allocator());
+        defer line_offsets.deinit();
+
+        try line_offsets.append(0);
+
+        var file_pos: usize = 0;
+        while (file_pos < file_size) {
+            try line_offsets.append(file_pos);
+            const buffer = try buffered_reader.getBuffer(file_pos);
+
+            var index: usize = 0;
+            try json.iterLineJSONGetUniqueKeys(
+                buffer,
+                &index,
+                &unique_keys,
+                true,
+                );
+            file_pos += index;
+        }
+
+        try line_offsets.append(file_size);
+
+        var iterator = unique_keys.iterator();
+        while (iterator.next()) |item| {
+            try self.cols.append(item.key_ptr.*);
+        }
+    }
         
 
     fn readPartition(
@@ -617,7 +682,7 @@ pub const IndexManager = struct {
     }
 
 
-    pub fn scanFile(self: *IndexManager) !void {
+    pub fn scanCSVFile(self: *IndexManager) !void {
         const file = try std.fs.cwd().openFile(self.input_filename, .{});
         defer file.close();
 
@@ -626,6 +691,7 @@ pub const IndexManager = struct {
         var buffered_reader = try DoubleBufferedReader.init(
             self.gpa.allocator(),
             file,
+            '\n',
         );
         defer buffered_reader.deinit(self.gpa.allocator());
 
@@ -645,6 +711,93 @@ pub const IndexManager = struct {
             try csv.iterLineCSV(
                 buffer,
                 &index,
+                );
+            file_pos += index;
+        }
+        try line_offsets.append(file_size);
+
+        const end_time = std.time.milliTimestamp();
+        const execution_time_ms = end_time - start_time;
+        const mb_s: usize = @as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(execution_time_ms))));
+
+        const num_lines = line_offsets.items.len - 1;
+
+        const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
+        // const num_partitions = 1;
+
+        self.file_handles = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
+        self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
+        self.results_arrays = try self.gpa.allocator().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
+        for (0..num_partitions) |idx| {
+            self.file_handles[idx]   = try std.fs.cwd().openFile(self.input_filename, .{});
+            self.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa.allocator(), MAX_NUM_RESULTS);
+        }
+
+        const chunk_size: usize = num_lines / num_partitions;
+        const final_chunk_size: usize = chunk_size + (num_lines % num_partitions);
+
+        var partition_boundaries = std.ArrayList(usize).init(self.gpa.allocator());
+        defer partition_boundaries.deinit();
+
+        for (0..num_partitions) |i| {
+            try partition_boundaries.append(line_offsets.items[i * chunk_size]);
+
+            const current_chunk_size = switch (i != num_partitions - 1) {
+                true => chunk_size,
+                false => final_chunk_size,
+            };
+
+            const start = i * chunk_size;
+            const end   = start + current_chunk_size + 1;
+
+            const partition_line_offsets = try self.gpa.allocator().alloc(usize, current_chunk_size + 1);
+            @memcpy(partition_line_offsets, line_offsets.items[start..end]);
+
+            self.index_partitions[i] = try BM25Partition.init(
+                self.gpa.allocator(), 
+                1, 
+                partition_line_offsets
+                );
+        }
+        try partition_boundaries.append(file_size);
+
+        std.debug.assert(partition_boundaries.items.len == num_partitions + 1);
+
+        std.debug.print("Read {d} lines in {d}ms\n", .{num_lines, execution_time_ms});
+        std.debug.print("{d}MB/s\n", .{mb_s});
+    }
+
+
+    pub fn scanJSONFile(self: *IndexManager) !void {
+        const file = try std.fs.cwd().openFile(self.input_filename, .{});
+        defer file.close();
+
+        const file_size = try file.getEndPos();
+
+        var buffered_reader = try DoubleBufferedReader.init(
+            self.gpa.allocator(),
+            file,
+            '}',
+        );
+        defer buffered_reader.deinit(self.gpa.allocator());
+
+        var line_offsets = std.ArrayList(usize).init(self.gpa.allocator());
+        defer line_offsets.deinit();
+
+        var file_pos: usize = self.header_bytes;
+
+        // Time read.
+        const start_time = std.time.milliTimestamp();
+
+        while (file_pos < file_size - 1) {
+            try line_offsets.append(file_pos);
+            const buffer = try buffered_reader.getBuffer(file_pos);
+
+            var index: usize = 0;
+            try json.iterLineJSONGetUniqueKeys(
+                buffer,
+                &index,
+
                 );
             file_pos += index;
         }
@@ -1040,8 +1193,8 @@ test "index_csv" {
 
     var index_manager = try IndexManager.init();
 
-    try index_manager.readHeader(filename);
-    try index_manager.scanFile();
+    try index_manager.readHeader(filename, FileType.CSV);
+    try index_manager.scanCSVFile();
 
     try index_manager.addSearchCol("title");
     try index_manager.addSearchCol("artist");
@@ -1049,5 +1202,23 @@ test "index_csv" {
 
     try index_manager.indexFile();
 
-    try index_manager.deinit();
+    // try index_manager.deinit();
+}
+
+test "index_json" {
+    const filename: []const u8 = "../data/mb_small.json";
+    // const filename: []const u8 = "../data/mb.json";
+
+    var index_manager = try IndexManager.init();
+
+    try index_manager.readHeader(filename, FileType.JSON);
+    // try index_manager.scanJSONFile();
+
+    // try index_manager.addSearchCol("title");
+    // try index_manager.addSearchCol("artist");
+    // try index_manager.addSearchCol("album");
+// 
+    // try index_manager.indexFile();
+// 
+    // try index_manager.deinit();
 }

@@ -51,7 +51,7 @@ private let add_search_col = dlsym(searchLib, "addSearchCol")
         UnsafePointer<CChar>
     ) -> Void).self) }
 
-private let scan_file = dlsym(searchLib, "scanFile")
+private let scan_csv_file = dlsym(searchLib, "scanCSVFile")
     .map { unsafeBitCast($0, to: (@convention(c) (
         UnsafeRawPointer
     ) -> Void).self) }
@@ -282,7 +282,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         // Launch scan operation
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            scan_file?(handler)
+            scan_csv_file?(handler)
             group.leave()
         }
         

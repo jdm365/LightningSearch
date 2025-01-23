@@ -10,7 +10,7 @@ void readHeader(
 		QueryHandlerLocal* query_handler,
 		const char* filename
 		);
-void scanFile(QueryHandlerLocal* query_handler);
+void scanCSVFile(QueryHandlerLocal* query_handler);
 void indexFile(QueryHandlerLocal* query_handler);
 void search(
 		QueryHandlerLocal* query_handler, 
