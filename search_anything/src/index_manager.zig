@@ -345,7 +345,7 @@ pub const IndexManager = struct {
                     );
             },
             FileType.JSON => {
-                try self.getUniqueJSONKeys();
+                try self._getUniqueJSONKeys();
             },
         }
 
@@ -524,7 +524,7 @@ pub const IndexManager = struct {
     }
 
 
-    fn getUniqueJSONKeys(self: *IndexManager) !void {
+    fn _getUniqueJSONKeys(self: *IndexManager) !void {
         var unique_keys = std.StringHashMap(
             void,
         ).init(self.string_arena.allocator());
@@ -545,9 +545,11 @@ pub const IndexManager = struct {
         var line_offsets = std.ArrayList(usize).init(self.gpa.allocator());
         defer line_offsets.deinit();
 
-        try line_offsets.append(0);
-
         var file_pos: usize = 0;
+        const buf = try buffered_reader.getBuffer(file_pos);
+        while (buf[file_pos] != '{') file_pos += 1;
+
+        try line_offsets.append(file_pos);
         while (file_pos < file_size) {
             try line_offsets.append(file_pos);
             const buffer = try buffered_reader.getBuffer(file_pos);

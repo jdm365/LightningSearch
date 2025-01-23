@@ -221,7 +221,10 @@ pub inline fn iterLineJSONGetUniqueKeys(
                 try iterValueJSON(buffer, byte_idx);
 
                 byte_idx.* += 1;
-                if (buffer[byte_idx.* - 1] == '}') return;
+                if (buffer[byte_idx.* - 1] == '}') {
+                    while (buffer[byte_idx.*] != '{') byte_idx.* += 1;
+                    return;
+                }
             },
             'n', 't', 'f', '-', '0'...'9' => {
                 byte_idx.* += 1;
@@ -234,7 +237,10 @@ pub inline fn iterLineJSONGetUniqueKeys(
                 }
 
                 byte_idx.* += 1;
-                if (buffer[byte_idx.* - 1] == '}') return;
+                if (buffer[byte_idx.* - 1] == '}') {
+                    while (buffer[byte_idx.*] != '{') byte_idx.* += 1;
+                    return;
+                }
             },
             else => byte_idx.* += 1,
         }
