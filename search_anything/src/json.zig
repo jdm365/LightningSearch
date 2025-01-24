@@ -169,7 +169,7 @@ pub inline fn iterLineJSON(buffer: []const u8, byte_idx: *usize) !void {
 pub inline fn iterLineJSONGetUniqueKeys(
     buffer: []const u8, 
     byte_idx: *usize,
-    unique_keys: *std.StringHashMap(void),
+    unique_keys: *std.StringHashMap(u32),
     comptime uppercase: bool,
     ) !void {
     // Just do charachter by charachter for now.
@@ -213,6 +213,7 @@ pub inline fn iterLineJSONGetUniqueKeys(
                         u8,
                         KEY_BUFFER[0..key_idx],
                     );
+                    gop.value_ptr.* = unique_keys.count();
                 }
 
                 key_idx = 0;
@@ -312,7 +313,7 @@ test "get_unique_keys" {
     defer arena.deinit();
 
     std.debug.print("Start json_string: {s}\n", .{json_string});
-    var unique_keys = std.StringHashMap(void).init(arena.allocator());
+    var unique_keys = std.StringHashMap(u32).init(arena.allocator());
 
     var byte_idx: usize = 0;
     try iterLineJSONGetUniqueKeys(
