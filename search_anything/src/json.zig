@@ -1,6 +1,7 @@
 const std = @import("std");
 const string_utils = @import("string_utils.zig");
 const MAX_TERM_LENGTH = @import("index.zig").MAX_TERM_LENGTH;
+const RadixTrie = @import("radix_trie.zig").RadixTrie;
 
 
 pub inline fn nextPoint(buffer: []const u8, byte_idx: *usize) void {
@@ -169,7 +170,8 @@ pub inline fn iterLineJSON(buffer: []const u8, byte_idx: *usize) !void {
 pub inline fn iterLineJSONGetUniqueKeys(
     buffer: []const u8, 
     byte_idx: *usize,
-    unique_keys: *std.StringHashMap(u32),
+    // unique_keys: *std.StringHashMap(u32),
+    unique_keys: *RadixTrie(u32),
     comptime uppercase: bool,
     ) !void {
     // Just do charachter by charachter for now.
@@ -207,14 +209,18 @@ pub inline fn iterLineJSONGetUniqueKeys(
                 }
 
                 // Consider using radix trie.
-                const gop = try unique_keys.getOrPut(KEY_BUFFER[0..key_idx]);
-                if (!gop.found_existing) {
-                    gop.key_ptr.* = try unique_keys.allocator.dupe(
-                        u8,
-                        KEY_BUFFER[0..key_idx],
+                // const gop = try unique_keys.getOrPut(KEY_BUFFER[0..key_idx]);
+                // if (!gop.found_existing) {
+                    // gop.key_ptr.* = try unique_keys.allocator.dupe(
+                        // u8,
+                        // KEY_BUFFER[0..key_idx],
+                    // );
+                    // gop.value_ptr.* = unique_keys.count();
+                // }
+                try unique_keys.insert(
+                    KEY_BUFFER[0..key_idx], 
+                    @truncate(unique_keys.num_keys),
                     );
-                    gop.value_ptr.* = unique_keys.count();
-                }
 
                 key_idx = 0;
                 byte_idx.* += 2;
@@ -313,7 +319,8 @@ test "get_unique_keys" {
     defer arena.deinit();
 
     std.debug.print("Start json_string: {s}\n", .{json_string});
-    var unique_keys = std.StringHashMap(u32).init(arena.allocator());
+    var unique_keys = try RadixTrie(u32).init(arena.allocator());
+    defer unique_keys.deinit();
 
     var byte_idx: usize = 0;
     try iterLineJSONGetUniqueKeys(
@@ -323,10 +330,11 @@ test "get_unique_keys" {
         true
         );
 
-    var iterator = unique_keys.iterator();
+    var iterator = try unique_keys.iterator();
     std.debug.print("unique_keys\n", .{});
-    while (iterator.next()) |item| {
-        std.debug.print("{s}\n", .{item.key_ptr.*});
+    while (try iterator.next()) |item| {
+        // std.debug.print("{s}\n", .{item.key_ptr.*});
+        std.debug.print("{s}\n", .{item.key});
     }
         
     std.debug.print("Start json_string: {s}\n", .{json_string[byte_idx..]});

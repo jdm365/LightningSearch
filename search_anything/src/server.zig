@@ -7,7 +7,7 @@ const string_utils = @import("string_utils.zig");
 
 const IndexManager    = @import("index_manager.zig").IndexManager;
 const MAX_NUM_RESULTS = @import("index_manager.zig").MAX_NUM_RESULTS;
-const FileType        = @import("index_manager.zig").FileType;
+const FileType        = @import("file_utils.zig").FileType;
 
 var float_buf: [1000][64]u8 = undefined;
 

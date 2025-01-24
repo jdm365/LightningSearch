@@ -253,6 +253,116 @@ pub fn RadixTrie(comptime T: type) type {
             value: T,
         };
 
+        const IteratorState = struct {
+            node_stack: std.ArrayList(*const NodeType),
+            prefix_stack: std.ArrayList([]const u8),
+            edge_index_stack: std.ArrayList(usize),
+            allocator: std.mem.Allocator,
+
+            pub fn init(allocator: std.mem.Allocator) !IteratorState {
+                return IteratorState{
+                    .node_stack = std.ArrayList(*const NodeType).init(allocator),
+                    .prefix_stack = std.ArrayList([]const u8).init(allocator),
+                    .edge_index_stack = std.ArrayList(usize).init(allocator),
+                    .allocator = allocator,
+                };
+            }
+
+            pub fn deinit(self: *IteratorState) void {
+                for (self.prefix_stack.items) |prefix| {
+                    self.allocator.free(prefix);
+                }
+                self.node_stack.deinit();
+                self.prefix_stack.deinit();
+                self.edge_index_stack.deinit();
+            }
+        };
+
+        pub const Iterator = struct {
+            trie: *const Self,
+            state: IteratorState,
+            
+            pub fn next(self: *Iterator) !?Entry {
+                while (true) {
+
+                    if (self.state.node_stack.items.len == 0) {
+                        // First iteration
+                        if (self.trie.nodes.items.len == 0) return null;
+                        const root = &self.trie.nodes.items[0];
+                        
+                        try self.state.node_stack.append(root);
+                        try self.state.prefix_stack.append(try self.state.allocator.alloc(u8, 0));
+                        try self.state.edge_index_stack.append(0);
+                        
+                        if ((root.edge_data.freq_char_bitmask & 1) == 1) {
+                            const empty_prefix = try self.state.allocator.dupe(u8, "");
+                            return Entry{
+                                .key = empty_prefix,
+                                .value = root.value,
+                            };
+                        }
+                    }
+
+                    const current_node = self.state.node_stack.items[self.state.node_stack.items.len - 1];
+                    const current_prefix = self.state.prefix_stack.items[self.state.prefix_stack.items.len - 1];
+
+                    // while (edge_idx.* < current_node.edge_data.num_edges) {
+                    for (0..current_node.edge_data.num_edges) |_edge_idx| {
+                        const edge = current_node.edges[_edge_idx];
+                        
+                        const child = &self.trie.nodes.items[edge.child_idx];
+                        const new_prefix = try std.mem.concat(
+                            self.state.allocator,
+                            u8,
+                            &[_][]const u8{current_prefix, edge.str[0..edge.len]},
+                        );
+
+                        // If this node represents a key, return it
+                        if ((child.edge_data.freq_char_bitmask & 1) == 1) {
+                            try self.state.node_stack.append(child);
+                            try self.state.prefix_stack.append(new_prefix);
+                            try self.state.edge_index_stack.append(0);
+                            
+                            return Entry{
+                                .key = new_prefix,
+                                .value = child.value,
+                            };
+                        }
+
+                        // Otherwise, continue traversing
+                        try self.state.node_stack.append(child);
+                        try self.state.prefix_stack.append(new_prefix);
+                        try self.state.edge_index_stack.append(0);
+                        // break;
+                    }
+
+                    // // If we've exhausted all edges at this node, backtrack
+                    // if (edge_idx.* >= current_node.edge_data.num_edges) {
+                        // _ = self.state.node_stack.pop();
+                        // if (self.state.prefix_stack.items.len > 0) {
+                            // self.state.allocator.free(self.state.prefix_stack.pop());
+                        // }
+                        // _ = self.state.edge_index_stack.pop();
+                       //  
+                        // if (self.state.node_stack.items.len == 0) {
+                            // return null; // We've traversed the entire trie
+                        // }
+                    // }
+                }
+            }
+
+            pub fn deinit(self: *Iterator) void {
+                self.state.deinit();
+            }
+        };
+
+        pub fn iterator(self: *const Self) !Iterator {
+            return Iterator{
+                .trie = self,
+                .state = try IteratorState.init(self.allocator),
+            };
+        }
+
         pub fn init(allocator: std.mem.Allocator) !Self {
             var nodes = try std.ArrayList(NodeType).initCapacity(allocator, 16_384);
             const root = NodeType.init();
