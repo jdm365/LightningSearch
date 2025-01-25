@@ -253,28 +253,28 @@ pub fn RadixTrie(comptime T: type) type {
             value: T,
         };
 
+        const Stack = struct{
+                node: *const RadixNode(T),
+                edge_idx: usize,
+                prefix: []const u8,
+        };
+
         const IteratorState = struct {
-            node_stack: std.ArrayList(*const NodeType),
-            prefix_stack: std.ArrayList([]const u8),
-            edge_index_stack: std.ArrayList(usize),
+            stack: std.ArrayList(Stack),
             allocator: std.mem.Allocator,
 
             pub fn init(allocator: std.mem.Allocator) !IteratorState {
                 return IteratorState{
-                    .node_stack = std.ArrayList(*const NodeType).init(allocator),
-                    .prefix_stack = std.ArrayList([]const u8).init(allocator),
-                    .edge_index_stack = std.ArrayList(usize).init(allocator),
+                    .stack = std.ArrayList(Stack).init(allocator),
                     .allocator = allocator,
                 };
             }
 
             pub fn deinit(self: *IteratorState) void {
-                for (self.prefix_stack.items) |prefix| {
-                    self.allocator.free(prefix);
+                for (self.stack.items) |item| {
+                    self.allocator.free(item.prefix);
                 }
-                self.node_stack.deinit();
-                self.prefix_stack.deinit();
-                self.edge_index_stack.deinit();
+                self.stack.deinit();
             }
         };
 
@@ -283,72 +283,57 @@ pub fn RadixTrie(comptime T: type) type {
             state: IteratorState,
             
             pub fn next(self: *Iterator) !?Entry {
-                while (true) {
+                if (self.state.stack.items.len == 0) {
+                    if (self.trie.nodes.items.len == 0) return null;
+                    const root = &self.trie.nodes.items[0];
+                    const empty = try self.state.allocator.dupe(u8, "");
+                    try self.state.stack.append(.{ 
+                        .node = root, 
+                        .edge_idx = 0,
+                        .prefix = empty,
+                    });
 
-                    if (self.state.node_stack.items.len == 0) {
-                        // First iteration
-                        if (self.trie.nodes.items.len == 0) return null;
-                        const root = &self.trie.nodes.items[0];
-                        
-                        try self.state.node_stack.append(root);
-                        try self.state.prefix_stack.append(try self.state.allocator.alloc(u8, 0));
-                        try self.state.edge_index_stack.append(0);
-                        
-                        if ((root.edge_data.freq_char_bitmask & 1) == 1) {
-                            const empty_prefix = try self.state.allocator.dupe(u8, "");
-                            return Entry{
-                                .key = empty_prefix,
-                                .value = root.value,
-                            };
-                        }
+                    if ((root.edge_data.freq_char_bitmask & 1) == 1) {
+                        return Entry{
+                            .key = empty,
+                            .value = root.value,
+                        };
                     }
-
-                    const current_node = self.state.node_stack.items[self.state.node_stack.items.len - 1];
-                    const current_prefix = self.state.prefix_stack.items[self.state.prefix_stack.items.len - 1];
-
-                    // while (edge_idx.* < current_node.edge_data.num_edges) {
-                    for (0..current_node.edge_data.num_edges) |_edge_idx| {
-                        const edge = current_node.edges[_edge_idx];
-                        
-                        const child = &self.trie.nodes.items[edge.child_idx];
-                        const new_prefix = try std.mem.concat(
-                            self.state.allocator,
-                            u8,
-                            &[_][]const u8{current_prefix, edge.str[0..edge.len]},
-                        );
-
-                        // If this node represents a key, return it
-                        if ((child.edge_data.freq_char_bitmask & 1) == 1) {
-                            try self.state.node_stack.append(child);
-                            try self.state.prefix_stack.append(new_prefix);
-                            try self.state.edge_index_stack.append(0);
-                            
-                            return Entry{
-                                .key = new_prefix,
-                                .value = child.value,
-                            };
-                        }
-
-                        // Otherwise, continue traversing
-                        try self.state.node_stack.append(child);
-                        try self.state.prefix_stack.append(new_prefix);
-                        try self.state.edge_index_stack.append(0);
-                        // break;
-                    }
-
-                    // // If we've exhausted all edges at this node, backtrack
-                    // if (edge_idx.* >= current_node.edge_data.num_edges) {
-                        // _ = self.state.node_stack.pop();
-                        // if (self.state.prefix_stack.items.len > 0) {
-                            // self.state.allocator.free(self.state.prefix_stack.pop());
-                        // }
-                        // _ = self.state.edge_index_stack.pop();
-                       //  
-                        // if (self.state.node_stack.items.len == 0) {
-                            // return null; // We've traversed the entire trie
-                        // }
-                    // }
                 }
+
+                while (self.state.stack.items.len > 0) {
+                    const current = &self.state.stack.items[self.state.stack.items.len - 1];
+                    
+                    if (current.edge_idx >= current.node.edge_data.num_edges) {
+                        self.state.allocator.free(current.prefix);
+                        _ = self.state.stack.pop();
+                        continue;
+                    }
+
+                    const edge = current.node.edges[current.edge_idx];
+                    current.edge_idx += 1;
+                    
+                    const child = &self.trie.nodes.items[edge.child_idx];
+                    const new_prefix = try std.mem.concat(
+                        self.state.allocator,
+                        u8,
+                        &[_][]const u8{current.prefix, edge.str[0..edge.len]},
+                    );
+                    
+                    try self.state.stack.append(.{
+                        .node = child,
+                        .edge_idx = 0,
+                        .prefix = new_prefix,
+                    });
+
+                    if ((child.edge_data.freq_char_bitmask & 1) == 1) {
+                        return Entry{
+                            .key = try self.state.allocator.dupe(u8, new_prefix),
+                            .value = child.value,
+                        };
+                    }
+                }
+                return null;
             }
 
             pub fn deinit(self: *Iterator) void {

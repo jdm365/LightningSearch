@@ -147,24 +147,50 @@ pub inline fn _iterFieldJSON(buffer: []const u8, byte_idx: *usize) !void {
 }
 
 pub inline fn iterLineJSON(buffer: []const u8, byte_idx: *usize) !void {
+    std.debug.assert(buffer[byte_idx.*] == '{');
+    byte_idx.* += 1;
+
     // Iterate to next line in compliance with json standard.
+
+    var skip_idx: usize = 0;
+    var quote_idx: usize = 0;
+    var close_bracket_idx: usize = 0;
+    var is_close_bracket: bool = false;
+
     while (true) {
-        const skip_idx = string_utils.simdFindCharIdxEscaped(
+        quote_idx         = string_utils.simdFindCharIdxEscaped(
+            buffer[byte_idx.*..], 
+            '"',
+            );
+        close_bracket_idx = string_utils.simdFindCharIdxEscaped(
             buffer[byte_idx.*..], 
             '}',
             );
 
+        if (quote_idx < close_bracket_idx) {
+            skip_idx = quote_idx;
+            is_close_bracket = false;
+        } else {
+            skip_idx = close_bracket_idx;
+            is_close_bracket = true;
+        }
         byte_idx.* += skip_idx;
         if (skip_idx == string_utils.VEC_SIZE) continue;
 
-        byte_idx.* += 1;
+        if (!is_close_bracket) {
+            byte_idx.* += 1;
+            quote_idx = string_utils.simdFindCharIdxEscapedFull(
+                buffer[byte_idx.*..], 
+                '"',
+                );
+            byte_idx.* += quote_idx + 1;
+            continue;
+        }
         break;
     }
-    if (buffer[byte_idx.*] == '\n') {
-        byte_idx.* += 1;
-        return;
-    }
-    return error.InvalidJson;
+
+    std.debug.assert(buffer[byte_idx.*] == '}');
+    while (buffer[byte_idx.*] != '{') byte_idx.* += 1;
 }
 
 pub inline fn iterLineJSONGetUniqueKeys(

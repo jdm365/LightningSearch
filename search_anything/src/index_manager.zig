@@ -327,9 +327,10 @@ pub const IndexManager = struct {
         self: *IndexManager, 
         max_docs_scan: usize,
         ) !void {
-        var unique_keys = std.StringHashMap(
-            u32,
-        ).init(self.string_arena.allocator());
+        // var unique_keys = std.StringHashMap(
+            // u32,
+        // ).init(self.string_arena.allocator());
+        var unique_keys = try RadixTrie(u32).init(self.string_arena.allocator());
         defer unique_keys.deinit();
 
         const file = try std.fs.cwd().openFile(self.input_filename, .{});
@@ -365,20 +366,14 @@ pub const IndexManager = struct {
             if (doc_id == max_docs_scan) break;
         }
 
-        var iterator = unique_keys.iterator();
-        while (iterator.next()) |item| {
-            try self.cols.append(item.key_ptr.*);
+        var iterator = try unique_keys.iterator();
+        while (try iterator.next()) |item| {
+            try self.cols.append(item.key);
         }
     }
 
 
     fn scanJSONFile(self: *IndexManager) !void {
-        // var unique_keys = std.StringHashMap(
-            // u32,
-        // ).init(self.string_arena.allocator());
-        // defer unique_keys.deinit();
-        var unique_keys = try RadixTrie(u32).init(self.string_arena.allocator());
-
         const file = try std.fs.cwd().openFile(self.input_filename, .{});
         defer file.close();
 
@@ -413,12 +408,7 @@ pub const IndexManager = struct {
             }
 
             var index: usize = 0;
-            try json.iterLineJSONGetUniqueKeys(
-                buffer,
-                &index,
-                &unique_keys,
-                true,
-                );
+            try json.iterLineJSON(buffer, &index);
             file_pos += index;
         }
         try line_offsets.append(file_size);
@@ -426,11 +416,6 @@ pub const IndexManager = struct {
         const end_time = std.time.milliTimestamp();
         const execution_time_ms = end_time - start_time;
         const mb_s: usize = @as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(execution_time_ms))));
-
-        var iterator = unique_keys.iterator();
-        while (iterator.next()) |item| {
-            try self.cols.append(item.key_ptr.*);
-        }
 
         std.debug.print("Read {d} lines in {d}ms\n", .{line_offsets.items.len - 1, execution_time_ms});
         std.debug.print("{d}MB/s\n", .{mb_s});

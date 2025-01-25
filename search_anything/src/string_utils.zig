@@ -90,11 +90,29 @@ pub inline fn simdFindCharIdxEscaped(
     var char_mask:   MASK_TYPE = @bitCast(vec_buffer.* == _char_mask);
     const escape_mask: MASK_TYPE = @bitCast(vec_buffer.* == _escape_mask);
 
+    const effective_escape_mask = escape_mask & ~(escape_mask << 1);
+
     // TODO: Handle escaped escapes.
-    char_mask &= ~(escape_mask >> 1);
+    char_mask &= ~(effective_escape_mask << 1);
 
     return @ctz(char_mask);
 }
+
+// 0110
+// 0011
+// 1100
+// 0100
+//
+// 0010
+// 0001
+// 1110
+// 0010
+//
+// 0010
+// 0100
+// 0010
+// 1101
+// 0000
 
 pub inline fn simdFindCharIdxEscapedFull(
     buffer: []const u8,
@@ -111,7 +129,9 @@ pub inline fn simdFindCharIdxEscapedFull(
         var char_mask:     MASK_TYPE = @bitCast(vec_buffer.* == _char_mask);
         const escape_mask: MASK_TYPE = @bitCast(vec_buffer.* == _escape_mask);
 
-        char_mask &= ~(escape_mask >> 1);
+        const effective_escape_mask = escape_mask & ~(escape_mask << 1);
+
+        char_mask &= ~(effective_escape_mask << 1);
 
         const index = @ctz(char_mask);
         if (index != VEC_SIZE) {
@@ -239,4 +259,16 @@ pub inline fn readUTF8(
     }
 
     return write_buffer[write_idx.* - 1];
+}
+
+
+
+test "escape_test" {
+    const buf = "Star Trek\\\" - The T.V. Theme\",\"length\":\"209000\",\"artist\":\"The Fe";
+
+    const index = simdFindCharIdxEscaped(buf, '"');
+    std.debug.print("\n\nbuffer: ", .{});
+    for (buf) |c| std.debug.print("{c}", .{c});
+    std.debug.print("\nIndex:  {d}\n", .{index});
+    std.debug.print("\nBUF:  {s}\n", .{buf[index..]});
 }
