@@ -24,7 +24,11 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
                 byte_idx.* += 1;
                 continue;
             }
-            std.debug.assert((buffer[byte_idx.*] == ',') or (buffer[byte_idx.*] == '\n'));
+            std.debug.assert(
+                (buffer[byte_idx.*] == ',') 
+                    or 
+                (buffer[byte_idx.*] == '\n')
+                );
             byte_idx.* += 1;
             break :outer_loop;
 

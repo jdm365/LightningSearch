@@ -454,11 +454,19 @@ pub const IndexManager = struct {
             );
         defer self.string_arena.allocator().free(output_filename);
 
+        const end_token: u8 = switch (self.file_type) {
+            FileType.CSV => '\n',
+            FileType.JSON => '{',
+        };
+
+        const start_byte = self.index_partitions[partition_idx].line_offsets[0];
         var token_stream = try TokenStream.init(
             self.input_filename,
             output_filename,
             self.gpa.allocator(),
             search_col_idxs.len,
+            start_byte,
+            end_token,
         );
         defer token_stream.deinit();
 
@@ -467,19 +475,12 @@ pub const IndexManager = struct {
         // Sort search_col_idxs
         std.sort.insertion(usize, search_col_idxs, {}, comptime std.sort.asc(usize));
 
-        const start_byte = self.index_partitions[partition_idx].line_offsets[0];
-        try token_stream.input_file.seekTo(start_byte);
+        // string_utils.stringToUpper(
+            // token_stream.f_data[0..].ptr, 
+            // token_stream.f_data.len,
+            // );
 
-        const bytes_read = try token_stream.input_file.read(token_stream.f_data);
-        if (bytes_read < token_stream.f_data.len) {
-            // Add newline charachter to end of file to ensure last line is parsed correctly.
-            token_stream.f_data[bytes_read] = '\n';
-        }
-
-        string_utils.stringToUpper(
-            token_stream.f_data[0..].ptr, 
-            token_stream.f_data.len,
-            );
+        var byte_idx = start_byte;
 
         var prev_doc_id: usize = 0;
         for (0.., start_doc..end_doc) |doc_id, _| {
@@ -505,12 +506,12 @@ pub const IndexManager = struct {
 
                     while (search_col_idx < num_search_cols) {
                         for (prev_col..search_col_idxs[search_col_idx]) |_| {
-                            token_stream.iterFieldCSV(&token_stream.buffer_idx);
-                            try token_stream.incBufferIdx();
+                            try token_stream.iterFieldCSV(&byte_idx);
                         }
 
                         try self.index_partitions[partition_idx].processDocRfc4180(
                             &token_stream,
+                            &byte_idx,
                             @intCast(doc_id), 
                             search_col_idx,
                             &terms_seen_bitset,
@@ -522,37 +523,10 @@ pub const IndexManager = struct {
                     }
 
                     for (prev_col..self.cols.items.len) |_| {
-                        token_stream.iterFieldCSV(&token_stream.buffer_idx);
-                        try token_stream.incBufferIdx();
+                        try token_stream.iterFieldCSV(&byte_idx);
                     }
                 },
-                FileType.JSON => {
-                    // var search_col_idx: usize = 0;
-                    while (true) {
-                    }
-                    // while (search_col_idx < num_search_cols) {
-                        // for (prev_col..search_col_idxs[search_col_idx]) |_| {
-                            // token_stream.iterFieldJSON(&token_stream.buffer_idx);
-                            // try token_stream.incBufferIdx();
-                        // }
-// 
-                        // try self.index_partitions[partition_idx].processDocRfc4180(
-                            // &token_stream,
-                            // @intCast(doc_id), 
-                            // search_col_idx,
-                            // &terms_seen_bitset,
-                            // );
-// 
-                        // // Add one because we just iterated over the last field.
-                        // prev_col = search_col_idxs[search_col_idx] + 1;
-                        // search_col_idx += 1;
-                    // }
-// 
-                    // for (prev_col..self.cols.items.len) |_| {
-                        // token_stream.iterFieldCSV(&token_stream.buffer_idx);
-                        // try token_stream.incBufferIdx();
-                    // }
-                },
+                FileType.JSON => {},
             }
         }
 

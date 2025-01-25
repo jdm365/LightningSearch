@@ -294,13 +294,19 @@ pub const BM25Partition = struct {
     pub fn processDocRfc4180(
         self: *BM25Partition,
         token_stream: *TokenStream,
+        byte_idx: *usize,
         doc_id: u32,
         col_idx: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
-        const byte_idx: *usize = &token_stream.buffer_idx;
+        const buffer = try token_stream.getBuffer(byte_idx.*);
+        var buffer_idx: usize = 0;
 
-        if ((token_stream.f_data[byte_idx.*] == ',') or (token_stream.f_data[byte_idx.*] == '\n')) {
+        if (
+            (buffer[buffer_idx] == ',') 
+                or 
+            (buffer[buffer_idx] == '\n')
+            ) {
             try token_stream.addToken(
                 true,
                 std.math.maxInt(u7),
@@ -311,12 +317,9 @@ pub const BM25Partition = struct {
             return;
         }
 
-        const start_byte = byte_idx.*;
-
         var term_pos: u8 = 0;
-        const is_quoted = (token_stream.f_data[byte_idx.*] == '"');
-        byte_idx.* += @intFromBool(is_quoted);
-        try token_stream.incBufferIdx();
+        const is_quoted = (buffer[buffer_idx] == '"');
+        buffer_idx += @intFromBool(is_quoted);
 
         var cntr: usize = 0;
         var new_doc: bool = (doc_id != 0);
@@ -327,16 +330,15 @@ pub const BM25Partition = struct {
 
             outer_loop: while (true) {
                 if (self.II[col_idx].doc_sizes[doc_id] >= MAX_NUM_TERMS) {
-                    byte_idx.* = start_byte;
-                    token_stream.iterFieldCSV(byte_idx);
-                    try token_stream.incBufferIdx();
-
+                    buffer_idx = 0;
+                    try token_stream.iterFieldCSV(&buffer_idx);
+                    byte_idx.* += buffer_idx;
                     return;
                 }
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     try self.flushLargeToken(
-                        token_stream.f_data[byte_idx.*-cntr..], 
+                        buffer[buffer_idx - cntr..], 
                         &cntr, 
                         doc_id, 
                         &term_pos, 
@@ -345,26 +347,25 @@ pub const BM25Partition = struct {
                         terms_seen,
                         &new_doc,
                         );
-                    byte_idx.* += 1;
+                    buffer_idx += 1;
                     continue;
                 }
 
-                switch (token_stream.f_data[byte_idx.*]) {
+                switch (buffer[buffer_idx]) {
                     '"' => {
-                        byte_idx.* += 1;
+                        buffer_idx += 1;
 
-                        switch (token_stream.f_data[byte_idx.*]) {
+                        switch (buffer[buffer_idx]) {
                             ',', '\n' => {
-                                byte_idx.* += 1;
+                                buffer_idx += 1;
                                 break :outer_loop;
                             },
                             '"' => {
-                                // if (cntr > 1) {
                                 if (cntr == 0) {
-                                    const start_idx = byte_idx.* - 1 - @min(byte_idx.* - 1, cntr);
+                                    const start_idx = buffer_idx - 1 - @min(buffer_idx - 1, cntr);
 
                                     try self.addToken(
-                                        token_stream.f_data[start_idx..], 
+                                        buffer[start_idx..], 
                                         &cntr, 
                                         doc_id, 
                                         &term_pos, 
@@ -373,9 +374,8 @@ pub const BM25Partition = struct {
                                         terms_seen,
                                         &new_doc,
                                         );
-                                    try token_stream.incBufferIdx();
                                 }
-                                byte_idx.* += 1;
+                                buffer_idx += 1;
                                 continue;
                             },
                             else => return error.UnexpectedQuote,
@@ -383,21 +383,14 @@ pub const BM25Partition = struct {
                     },
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
                         if (cntr == 0) {
-                            byte_idx.* += 1;
+                            buffer_idx += 1;
                             continue;
                         }
 
-                        // if (cntr == 1) {
-                            // byte_idx.* += 1;
-                            // cntr = 0;
-                            // continue;
-                        // }
-
-                        const start_idx = byte_idx.* - @min(byte_idx.*, cntr);
-                        // cntr -= 1;
+                        const start_idx = buffer_idx - @min(buffer_idx, cntr);
 
                         try self.addToken(
-                            token_stream.f_data[start_idx..], 
+                            buffer[start_idx..], 
                             &cntr, 
                             doc_id, 
                             &term_pos, 
@@ -406,11 +399,10 @@ pub const BM25Partition = struct {
                             terms_seen,
                             &new_doc,
                             );
-                        try token_stream.incBufferIdx();
                     },
                     else => {
                         cntr += 1;
-                        byte_idx.* += 1;
+                        buffer_idx += 1;
                     },
                 }
             }
@@ -422,7 +414,7 @@ pub const BM25Partition = struct {
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     try self.flushLargeToken(
-                        token_stream.f_data[byte_idx.*-cntr..], 
+                        buffer[buffer_idx - cntr..], 
                         &cntr, 
                         doc_id, 
                         &term_pos, 
@@ -431,27 +423,27 @@ pub const BM25Partition = struct {
                         terms_seen,
                         &new_doc,
                         );
-                    byte_idx.* += 1;
+                    buffer_idx += 1;
                     continue;
                 }
 
 
-                switch (token_stream.f_data[byte_idx.*]) {
+                switch (buffer[buffer_idx]) {
                     ',', '\n' => {
-                        byte_idx.* += 1;
+                        buffer_idx += 1;
                         break :outer_loop;
                     },
                     0...9, 11...43, 45...47, 58...64, 91...96, 123...126 => {
                         if (cntr == 0) {
-                            byte_idx.* += 1;
+                            buffer_idx += 1;
                             cntr = 0;
                             continue;
                         }
 
-                        const start_idx = byte_idx.* - @min(byte_idx.*, cntr);
+                        const start_idx = buffer_idx - @min(buffer_idx, cntr);
 
                         try self.addToken(
-                            token_stream.f_data[start_idx..], 
+                            buffer[start_idx..], 
                             &cntr, 
                             doc_id, 
                             &term_pos, 
@@ -460,11 +452,10 @@ pub const BM25Partition = struct {
                             terms_seen,
                             &new_doc,
                             );
-                        try token_stream.incBufferIdx();
                     },
                     else => {
                         cntr += 1;
-                        byte_idx.* += 1;
+                        buffer_idx += 1;
                     },
                 }
             }
@@ -473,10 +464,10 @@ pub const BM25Partition = struct {
         if (cntr > 0) {
             std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
 
-            const start_idx = byte_idx.* - @intFromBool(is_quoted) 
-                              - @min(byte_idx.* - @intFromBool(is_quoted), cntr + 1);
+            const start_idx = buffer_idx - @intFromBool(is_quoted) 
+                              - @min(buffer_idx - @intFromBool(is_quoted), cntr + 1);
             try self.addTerm(
-                token_stream.f_data[start_idx..], 
+                buffer[start_idx..], 
                 cntr, 
                 doc_id, 
                 term_pos, 
@@ -485,7 +476,6 @@ pub const BM25Partition = struct {
                 terms_seen,
                 &new_doc,
                 );
-            try token_stream.incBufferIdx();
         }
 
         if (new_doc) {
@@ -497,6 +487,8 @@ pub const BM25Partition = struct {
                 col_idx,
             );
         }
+
+        byte_idx.* += buffer_idx;
     }
 
 

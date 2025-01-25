@@ -22,10 +22,13 @@ pub const SingleThreadedDoubleBufferedReader = struct {
     overflow_buffer: []u8,
     single_buffer_size: usize,
     current_buffer: usize,
+    end_token: u8,
     
     pub fn init(
         allocator: std.mem.Allocator, 
         file: std.fs.File,
+        start_byte: usize,
+        end_token: u8,
         ) !SingleThreadedDoubleBufferedReader {
         const buffer_size = 1 << 22;
         const overflow_size = 16384;
@@ -34,11 +37,20 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         const buffers = try allocator.alloc(u8, 2 * buffer_size);
         const overflow_buffer = try allocator.alloc(u8, 2 * overflow_size);
 
-        _ = try file.read(buffers);
+        try file.seekTo(start_byte);
+        const bytes_read = try file.read(buffers);
+
+        // TODO: Make optional on parameter.
+        string_utils.stringToUpper(
+            buffers[0..bytes_read].ptr,
+            bytes_read,
+            );
+
         @memcpy(
             overflow_buffer[0..overflow_size], 
             buffers[(2 * buffer_size) - overflow_size..],
             );
+        if (bytes_read != buffers.len) buffers[bytes_read] = end_token;
         
         return SingleThreadedDoubleBufferedReader{
             .file = file,
@@ -46,6 +58,7 @@ pub const SingleThreadedDoubleBufferedReader = struct {
             .overflow_buffer = overflow_buffer,
             .single_buffer_size = buffer_size,
             .current_buffer = 0,
+            .end_token = end_token,
         };
     }
 
@@ -60,13 +73,26 @@ pub const SingleThreadedDoubleBufferedReader = struct {
     pub inline fn getBuffer(
         self: *SingleThreadedDoubleBufferedReader, 
         file_pos: usize,
+        uppercase: bool,
         ) ![]u8 {
         const index = file_pos % self.buffers.len;
 
         if (index >= self.single_buffer_size) {
             if (self.current_buffer == 0) {
-                _ = try self.file.read(self.buffers[0..self.single_buffer_size]);
+                const bytes_read = try self.file.read(
+                    self.buffers[0..self.single_buffer_size],
+                    );
+                if (bytes_read != self.single_buffer_size) {
+                    self.buffers[bytes_read] = self.end_token;
+                }
                 self.current_buffer = 1;
+
+                if (uppercase) {
+                    string_utils.stringToUpper(
+                        self.buffers[0..self.single_buffer_size].ptr, 
+                        self.single_buffer_size,
+                        );
+                }
 
                 const overflow_size = @divFloor(self.overflow_buffer.len, 2);
                 @memcpy(
@@ -76,8 +102,20 @@ pub const SingleThreadedDoubleBufferedReader = struct {
             }
         } else {
             if (self.current_buffer == 1) {
-                _ = try self.file.read(self.buffers[self.single_buffer_size..]);
+                const bytes_read = try self.file.read(
+                    self.buffers[self.single_buffer_size..],
+                    );
+                if (bytes_read != self.single_buffer_size) {
+                    self.buffers[self.single_buffer_size + bytes_read] = self.end_token;
+                }
                 self.current_buffer = 0;
+
+                if (uppercase) {
+                    string_utils.stringToUpper(
+                        self.buffers[self.single_buffer_size..].ptr, 
+                        self.single_buffer_size,
+                        );
+                }
 
                 const overflow_size = @divFloor(self.overflow_buffer.len, 2);
                 @memcpy(
@@ -220,7 +258,8 @@ pub const DoubleBufferedReader = struct {
 
 pub const TokenStream = struct {
     tokens: [][]token_t,
-    f_data: []align(std.mem.page_size) u8,
+    // f_data: []align(std.mem.page_size) u8,
+    double_buffer: SingleThreadedDoubleBufferedReader,
     num_terms: []u32,
     allocator: std.mem.Allocator,
     output_files: []std.fs.File,
@@ -232,6 +271,8 @@ pub const TokenStream = struct {
         output_filename: []const u8,
         allocator: std.mem.Allocator,
         num_search_cols: usize,
+        start_byte: usize,
+        end_token: u8,
     ) !TokenStream {
 
         const input_file = try std.fs.cwd().openFile(filename, .{});
@@ -265,11 +306,17 @@ pub const TokenStream = struct {
 
         const token_stream = TokenStream{
             .tokens = token_buffers,
-            .f_data = try allocator.alignedAlloc(
-                u8, 
-                std.mem.page_size, 
-                TOKEN_STREAM_CAPACITY,
-                ),
+            // .f_data = try allocator.alignedAlloc(
+                // u8, 
+                // std.mem.page_size, 
+                // TOKEN_STREAM_CAPACITY,
+                // ),
+            .double_buffer = try SingleThreadedDoubleBufferedReader.init(
+                allocator,
+                input_file,
+                start_byte,
+                end_token,
+            ),
             .num_terms = num_terms,
             .allocator = allocator,
             .output_files = output_files,
@@ -281,7 +328,8 @@ pub const TokenStream = struct {
     }
 
     pub fn deinit(self: *TokenStream) void {
-        self.allocator.free(self.f_data);
+        // self.allocator.free(self.f_data);
+        self.double_buffer.deinit(self.allocator);
         for (0.., self.output_files) |col_idx, *file| {
             self.allocator.free(self.tokens[col_idx]);
             file.close();
@@ -326,36 +374,24 @@ pub const TokenStream = struct {
         self.num_terms[search_col_idx] = 0;
     }
 
-    pub inline fn incBufferIdx(self: *TokenStream) !void {
-        const offset_length = TOKEN_STREAM_CAPACITY - self.buffer_idx;
-        if (offset_length <= 16384) {
-            @memcpy(
-                self.f_data[0..offset_length],
-                self.f_data[self.buffer_idx..],
-            );
-            const bytes_read = try self.input_file.read(self.f_data[offset_length..]);
-            if (bytes_read < self.f_data.len - offset_length) {
-                // Add newline charachter to end of file 
-                // to ensure last line is parsed correctly.
-                self.f_data[bytes_read + offset_length] = '\n';
-            }
-
-            const start_pos = offset_length - (offset_length % 16);
-            string_utils.stringToUpper(
-                self.f_data[start_pos..].ptr, 
-                self.f_data.len - start_pos,
-                );
-            self.buffer_idx = 0;
-        }
+    pub inline fn getBuffer(self: *TokenStream, file_pos: usize) ![]u8 {
+        return try self.double_buffer.getBuffer(file_pos, true);
     }
 
-    pub inline fn iterFieldCSV(self: *TokenStream, byte_idx: *usize) void {
+    pub inline fn iterFieldCSV(self: *TokenStream, byte_idx: *usize) !void {
         // Iterate to next field in compliance with RFC 4180.
-        csv._iterFieldCSV(self.f_data, byte_idx);
+        // csv._iterFieldCSV(self.f_data, byte_idx);
+        const buffer = try self.getBuffer(byte_idx.*);
+        var buffer_idx: usize = 0;
+        csv._iterFieldCSV(buffer, &buffer_idx);
+        byte_idx.* += buffer_idx;
     }
 
-    pub inline fn iterFieldJSON(self: *TokenStream, byte_idx: *usize) void {
+    pub inline fn iterFieldJSON(self: *TokenStream, byte_idx: *usize) !void {
         // Iterate to next field in compliance with RFC 4180.
-        json._iterFieldJSON(self.f_data, byte_idx);
+        const buffer = try self.getBuffer(byte_idx.*);
+        var buffer_idx: usize = 0;
+        try json._iterFieldJSON(buffer, &buffer_idx);
+        byte_idx.* += buffer_idx;
     }
 };
