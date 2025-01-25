@@ -35,6 +35,14 @@ pub inline fn iterValueJSON(buffer: []const u8, byte_idx: *usize) !void {
                     '"',
                 );
                 byte_idx.* += skip_idx + 1;
+
+                while (
+                    (buffer[byte_idx.*] != '}')
+                       and 
+                    (buffer[byte_idx.*] != ',')
+                ) {
+                    byte_idx.* += 1;
+                }
                 return;
             },
             else => byte_idx.* += 1, 
@@ -147,6 +155,49 @@ pub inline fn _iterFieldJSON(buffer: []const u8, byte_idx: *usize) !void {
         },
         else => return error.InvalidJson,
     }
+}
+
+pub inline fn matchKVPair(
+    buffer: []const u8, 
+    byte_idx: *usize,
+    reference_dict: *RadixTrie(u32),
+    ) !u32 {
+    // Start from key. If key matches reference_dict, iter to value
+    // and return dict value (idx). If doesn't match dict, iter to next key
+    // and return std.math.maxInt(u32). If end of line, iter to next line's
+    // '{' and return error.EOL;
+
+    // Assert starting at key quote.
+    std.debug.assert(buffer[byte_idx.*] == '"');
+    byte_idx.* += 1;
+
+    const key_len = string_utils.simdFindCharIdxEscaped(
+        buffer[byte_idx.*..], 
+        '"',
+    );
+    const match_val = reference_dict.find(
+        buffer[byte_idx.*..byte_idx.* + key_len],
+    ) catch {
+        // Key not found. Iter to next key.
+        byte_idx.* += key_len + 2;
+        nextPoint(buffer, byte_idx);
+
+        try iterValueJSON(buffer, byte_idx.*);
+        if (buffer[byte_idx.*] == '}') {
+            byte_idx.* += 1;
+            while (buffer[byte_idx.*] != '{') byte_idx.* += 1;
+            return error.EOL;
+        }
+        byte_idx.* += 1;
+        byte_idx.* += string_utils.simdFindCharIdxEscaped(
+            buffer[byte_idx.*..], 
+            '"',
+        );
+        return std.math.maxInt(u32);
+    };
+    byte_idx.* += key_len + 2;
+    nextPoint(buffer, byte_idx);
+    return match_val;
 }
 
 pub inline fn iterLineJSON(buffer: []const u8, byte_idx: *usize) !void {

@@ -528,7 +528,8 @@ pub const IndexManager = struct {
                 },
                 FileType.JSON => {
                     // var search_col_idx: usize = 0;
-// 
+                    while (true) {
+                    }
                     // while (search_col_idx < num_search_cols) {
                         // for (prev_col..search_col_idxs[search_col_idx]) |_| {
                             // token_stream.iterFieldJSON(&token_stream.buffer_idx);
