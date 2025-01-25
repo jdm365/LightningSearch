@@ -4,6 +4,7 @@ const string_utils = @import("string_utils.zig");
 
 const DoubleBufferedReader = @import("file_utils.zig").DoubleBufferedReader;
 const FileType             = @import("file_utils.zig").FileType;
+const TokenStream          = @import("file_utils.zig").TokenStream;
 
 const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
 
@@ -453,7 +454,7 @@ pub const IndexManager = struct {
             );
         defer self.string_arena.allocator().free(output_filename);
 
-        var token_stream = try csv.TokenStream.init(
+        var token_stream = try TokenStream.init(
             self.input_filename,
             output_filename,
             self.gpa.allocator(),
@@ -530,7 +531,7 @@ pub const IndexManager = struct {
 // 
                     // while (search_col_idx < num_search_cols) {
                         // for (prev_col..search_col_idxs[search_col_idx]) |_| {
-                            // token_stream.iterFieldCSV(&token_stream.buffer_idx);
+                            // token_stream.iterFieldJSON(&token_stream.buffer_idx);
                             // try token_stream.incBufferIdx();
                         // }
 // 

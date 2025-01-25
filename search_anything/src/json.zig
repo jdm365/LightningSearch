@@ -53,9 +53,11 @@ pub inline fn _iterFieldJSON(buffer: []const u8, byte_idx: *usize) !void {
 
     // Iter over key.
     while (true) {
+        const first_char_escaped: bool = buffer[byte_idx.* - 1] == '\\';
         const skip_idx = string_utils.simdFindCharIdxEscaped(
             buffer[byte_idx.*..], 
             ':',
+            first_char_escaped,
             );
         byte_idx.* += skip_idx;
         if (skip_idx == string_utils.VEC_SIZE) continue;
@@ -76,6 +78,7 @@ pub inline fn _iterFieldJSON(buffer: []const u8, byte_idx: *usize) !void {
                 const skip_idx = string_utils.simdFindCharIdxEscaped(
                     buffer[byte_idx.*..], 
                     '"',
+                    false,
                     );
                 byte_idx.* += skip_idx;
                 if (skip_idx == string_utils.VEC_SIZE) continue;
@@ -156,15 +159,18 @@ pub inline fn iterLineJSON(buffer: []const u8, byte_idx: *usize) !void {
     var quote_idx: usize = 0;
     var close_bracket_idx: usize = 0;
     var is_close_bracket: bool = false;
+    var first_char_escaped: bool = false;
 
     while (true) {
         quote_idx         = string_utils.simdFindCharIdxEscaped(
             buffer[byte_idx.*..], 
             '"',
+            first_char_escaped,
             );
         close_bracket_idx = string_utils.simdFindCharIdxEscaped(
             buffer[byte_idx.*..], 
             '}',
+            first_char_escaped,
             );
 
         if (quote_idx < close_bracket_idx) {
@@ -175,6 +181,7 @@ pub inline fn iterLineJSON(buffer: []const u8, byte_idx: *usize) !void {
             is_close_bracket = true;
         }
         byte_idx.* += skip_idx;
+        first_char_escaped = buffer[byte_idx.* - 1] == '\\';
         if (skip_idx == string_utils.VEC_SIZE) continue;
 
         if (!is_close_bracket) {
@@ -290,7 +297,7 @@ test "iter_line" {
     \\   "stringValue": "hello",
     \\   "numberValue": 42,
     \\   "booleanValue": true,
-    \\   "nullValue": null,
+    \\   "nullValue": null
     \\ }
     \\{
     ;

@@ -1,6 +1,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const TokenStream = @import("file_utils.zig").TokenStream;
+const TOKEN_STREAM_CAPACITY = @import("file_utils.zig").TOKEN_STREAM_CAPACITY;
+const token_t = @import("file_utils.zig").token_t;
+
 const csv = @import("csv.zig");
 const TermPos = @import("server.zig").TermPos;
 const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
@@ -37,7 +41,7 @@ const SHM = struct {
 };
 
 pub const InvertedIndex = struct {
-    postings: []csv.token_t,
+    postings: []token_t,
     vocab: std.hash_map.HashMap([]const u8, u32, SHM, 80),
     prt_vocab: PruningRadixTrie(u32),
     // prt_vocab: RadixTrie(u32),
@@ -60,7 +64,7 @@ pub const InvertedIndex = struct {
         try vocab.ensureTotalCapacity(@intCast(num_docs / 25));
 
         const II = InvertedIndex{
-            .postings = &[_]csv.token_t{},
+            .postings = &[_]token_t{},
             .vocab = vocab,
             .prt_vocab = try PruningRadixTrie(u32).init(allocator),
             // .prt_vocab = try RadixTrie(u32).init(allocator),
@@ -106,7 +110,7 @@ pub const InvertedIndex = struct {
             postings_size += doc_freq;
         }
         // self.term_offsets[self.num_terms - 1] = postings_size;
-        self.postings = try allocator.alloc(csv.token_t, postings_size + 1);
+        self.postings = try allocator.alloc(token_t, postings_size + 1);
 
         var avg_doc_size: f64 = 0.0;
         for (self.doc_sizes) |doc_size| {
@@ -201,7 +205,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: u8,
         col_idx: usize,
-        token_stream: *csv.TokenStream,
+        token_stream: *TokenStream,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -237,7 +241,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: *u8,
         col_idx: usize,
-        token_stream: *csv.TokenStream,
+        token_stream: *TokenStream,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -267,7 +271,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: *u8,
         col_idx: usize,
-        token_stream: *csv.TokenStream,
+        token_stream: *TokenStream,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -289,7 +293,7 @@ pub const BM25Partition = struct {
 
     pub fn processDocRfc4180(
         self: *BM25Partition,
-        token_stream: *csv.TokenStream,
+        token_stream: *TokenStream,
         doc_id: u32,
         col_idx: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
@@ -498,7 +502,7 @@ pub const BM25Partition = struct {
 
     pub fn constructFromTokenStream(
         self: *BM25Partition,
-        token_stream: *csv.TokenStream,
+        token_stream: *TokenStream,
         ) !void {
 
         var term_cntr = try self.allocator.alloc(usize, self.II[0].num_terms);
@@ -519,10 +523,10 @@ pub const BM25Partition = struct {
 
             var bytes_read: usize = 0;
 
-            var num_tokens: usize = csv.TOKEN_STREAM_CAPACITY;
+            var num_tokens: usize = TOKEN_STREAM_CAPACITY;
             var current_doc_id: usize = 0;
 
-            while (num_tokens == csv.TOKEN_STREAM_CAPACITY) {
+            while (num_tokens == TOKEN_STREAM_CAPACITY) {
                 var _num_tokens: [4]u8 = undefined;
                 _ = try output_file.read(std.mem.asBytes(&_num_tokens));
                 num_tokens = std.mem.readInt(u32, &_num_tokens, ENDIANESS);
@@ -544,7 +548,7 @@ pub const BM25Partition = struct {
 
                     current_doc_id += @intCast(new_doc);
 
-                    const token = csv.token_t{
+                    const token = token_t{
                         .new_doc = 0,
                         .term_pos = term_pos,
                         .doc_id = @truncate(current_doc_id),

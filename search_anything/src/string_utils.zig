@@ -69,6 +69,7 @@ pub inline fn simdFindCharIdx(
 pub inline fn simdFindCharIdxEscaped(
     buffer: []const u8,
     comptime char: u8,
+    escape_first: bool,
 ) usize {
     if (buffer.len < VEC_SIZE) {
         var idx: usize = 0;
@@ -87,13 +88,14 @@ pub inline fn simdFindCharIdxEscaped(
     const _escape_mask: VEC = comptime @splat('\\');
 
     const vec_buffer = @as(*align(1) const VEC, @alignCast(@ptrCast(buffer[0..VEC_SIZE])));
-    var char_mask:   MASK_TYPE = @bitCast(vec_buffer.* == _char_mask);
+    var char_mask:     MASK_TYPE = @bitCast(vec_buffer.* == _char_mask);
     const escape_mask: MASK_TYPE = @bitCast(vec_buffer.* == _escape_mask);
 
     const effective_escape_mask = escape_mask & ~(escape_mask << 1);
 
     // TODO: Handle escaped escapes.
     char_mask &= ~(effective_escape_mask << 1);
+    char_mask &= ~@as(u64, @intFromBool(escape_first));
 
     return @ctz(char_mask);
 }
@@ -120,6 +122,9 @@ pub inline fn simdFindCharIdxEscapedFull(
 ) usize {
     var remaining = buffer;
     var total_offset: usize = 0;
+    
+    const base_mask: MASK_TYPE = comptime 1 << (@bitSizeOf(MASK_TYPE) - 1);
+    var escape_next_first_mask: MASK_TYPE = comptime std.math.maxInt(MASK_TYPE);
 
     while (remaining.len >= VEC_SIZE) {
         const _char_mask:   VEC = @splat(char);
@@ -131,8 +136,15 @@ pub inline fn simdFindCharIdxEscapedFull(
 
         const effective_escape_mask = escape_mask & ~(escape_mask << 1);
 
-        char_mask &= ~(effective_escape_mask << 1);
+        // std.debug.print("\nEM:  {b:0>64}\n", .{escape_mask});
+        // std.debug.print("EEM: {b:0>64}\n", .{effective_escape_mask});
+        // std.debug.print("ENF: {b:0>64}\n", .{escape_next_first_mask});
+        // std.debug.print("CM:  {b:0>64}\n\n", .{char_mask});
 
+        char_mask &= ~(effective_escape_mask << 1);
+        char_mask &= escape_next_first_mask;
+
+        escape_next_first_mask = ~@as(u64, @popCount(base_mask & effective_escape_mask));
         const index = @ctz(char_mask);
         if (index != VEC_SIZE) {
             return total_offset + index;
@@ -153,34 +165,6 @@ pub inline fn simdFindCharIdxEscapedFull(
         idx += 1;
     }
     return buffer.len;
-}
-
-pub inline fn simdFindCharIdxMasked(
-    buffer: []const u8,
-    comptime char: u8,
-    mask_idx: usize,
-) usize {
-    // Same as above but operates on aligned byte boundaries and uses
-    // a mask_idx to deal with unknown chars.
-    if (buffer.len < VEC_SIZE) {
-        for (0.., buffer) |idx, byte| {
-            if (byte == char) return idx;
-        }
-        return buffer.len;
-    }
-
-    const char_mask: VEC = comptime @splat(char);
-
-    const vec_buffer = @as(*const VEC, @ptrCast(buffer[0..VEC_SIZE]));
-    const mask: MASK_TYPE = @as(MASK_TYPE, @bitCast(vec_buffer.* == char_mask)) & ~(std.math.maxInt(MASK_TYPE) << mask_idx);
-
-    // REMOVE DOUBLED QUOTES:
-    // variants have only decreased performance.
-    // In practice (at least for files I've tested) quotes are 
-    // rare enough that adding the special case to every loop 
-    // instead of the occasional handling in the ugly switch statement
-    // isn't worth it.
-    return @ctz(mask);
 }
 
 inline fn removeDoubled(comptime T: type, x: *T) void {
@@ -264,11 +248,29 @@ pub inline fn readUTF8(
 
 
 test "escape_test" {
-    const buf = "Star Trek\\\" - The T.V. Theme\",\"length\":\"209000\",\"artist\":\"The Fe";
+    const buf = "Star Trek\\\" - The T.V. Theme\\\"\",\"length\":\"209000\",\"artist\":\"The Fe";
 
-    const index = simdFindCharIdxEscaped(buf, '"');
+    const index = simdFindCharIdxEscaped(buf, '"', false);
     std.debug.print("\n\nbuffer: ", .{});
     for (buf) |c| std.debug.print("{c}", .{c});
     std.debug.print("\nIndex:  {d}\n", .{index});
     std.debug.print("\nBUF:  {s}\n", .{buf[index..]});
+
+
+    const buf2 = "001-Atto quarto: No. 24 Cavatina \\\"L'ho perduta... me meschina!\\\"\",\"length\":\"1m 50sec\",\"artist\":\"Wolfgang Amadeus Mozart\",\"album";
+
+    const index2 = simdFindCharIdxEscapedFull(buf2, '"');
+    std.debug.print("\n\nbuffer: ", .{});
+    for (buf2) |c| std.debug.print("{c}", .{c});
+    std.debug.print("\nIndex2:  {d}\n", .{index2});
+    std.debug.print("\nBUF:  {s}\n", .{buf2[index2..]});
+
+
+    const buf3 = "Surreal (Thunderpuss dub mix) (excerpts from ayu-mi-x Ⅲ CD004)\",\"length\":\"09:07\",\"artist\":\"浜崎あゆみ\",\"album\":\"excerpts";
+    const index3 = simdFindCharIdxEscapedFull(buf3, '"');
+    // const index3 = simdFindCharIdxEscaped(buf3, '"', false);
+    std.debug.print("\n\nbuffer: ", .{});
+    for (buf3) |c| std.debug.print("{c}", .{c});
+    std.debug.print("\nIndex3:  {d}\n", .{index3});
+    std.debug.print("\nBUF:  {s}\n", .{buf3[index3..]});
 }
