@@ -17,7 +17,7 @@ pub inline fn iterValueJSON(buffer: []const u8, byte_idx: *usize) !void {
     while (true) {
         switch (buffer[byte_idx.*]) {
             '\\' => byte_idx.* += 2,
-            'n', 't', 'f', '-', '0'...'9' => {
+            'n', 't', 'f', 'N', 'T', 'F', '-', '0'...'9' => {
                 byte_idx.* += 1;
                 while (
                     (buffer[byte_idx.*] != '}')
@@ -116,7 +116,7 @@ pub inline fn _iterFieldJSON(buffer: []const u8, byte_idx: *usize) !void {
                 break;
             }
         },
-        45, 48...57, 116, 102, 110 => {
+        45, 48...57, 't', 'f', 'n', 'T', 'F', 'N' => {
             // Numeric values (minus, 0-9), null, true, false.
             while (true) {
                 const comma_idx = string_utils.simdFindCharIdx(
@@ -311,7 +311,7 @@ pub inline fn iterLineJSONGetUniqueKeys(
                     return;
                 }
             },
-            'n', 't', 'f', '-', '0'...'9' => {
+            'n', 't', 'f', 'N', 'T', 'F', '-', '0'...'9' => {
                 byte_idx.* += 1;
                 while (
                     (buffer[byte_idx.*] != '}')

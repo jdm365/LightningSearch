@@ -505,7 +505,7 @@ pub const BM25Partition = struct {
     ) !void {
         const buffer = try token_stream.getBuffer(byte_idx.*);
         var buffer_idx: usize = 0;
-        std.debug.print("BUFFER: {s}\n", .{buffer[buffer_idx..][0..64]});
+        // std.debug.print("BUFFER: {s}\n", .{buffer[buffer_idx..][0..64]});
 
         // Matches key against keys stored in trie. If not found 
         // maxInt(u32) is returned. If EOL an error is returned.
@@ -520,8 +520,10 @@ pub const BM25Partition = struct {
             byte_idx.* += buffer_idx;
             return;
         };
-        if (matched_col_idx == std.math.maxInt(u32)) return;
-
+        if (matched_col_idx == std.math.maxInt(u32)) {
+            byte_idx.* += buffer_idx;
+            return;
+        }
         const II_idx = search_col_mapping.get(matched_col_idx) orelse {
             try json.iterValueJSON(buffer, &buffer_idx);
             if (buffer[buffer_idx] == '}') {

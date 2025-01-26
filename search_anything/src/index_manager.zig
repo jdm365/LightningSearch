@@ -616,8 +616,8 @@ pub const IndexManager = struct {
 
         const num_lines = line_offsets.items.len - 1;
 
-        // const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
-        const num_partitions = 1;
+        const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
+        // const num_partitions = 1;
 
         self.file_handles     = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
@@ -691,7 +691,6 @@ pub const IndexManager = struct {
         }
 
         for (0..num_partitions) |partition_idx| {
-            std.debug.print("NUM SEARCH COLS: {d}\n", .{num_search_cols});
             try self.index_partitions[partition_idx].resizeNumSearchCols(
                 num_search_cols
                 );
