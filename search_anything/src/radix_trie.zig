@@ -91,6 +91,20 @@ pub inline fn LCP(key: []const u8, match: []const u8) u8 {
 }
 
 pub fn RadixEdge(comptime _: type) type {
+    // return extern struct {
+        // const Self = @This();
+// 
+        // str: [MAX_STRING_LEN]u8,
+        // len: u8,
+        // child_idx: usize,
+// 
+        // pub fn init(allocator: std.mem.Allocator) !*Self {
+            // const edge = try allocator.create(Self);
+            // edge.len = 0;
+            // return edge;
+        // }
+    // };
+
     return extern struct {
         const Self = @This();
 
@@ -98,10 +112,14 @@ pub fn RadixEdge(comptime _: type) type {
         len: u8,
         child_idx: usize,
 
-        pub fn init(allocator: std.mem.Allocator) !*Self {
-            const edge = try allocator.create(Self);
-            edge.len = 0;
-            return edge;
+        pub fn init() Self {
+            return Self{
+                .str = undefined,
+                .len = 0,
+                .child_idx = undefined,
+            };
+            // edge.len = 0;
+            // return edge;
         }
     };
 }
@@ -144,40 +162,45 @@ pub fn RadixNode(comptime T: type) type {
         pub inline fn addEdge(
             self: *Self, 
             allocator: std.mem.Allocator,
-            edge: *RadixEdge(T),
+            // edge: *RadixEdge(T),
+            edge: RadixEdge(T),
             ) !void {
             self.edge_data.num_edges += 1;
 
-            var new_capacity: usize = std.math.maxInt(usize);
-            switch (self.edge_data.num_edges) {
-                0 => new_capacity = 1,
-                1 => new_capacity = 3,
-                3 => new_capacity = 5,
-                5 => new_capacity = 8,
-                8 => new_capacity = 16,
-                16 => new_capacity = 32,
-                32 => new_capacity = 64,
-                64 => new_capacity = 128,
-                128 => new_capacity = 192,
-                192 => new_capacity = 256,
-                else => {},
-            }
+            const new_capacity = switch (self.edge_data.num_edges) {
+                0 => 1,
+                1 => 3,
+                3 => 5,
+                5 => 8,
+                8 => 16,
+                16 => 32,
+                32 => 64,
+                64 => 128,
+                128 => 192,
+                192 => 256,
+                else => @as(usize, @intCast(std.math.maxInt(usize))),
+            };
 
             if (new_capacity != std.math.maxInt(usize)) {
-                const new_slice: []RadixEdge(T) = try allocator.realloc(
-                        self.edges[0..self.edge_data.num_edges - 1],
+                const new_slice: []RadixEdge(T) = try allocator.alloc(
+                        RadixEdge(T),
                         new_capacity,
                         );
+                @memcpy(
+                    new_slice[0..self.edge_data.num_edges - 1],
+                    self.edges[0..self.edge_data.num_edges - 1],
+                );
                 self.edges = new_slice.ptr;
             }
-            self.edges[self.edge_data.num_edges - 1] = edge.*;
+            self.edges[self.edge_data.num_edges - 1] = edge;
         }
 
         pub inline fn addEdgePos(
             self: *Self, 
             char_freq_table: *const [256]u8,
             allocator: std.mem.Allocator,
-            edge: *RadixEdge(T),
+            // edge: *RadixEdge(T),
+            edge: RadixEdge(T),
             ) !void {
             if (char_freq_table[edge.str[0]] == 0) {
                 try self.addEdge(allocator, edge);
@@ -253,100 +276,6 @@ pub fn RadixTrie(comptime T: type) type {
             value: T,
         };
 
-        const Stack = struct{
-                node: *const RadixNode(T),
-                edge_idx: usize,
-                prefix: []const u8,
-        };
-
-        const IteratorState = struct {
-            stack: std.ArrayList(Stack),
-            allocator: std.mem.Allocator,
-
-            pub fn init(allocator: std.mem.Allocator) !IteratorState {
-                return IteratorState{
-                    .stack = std.ArrayList(Stack).init(allocator),
-                    .allocator = allocator,
-                };
-            }
-
-            pub fn deinit(self: *IteratorState) void {
-                for (self.stack.items) |item| {
-                    self.allocator.free(item.prefix);
-                }
-                self.stack.deinit();
-            }
-        };
-
-        pub const Iterator = struct {
-            trie: *const Self,
-            state: IteratorState,
-            
-            pub fn next(self: *Iterator) !?Entry {
-                if (self.state.stack.items.len == 0) {
-                    if (self.trie.nodes.items.len == 0) return null;
-                    const root = &self.trie.nodes.items[0];
-                    const empty = try self.state.allocator.dupe(u8, "");
-                    try self.state.stack.append(.{ 
-                        .node = root, 
-                        .edge_idx = 0,
-                        .prefix = empty,
-                    });
-
-                    if ((root.edge_data.freq_char_bitmask & 1) == 1) {
-                        return Entry{
-                            .key = empty,
-                            .value = root.value,
-                        };
-                    }
-                }
-
-                while (self.state.stack.items.len > 0) {
-                    const current = &self.state.stack.items[self.state.stack.items.len - 1];
-                    
-                    if (current.edge_idx >= current.node.edge_data.num_edges) {
-                        self.state.allocator.free(current.prefix);
-                        _ = self.state.stack.pop();
-                        continue;
-                    }
-
-                    const edge = current.node.edges[current.edge_idx];
-                    current.edge_idx += 1;
-                    
-                    const child = &self.trie.nodes.items[edge.child_idx];
-                    const new_prefix = try std.mem.concat(
-                        self.state.allocator,
-                        u8,
-                        &[_][]const u8{current.prefix, edge.str[0..edge.len]},
-                    );
-                    
-                    try self.state.stack.append(.{
-                        .node = child,
-                        .edge_idx = 0,
-                        .prefix = new_prefix,
-                    });
-
-                    if ((child.edge_data.freq_char_bitmask & 1) == 1) {
-                        return Entry{
-                            .key = try self.state.allocator.dupe(u8, new_prefix),
-                            .value = child.value,
-                        };
-                    }
-                }
-                return null;
-            }
-
-            pub fn deinit(self: *Iterator) void {
-                self.state.deinit();
-            }
-        };
-
-        pub fn iterator(self: *const Self) !Iterator {
-            return Iterator{
-                .trie = self,
-                .state = try IteratorState.init(self.allocator),
-            };
-        }
 
         pub fn init(allocator: std.mem.Allocator) !Self {
             var nodes = try std.ArrayList(NodeType).initCapacity(allocator, 16_384);
@@ -366,6 +295,7 @@ pub fn RadixTrie(comptime T: type) type {
 
         pub fn initCapacity(allocator: std.mem.Allocator, n: usize) !Self {
             var nodes = try std.ArrayList(NodeType).initCapacity(allocator, n);
+
             const root = NodeType{
                 .edge_data = NodeType.EdgeData{
                     .freq_char_bitmask = 0,
@@ -389,6 +319,103 @@ pub fn RadixTrie(comptime T: type) type {
 
         pub fn deinit(self: *Self) void {
             self.nodes.deinit();
+        }
+
+        const Stack = struct{
+                node: *const RadixNode(T),
+                edge_idx: usize,
+                prefix: []const u8,
+        };
+
+        const IteratorState = struct {
+            stack: std.ArrayList(Stack),
+            gpa: std.heap.GeneralPurposeAllocator(.{}),
+
+            pub fn init() !IteratorState {
+                var gpa = std.heap.GeneralPurposeAllocator(.{}){}; 
+                return IteratorState{
+                    .stack = std.ArrayList(Stack).init(gpa.allocator()),
+                    .gpa = gpa,
+                };
+            }
+
+            pub fn deinit(self: *IteratorState) void {
+                for (self.stack.items) |item| {
+                    self.gpa.allocator().free(item.prefix);
+                }
+                self.stack.deinit();
+                _ = self.gpa.deinit();
+            }
+        };
+
+        pub const Iterator = struct {
+            trie: *const Self,
+            state: IteratorState,
+            
+            pub fn next(self: *Iterator) !?Entry {
+                if (self.state.stack.items.len == 0) {
+                    if (self.trie.nodes.items.len == 0) return null;
+                    const root = &self.trie.nodes.items[0];
+                    const empty = try self.state.gpa.allocator().dupe(u8, "");
+                    try self.state.stack.append(.{ 
+                        .node = root, 
+                        .edge_idx = 0,
+                        .prefix = empty,
+                    });
+
+                    if ((root.edge_data.freq_char_bitmask & 1) == 1) {
+                        return Entry{
+                            .key = empty,
+                            .value = root.value,
+                        };
+                    }
+                }
+
+                while (self.state.stack.items.len > 0) {
+                    const current = &self.state.stack.items[self.state.stack.items.len - 1];
+                    
+                    if (current.edge_idx >= current.node.edge_data.num_edges) {
+                        self.state.gpa.allocator().free(current.prefix);
+                        _ = self.state.stack.pop();
+                        continue;
+                    }
+
+                    const edge = current.node.edges[current.edge_idx];
+                    current.edge_idx += 1;
+                    
+                    const child = &self.trie.nodes.items[edge.child_idx];
+                    const new_prefix = try std.mem.concat(
+                        self.state.gpa.allocator(),
+                        u8,
+                        &[_][]const u8{current.prefix, edge.str[0..edge.len]},
+                    );
+                    
+                    try self.state.stack.append(.{
+                        .node = child,
+                        .edge_idx = 0,
+                        .prefix = new_prefix,
+                    });
+
+                    if ((child.edge_data.freq_char_bitmask & 1) == 1) {
+                        return Entry{
+                            .key = try self.state.gpa.allocator().dupe(u8, new_prefix),
+                            .value = child.value,
+                        };
+                    }
+                }
+                return null;
+            }
+
+            pub fn deinit(self: *Iterator) void {
+                self.state.deinit();
+            }
+        };
+
+        pub fn iterator(self: *const Self) !Iterator {
+            return Iterator{
+                .trie = self,
+                .state = try IteratorState.init(),
+            };
         }
 
         fn argSortDesc(
@@ -470,7 +497,8 @@ pub fn RadixTrie(comptime T: type) type {
 
                 const new_node = &self.nodes.items[self.nodes.items.len - 1];
 
-                const new_edge     = try RadixEdge(T).init(self.allocator);
+                // const new_edge     = try RadixEdge(T).init(self.allocator);
+                var new_edge     = RadixEdge(T).init();
                 new_edge.len       = @truncate(num_chars_edge);
                 new_edge.child_idx = self.nodes.items.len - 1;
 
@@ -501,7 +529,7 @@ pub fn RadixTrie(comptime T: type) type {
         pub fn insert(self: *Self, key: []const u8, value: T) !void {
             if (key.len == 0) return;
 
-            try self.nodes.ensureUnusedCapacity(256);
+            // try self.nodes.ensureUnusedCapacity(256);
 
             var node = &self.nodes.items[0];
             var key_idx: usize = 0;
@@ -587,7 +615,7 @@ pub fn RadixTrie(comptime T: type) type {
                         };
                         try self.nodes.append(_new_node);
                         const new_node = &self.nodes.items[self.nodes.items.len - 1];
-                        const new_edge = try RadixEdge(T).init(self.allocator);
+                        var new_edge = RadixEdge(T).init();
 
                         self.num_nodes += 1;
                         self.num_edges += 1;
@@ -642,7 +670,8 @@ pub fn RadixTrie(comptime T: type) type {
                         };
                         try self.nodes.append(_new_node_1);
                         const new_node_1 = &self.nodes.items[self.nodes.items.len - 1];
-                        const new_edge_2 = try RadixEdge(T).init(self.allocator);
+                        // const new_edge_2 = try RadixEdge(T).init(self.allocator);
+                        var new_edge_2 = RadixEdge(T).init();
 
                         self.num_nodes += 2;
                         self.num_edges += 2;
@@ -789,7 +818,7 @@ pub fn RadixTrie(comptime T: type) type {
                         };
                         try self.nodes.append(_new_node);
                         const new_node = &self.nodes.items[self.nodes.items.len - 1];
-                        const new_edge = try RadixEdge(T).init(self.allocator);
+                        var new_edge = RadixEdge(T).init();
 
                         self.num_nodes += 1;
                         self.num_edges += 1;
@@ -844,7 +873,7 @@ pub fn RadixTrie(comptime T: type) type {
                         };
                         try self.nodes.append(_new_node_1);
                         const new_node_1 = &self.nodes.items[self.nodes.items.len - 1];
-                        const new_edge_2 = try RadixEdge(T).init(self.allocator);
+                        var new_edge_2 = RadixEdge(T).init();
 
                         self.num_nodes += 2;
                         self.num_edges += 2;

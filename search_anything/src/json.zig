@@ -409,7 +409,7 @@ test "get_unique_keys" {
         );
 
     var iterator = try unique_keys.iterator();
-    std.debug.print("unique_keys\n", .{});
+    defer iterator.deinit();
     while (try iterator.next()) |item| {
         // std.debug.print("{s}\n", .{item.key_ptr.*});
         std.debug.print("{s}\n", .{item.key});

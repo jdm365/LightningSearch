@@ -1,7 +1,5 @@
 const std = @import("std");
-const parseRecordCSV = @import("csv.zig").parseRecordCSV;
 const csv = @import("csv.zig");
-
 
 const string_utils = @import("string_utils.zig");
 
@@ -15,26 +13,6 @@ pub const TermPos = struct {
     start_pos: u32,
     field_len: u32,
 };
-
-pub fn urlDecode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var output = std.ArrayList(u8).init(allocator);
-    defer output.deinit();
-
-    var i: usize = 0;
-    while (i < input.len) {
-        if (input[i] == '%' and i + 2 < input.len) {
-            const hex = input[i + 1 .. i + 3];
-            const value = try std.fmt.parseInt(u8, hex, 16);
-            try output.append(value);
-            i += 3;
-        } else {
-            try output.append(input[i]);
-            i += 1;
-        }
-    }
-
-    return try output.toOwnedSlice();
-}
 
 pub fn csvLineToJson(
     allocator: std.mem.Allocator,
@@ -203,15 +181,13 @@ pub export fn deinit_allocators() void {
 }
 
 pub export fn getQueryHandlerLocal() *anyopaque {
-    var index_manager = global_arena.allocator().create(IndexManager) catch @panic("BAD\n");
+    const index_manager = global_arena.allocator().create(IndexManager) catch @panic("BAD\n");
     index_manager.* = IndexManager.init() catch @panic("BAD\n");
-
-    const arena = index_manager.string_arena.allocator();
 
     const query_handler = global_arena.allocator().create(QueryHandlerLocal) catch @panic("BAD\n");
     query_handler.* = QueryHandlerLocal.init(
         index_manager,
-        arena,
+        global_arena.allocator(),
     ) catch @panic("BAD\n");
 
     return @ptrCast(query_handler);
@@ -293,14 +269,15 @@ pub export fn getColumnNames(
     const num_cols = query_handler.index_manager.col_map.num_keys;
     num_columns.* = @truncate(num_cols);
 
-    var idx: usize = 0;
+    // var idx: usize = 0;
     var iterator = query_handler.index_manager.col_map.iterator() catch {
         @panic("Error reading column keys.\n");
     };
     while (iterator.next() catch {@panic("Error reading column keys.\n");}) |*item| {
+        const idx = item.value;
         @memcpy(column_names[idx], item.key);
         column_names[idx][item.key.len] = 0;
-        idx += 1;
+        // idx += 1;
     }
 }
 
@@ -341,7 +318,7 @@ test "csv_parse" {
     const result_positions = try allocator.alloc(TermPos, 12);
     defer allocator.free(result_positions);
 
-    try parseRecordCSV(csv_line, result_positions);
+    try csv.parseRecordCSV(csv_line, result_positions);
 
     var columns = std.ArrayList([]const u8).init(allocator);
     defer columns.deinit();

@@ -216,7 +216,10 @@ pub const BM25Partition = struct {
         const gop = try self.II[col_idx].vocab.getOrPut(term[0..term_len]);
 
         if (!gop.found_existing) {
-            const term_copy = try self.string_arena.allocator().dupe(u8, term[0..term_len]);
+            const term_copy = try self.string_arena.allocator().dupe(
+                u8, 
+                term[0..term_len],
+                );
 
             gop.key_ptr.* = term_copy;
             gop.value_ptr.* = self.II[col_idx].num_terms;

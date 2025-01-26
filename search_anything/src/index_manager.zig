@@ -43,12 +43,12 @@ const ColTokenPair = packed struct {
     token: u32,
 };
 
-
 pub const IndexManager = struct {
     index_partitions: []BM25Partition,
     input_filename: []const u8,
     gpa: std.heap.GeneralPurposeAllocator(.{}),
     string_arena: std.heap.ArenaAllocator,
+    scratch_arena: std.heap.ArenaAllocator,
     search_cols: std.AutoHashMap(u32, u32),
     col_map: RadixTrie(u32),
     file_handles: []std.fs.File,
@@ -67,6 +67,7 @@ pub const IndexManager = struct {
             .input_filename = undefined,
             .gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){},
             .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+            .scratch_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
             .search_cols = undefined,
             .col_map = undefined,
             .tmp_dir = undefined,
@@ -80,8 +81,9 @@ pub const IndexManager = struct {
         };
         manager.search_cols = std.AutoHashMap(u32, u32).init(manager.gpa.allocator());
         manager.col_map = try RadixTrie(u32).initCapacity(
-            manager.string_arena.allocator(),
-            256,
+            // manager.string_arena.allocator(),
+            manager.gpa.allocator(),
+            16384,
             );
         try manager.search_cols.ensureTotalCapacity(50);
 
@@ -108,9 +110,10 @@ pub const IndexManager = struct {
         }
 
         self.search_cols.deinit();
-        self.col_map.deinit();
+        // self.col_map.deinit();
 
         self.string_arena.deinit();
+        self.scratch_arena.deinit();
         _ = self.gpa.deinit();
     }
 
@@ -120,7 +123,7 @@ pub const IndexManager = struct {
         filename: []const u8,
         filetype: FileType,
         ) !void {
-        self.input_filename = try self.gpa.allocator().dupe(u8, filename);
+        self.input_filename = try self.string_arena.allocator().dupe(u8, filename);
         self.file_type = filetype;
 
         const file_hash = blk: {
@@ -174,26 +177,10 @@ pub const IndexManager = struct {
         );
 
         switch (self.file_type) {
-            FileType.CSV => {
-                var iterator = try self.col_map.iterator();
-                while (try iterator.next()) |*item| {
-                    if (std.mem.eql(u8, item.key, col_name_upper)) {
-                        try self.search_cols.put(
-                            @truncate(item.value),
-                            @truncate(self.search_cols.count()),
-                        );
-                        return;
-                    }
-                }
-                return error.ColumnNotFound;
-            },
-            FileType.JSON => {
-                if (self.col_map.num_keys == 0) @panic("No fields recorded.");
+            FileType.CSV, FileType.JSON => {
                 const matched_col_idx = self.col_map.find(col_name_upper) catch {
                     return error.ColumnNotFound;
                 };
-                // std.debug.print("col_name_upper:  {s}\n", .{col_name_upper});
-                // std.debug.print("matched_col_idx: {d}\n", .{matched_col_idx});
                 try self.search_cols.put(
                     @truncate(matched_col_idx),
                     @truncate(self.search_cols.count()),
@@ -243,6 +230,9 @@ pub const IndexManager = struct {
 // 
 
     fn readCSVHeader(self: *IndexManager) !void {
+        defer {
+            _ = self.scratch_arena.reset(.retain_capacity);
+        }
 
         var col_idx: usize = 0;
 
@@ -301,14 +291,18 @@ pub const IndexManager = struct {
                         ',', '\n' => {
                             // ADD TERM.
                             std.debug.assert(cntr > 0);
-                            const term_copy = try self.string_arena.allocator().dupe(
-                                u8,
-                                term[0..cntr],
-                            );
+                            // const term_copy = try self.string_arena.allocator().dupe(
+                                // u8,
+                                // term[0..cntr],
+                            // );
+                            // std.debug.print("self.input_filename: {s}\n", .{self.input_filename});
+                            // TODO: Just stack allocate?
                             try self.col_map.insert(
-                                term_copy,
+                                // term_copy,
+                                term[0..cntr],
                                 @truncate(self.col_map.num_keys),
                                 );
+                            // std.debug.print("self.input_filename: {s}\n", .{self.input_filename});
 
                             if (f_data[byte_idx] == '\n') {
                                 self.header_bytes = byte_idx + 1;
@@ -435,6 +429,10 @@ pub const IndexManager = struct {
         total_docs_read: *AtomicCounter,
         progress_bar: *progress.ProgressBar,
     ) !void {
+        defer {
+            _ = self.scratch_arena.reset(.retain_capacity);
+        }
+
         var timer = try std.time.Timer.start();
         const interval_ns: u64 = 1_000_000_000 / 30;
 
@@ -447,11 +445,10 @@ pub const IndexManager = struct {
         const end_doc   = start_doc + current_chunk_size;
 
         const output_filename = try std.fmt.allocPrint(
-            self.string_arena.allocator(), 
+            self.scratch_arena.allocator(), 
             "{s}/output_{d}", 
             .{self.tmp_dir, partition_idx}
             );
-        defer self.string_arena.allocator().free(output_filename);
 
         const end_token: u8 = switch (self.file_type) {
             FileType.CSV => '\n',
