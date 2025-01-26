@@ -49,8 +49,8 @@ pub const IndexManager = struct {
     input_filename: []const u8,
     gpa: std.heap.GeneralPurposeAllocator(.{}),
     string_arena: std.heap.ArenaAllocator,
-    search_cols: std.StringHashMap(Column),
-    cols: std.ArrayList([]const u8),
+    search_cols: std.AutoHashMap(u32, u32),
+    col_map: RadixTrie(u32),
     file_handles: []std.fs.File,
     tmp_dir: []const u8,
     result_positions: [MAX_NUM_RESULTS][]TermPos,
@@ -68,7 +68,7 @@ pub const IndexManager = struct {
             .gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){},
             .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
             .search_cols = undefined,
-            .cols = undefined,
+            .col_map = undefined,
             .tmp_dir = undefined,
             .file_handles = undefined,
             .result_positions = undefined,
@@ -78,9 +78,12 @@ pub const IndexManager = struct {
             .last_progress = 0,
             .file_type = undefined,
         };
-        manager.search_cols = std.StringHashMap(Column).init(manager.gpa.allocator());
+        manager.search_cols = std.AutoHashMap(u32, u32).init(manager.gpa.allocator());
+        manager.col_map = try RadixTrie(u32).initCapacity(
+            manager.string_arena.allocator(),
+            256,
+            );
         try manager.search_cols.ensureTotalCapacity(50);
-        manager.cols = try std.ArrayList([]const u8).initCapacity(manager.gpa.allocator(), 128);
 
         return manager;
     }
@@ -105,7 +108,7 @@ pub const IndexManager = struct {
         }
 
         self.search_cols.deinit();
-        self.cols.deinit();
+        self.col_map.deinit();
 
         self.string_arena.deinit();
         _ = self.gpa.deinit();
@@ -117,7 +120,7 @@ pub const IndexManager = struct {
         filename: []const u8,
         filetype: FileType,
         ) !void {
-        self.input_filename = try self.string_arena.allocator().dupe(u8, filename);
+        self.input_filename = try self.gpa.allocator().dupe(u8, filename);
         self.file_type = filetype;
 
         const file_hash = blk: {
@@ -137,24 +140,19 @@ pub const IndexManager = struct {
 
         switch (self.file_type) {
             FileType.CSV => {
-                try readCSVHeader(
-                    self.input_filename, 
-                    &self.cols,
-                    &self.string_arena,
-                    &self.header_bytes,
-                    );
+                try self.readCSVHeader();
             },
             FileType.JSON => {
                 try self.getUniqueJSONKeys(16384);
             },
         }
 
-        std.debug.assert(self.cols.items.len > 0);
+        std.debug.assert(self.col_map.num_keys > 0);
 
         for (0..MAX_NUM_RESULTS) |idx| {
             self.result_positions[idx] = try self.gpa.allocator().alloc(
                 TermPos, 
-                self.cols.items.len,
+                self.col_map.num_keys,
                 );
             self.result_strings[idx] = try std.ArrayList(u8).initCapacity(
                 self.gpa.allocator(), 
@@ -175,70 +173,80 @@ pub const IndexManager = struct {
             col_name_upper.len,
         );
 
-        for (0.., self.cols.items) |idx, col| {
-            if (std.mem.eql(u8, col, col_name_upper)) {
+        switch (self.file_type) {
+            FileType.CSV => {
+                var iterator = try self.col_map.iterator();
+                while (try iterator.next()) |*item| {
+                    if (std.mem.eql(u8, item.key, col_name_upper)) {
+                        try self.search_cols.put(
+                            @truncate(item.value),
+                            @truncate(self.search_cols.count()),
+                        );
+                        return;
+                    }
+                }
+                return error.ColumnNotFound;
+            },
+            FileType.JSON => {
+                if (self.col_map.num_keys == 0) @panic("No fields recorded.");
+                const matched_col_idx = self.col_map.find(col_name_upper) catch {
+                    return error.ColumnNotFound;
+                };
+                // std.debug.print("col_name_upper:  {s}\n", .{col_name_upper});
+                // std.debug.print("matched_col_idx: {d}\n", .{matched_col_idx});
                 try self.search_cols.put(
-                    col_name_upper,
-                    Column{
-                        .csv_idx = idx,
-                        .II_idx = self.search_cols.count(),
-                    });
-                return;
-            }
+                    @truncate(matched_col_idx),
+                    @truncate(self.search_cols.count()),
+                );
+            },
         }
-        return error.ColumnNotFound;
     }
 
-    pub fn printDebugInfo(self: *IndexManager) !void {
-        std.debug.print("\n=====================================================\n", .{});
+    // pub fn printDebugInfo(self: *IndexManager) !void {
+        // std.debug.print("\n=====================================================\n", .{});
+// 
+        // var num_terms: usize = 0;
+        // var num_docs: usize = 0;
+        // var avg_doc_size: f32 = 0.0;
+// 
+        // var num_terms_all_cols = std.ArrayList(u32).init(self.gpa.allocator());
+        // defer num_terms_all_cols.deinit();
+// 
+        // for (0..self.index_partitions.len) |idx| {
+// 
+            // num_docs += self.index_partitions[idx].II[0].num_docs;
+            // for (0..self.index_partitions[idx].II.len) |jdx| {
+                // num_terms    += self.index_partitions[idx].II[jdx].num_terms;
+                // avg_doc_size += self.index_partitions[idx].II[jdx].avg_doc_size;
+// 
+                // try num_terms_all_cols.append(self.index_partitions[idx].II[jdx].num_terms);
+            // }
+// 
+        // }
+// 
+        // std.debug.print("Num Partitions:  {d}\n", .{self.index_partitions.len});
+// 
+        // var col_iterator = self.search_cols.iterator();
+        // var idx: usize = 0;
+        // while (col_iterator.next()) |item| {
+            // std.debug.print("Column:          {s}\n", .{item.key_ptr.*});
+            // std.debug.print("---------------------------------------------\n", .{});
+            // std.debug.print("Num terms:       {d}\n", .{num_terms_all_cols.items[idx]});
+            // std.debug.print("Num docs:        {d}\n", .{num_docs});
+            // std.debug.print("Avg doc size:    {d}\n\n", .{avg_doc_size / @as(f32, @floatFromInt(self.index_partitions.len))});
+// 
+            // idx += 1;
+        // }
+// 
+        // std.debug.print("=====================================================\n\n\n\n", .{});
+    // }
+// 
 
-        var num_terms: usize = 0;
-        var num_docs: usize = 0;
-        var avg_doc_size: f32 = 0.0;
-
-        var num_terms_all_cols = std.ArrayList(u32).init(self.gpa.allocator());
-        defer num_terms_all_cols.deinit();
-
-        for (0..self.index_partitions.len) |idx| {
-
-            num_docs += self.index_partitions[idx].II[0].num_docs;
-            for (0..self.index_partitions[idx].II.len) |jdx| {
-                num_terms    += self.index_partitions[idx].II[jdx].num_terms;
-                avg_doc_size += self.index_partitions[idx].II[jdx].avg_doc_size;
-
-                try num_terms_all_cols.append(self.index_partitions[idx].II[jdx].num_terms);
-            }
-
-        }
-
-        std.debug.print("Num Partitions:  {d}\n", .{self.index_partitions.len});
-
-        var col_iterator = self.search_cols.iterator();
-        var idx: usize = 0;
-        while (col_iterator.next()) |item| {
-            std.debug.print("Column:          {s}\n", .{item.key_ptr.*});
-            std.debug.print("---------------------------------------------\n", .{});
-            std.debug.print("Num terms:       {d}\n", .{num_terms_all_cols.items[idx]});
-            std.debug.print("Num docs:        {d}\n", .{num_docs});
-            std.debug.print("Avg doc size:    {d}\n\n", .{avg_doc_size / @as(f32, @floatFromInt(self.index_partitions.len))});
-
-            idx += 1;
-        }
-
-        std.debug.print("=====================================================\n\n\n\n", .{});
-    }
-
-
-    fn readCSVHeader(
-        input_filename: []const u8,
-        cols: *std.ArrayList([]const u8),
-        string_arena: *std.heap.ArenaAllocator,
-        num_bytes: *usize,
-        ) !void {
+    fn readCSVHeader(self: *IndexManager) !void {
 
         var col_idx: usize = 0;
 
-        const file = try std.fs.cwd().openFile(input_filename, .{});
+        const file = try std.fs.cwd().openFile(self.input_filename, .{});
         defer file.close();
 
         const file_size = try file.getEndPos();
@@ -270,9 +278,9 @@ pub const IndexManager = struct {
                         std.debug.assert(cntr < MAX_TERM_LENGTH);
                         byte_idx += 2;
                         if (f_data[byte_idx - 1] != '"') {
-                            // ADD TERM
-                            try cols.append(
-                                try string_arena.allocator().dupe(u8, term[0..cntr])
+                            try self.col_map.insert(
+                                term[0..cntr],
+                                @truncate(self.col_map.num_keys),
                                 );
 
                             cntr = 0;
@@ -293,12 +301,17 @@ pub const IndexManager = struct {
                         ',', '\n' => {
                             // ADD TERM.
                             std.debug.assert(cntr > 0);
-                            try cols.append(
-                                try string_arena.allocator().dupe(u8, term[0..cntr])
+                            const term_copy = try self.string_arena.allocator().dupe(
+                                u8,
+                                term[0..cntr],
+                            );
+                            try self.col_map.insert(
+                                term_copy,
+                                @truncate(self.col_map.num_keys),
                                 );
 
                             if (f_data[byte_idx] == '\n') {
-                                num_bytes.* = byte_idx + 1;
+                                self.header_bytes = byte_idx + 1;
                                 return;
                             }
 
@@ -320,20 +333,11 @@ pub const IndexManager = struct {
             col_idx += 1;
         }
 
-        num_bytes.* = byte_idx;
+        self.header_bytes = byte_idx;
     }
 
 
-    fn getUniqueJSONKeys(
-        self: *IndexManager, 
-        max_docs_scan: usize,
-        ) !void {
-        // var unique_keys = std.StringHashMap(
-            // u32,
-        // ).init(self.string_arena.allocator());
-        var unique_keys = try RadixTrie(u32).init(self.string_arena.allocator());
-        defer unique_keys.deinit();
-
+    fn getUniqueJSONKeys(self: *IndexManager, max_docs_scan: usize) !void {
         const file = try std.fs.cwd().openFile(self.input_filename, .{});
         defer file.close();
 
@@ -358,18 +362,13 @@ pub const IndexManager = struct {
             try json.iterLineJSONGetUniqueKeys(
                 buffer,
                 &index,
-                &unique_keys,
+                &self.col_map,
                 true,
                 );
             file_pos += index;
 
             doc_id += 1;
             if (doc_id == max_docs_scan) break;
-        }
-
-        var iterator = try unique_keys.iterator();
-        while (try iterator.next()) |item| {
-            try self.cols.append(item.key);
         }
     }
 
@@ -475,12 +474,7 @@ pub const IndexManager = struct {
         // Sort search_col_idxs
         std.sort.insertion(usize, search_col_idxs, {}, comptime std.sort.asc(usize));
 
-        // string_utils.stringToUpper(
-            // token_stream.f_data[0..].ptr, 
-            // token_stream.f_data.len,
-            // );
-
-        var byte_idx = start_byte;
+        var byte_idx: usize = 0;
 
         var prev_doc_id: usize = 0;
         for (0.., start_doc..end_doc) |doc_id, _| {
@@ -497,6 +491,10 @@ pub const IndexManager = struct {
                     progress_bar.update(current_docs_read);
                     self.last_progress = current_docs_read;
                 }
+            } else {
+                // std.debug.print("partition_idx: {d}\n", .{partition_idx});
+                // std.debug.print("timer.read(): {d}\n", .{timer.read()});
+                // std.debug.print("interval_ns:  {d}\n\n", .{interval_ns});
             }
 
             switch (self.file_type) {
@@ -522,11 +520,28 @@ pub const IndexManager = struct {
                         search_col_idx += 1;
                     }
 
-                    for (prev_col..self.cols.items.len) |_| {
+                    for (prev_col..self.col_map.num_keys) |_| {
                         try token_stream.iterFieldCSV(&byte_idx);
                     }
                 },
-                FileType.JSON => {},
+                FileType.JSON => {
+                    const buffer = try token_stream.getBuffer(byte_idx);
+                    byte_idx += string_utils.simdFindCharIdxEscapedFull(
+                        buffer,
+                        '"',
+                    );
+
+                    while (true) {
+                        self.index_partitions[partition_idx].processDocRfc8259(
+                            &token_stream,
+                            &self.col_map,
+                            &self.search_cols,
+                            &byte_idx,
+                            @intCast(doc_id), 
+                            &terms_seen_bitset,
+                            ) catch break;
+                    }
+                },
             }
         }
 
@@ -601,8 +616,8 @@ pub const IndexManager = struct {
 
         const num_lines = line_offsets.items.len - 1;
 
-        const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
-        // const num_partitions = 1;
+        // const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
+        const num_partitions = 1;
 
         self.file_handles     = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
@@ -671,11 +686,12 @@ pub const IndexManager = struct {
         var map_it = self.search_cols.iterator();
         var idx: usize = 0;
         while (map_it.next()) |*item| {
-            search_col_idxs[idx] = item.value_ptr.csv_idx;
+            search_col_idxs[idx] = item.key_ptr.*;
             idx += 1;
         }
 
         for (0..num_partitions) |partition_idx| {
+            std.debug.print("NUM SEARCH COLS: {d}\n", .{num_search_cols});
             try self.index_partitions[partition_idx].resizeNumSearchCols(
                 num_search_cols
                 );
@@ -730,9 +746,11 @@ pub const IndexManager = struct {
 
         var query_it = queries.iterator();
         while (query_it.next()) |entry| {
-            const _col_idx = self.search_cols.get(entry.key_ptr.*);
-            if (_col_idx == null) continue;
-            const col_idx = _col_idx.?.II_idx;
+            const col_idx = self.col_map.find(entry.key_ptr.*) catch {
+                std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
+                continue;
+            };
+            const II_idx = self.search_cols.get(col_idx).?;
 
             var term_len: usize = 0;
 
@@ -742,12 +760,12 @@ pub const IndexManager = struct {
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
                         if (term_len == 0) continue;
 
-                        const token = self.index_partitions[partition_idx].II[col_idx].vocab.get(
+                        const token = self.index_partitions[partition_idx].II[II_idx].vocab.get(
                             term_buffer[0..term_len]
                             );
                         if (token != null) {
                             try tokens.append(ColTokenPair{
-                                .col_idx = @intCast(col_idx),
+                                .col_idx = @intCast(II_idx),
                                 .term_pos = term_pos,
                                 .token = token.?,
                             });
@@ -762,12 +780,12 @@ pub const IndexManager = struct {
                         term_len += 1;
 
                         if (term_len == MAX_TERM_LENGTH) {
-                            const token = self.index_partitions[partition_idx].II[col_idx].vocab.get(
+                            const token = self.index_partitions[partition_idx].II[II_idx].vocab.get(
                                 term_buffer[0..term_len]
                                 );
                             if (token != null) {
                                 try tokens.append(ColTokenPair{
-                                    .col_idx = @intCast(col_idx),
+                                    .col_idx = @intCast(II_idx),
                                     .term_pos = term_pos,
                                     .token = token.?,
                                 });
@@ -781,12 +799,12 @@ pub const IndexManager = struct {
             }
 
             if (term_len > 0) {
-                const token = self.index_partitions[partition_idx].II[col_idx].vocab.get(
+                const token = self.index_partitions[partition_idx].II[II_idx].vocab.get(
                     term_buffer[0..term_len]
                     );
                 if (token != null) {
                     try tokens.append(ColTokenPair{
-                        .col_idx = @intCast(col_idx),
+                        .col_idx = @intCast(II_idx),
                         .term_pos = term_pos,
                         .token = token.?,
                     });
@@ -817,13 +835,13 @@ pub const IndexManager = struct {
 
         var idf_remaining: f32 = 0.0;
         for (0.., tokens.items) |idx, _token| {
-            const col_idx: usize = @intCast(_token.col_idx);
+            const II_idx: usize = @intCast(_token.col_idx);
             const token:   usize = @intCast(_token.token);
 
-            const II: *InvertedIndex = &self.index_partitions[partition_idx].II[col_idx];
+            const II: *InvertedIndex = &self.index_partitions[partition_idx].II[II_idx];
             const boost_weighted_idf: f32 = (
                 1.0 + std.math.log2(@as(f32, @floatFromInt(II.num_docs)) / @as(f32, @floatFromInt(II.doc_freqs.items[token])))
-                ) * boost_factors.items[col_idx];
+                ) * boost_factors.items[II_idx];
             token_scores[idx] = boost_weighted_idf;
 
             idf_remaining += boost_weighted_idf;
@@ -832,15 +850,15 @@ pub const IndexManager = struct {
 
         var done = false;
 
-        var last_col_idx: usize = 0;
+        var last_II_idx: usize = 0;
         for (0..tokens.items.len) |idx| {
             const score = token_scores[idx];
             const col_score_pair = tokens.items[idx];
 
-            const col_idx = @as(usize, @intCast(col_score_pair.col_idx));
+            const II_idx = @as(usize, @intCast(col_score_pair.col_idx));
             const token   = @as(usize, @intCast(col_score_pair.token));
 
-            const II: *InvertedIndex = &self.index_partitions[partition_idx].II[col_idx];
+            const II: *InvertedIndex = &self.index_partitions[partition_idx].II[II_idx];
 
             const offset      = II.term_offsets[token];
             const last_offset = II.term_offsets[token + 1];
@@ -862,7 +880,7 @@ pub const IndexManager = struct {
 
                     // Phrase boost.
                     const last_term_pos = result.*.term_pos;
-                    result.*.score += @as(f32, @floatFromInt(@intFromBool((term_pos == last_term_pos + 1) and (col_idx == last_col_idx) and (doc_id == prev_doc_id)))) * score * 0.75;
+                    result.*.score += @as(f32, @floatFromInt(@intFromBool((term_pos == last_term_pos + 1) and (II_idx == last_II_idx) and (doc_id == prev_doc_id)))) * score * 0.75;
 
                     // Does tf scoring effectively.
                     result.*.score += score;
@@ -898,7 +916,7 @@ pub const IndexManager = struct {
             // std.debug.print("TOTAL TERMS SCORED: {d}\n", .{doc_scores.count()});
             // std.debug.print("WAS HIGH DF TERM:   {}\n\n", .{is_high_df_term});
             idf_remaining -= score;
-            last_col_idx = col_idx;
+            last_II_idx = II_idx;
         }
 
         // std.debug.print("\nTOTAL TERMS SCORED: {d}\n", .{doc_scores.count()});
@@ -1008,9 +1026,7 @@ test "index_json" {
     try index_manager.addSearchCol("artist");
     try index_manager.addSearchCol("album");
 
+    try index_manager.indexFile();
     @breakpoint();
-    // try index_manager.indexFile();
-// 
-// 
     // try index_manager.deinit();
 }

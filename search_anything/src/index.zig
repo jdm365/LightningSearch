@@ -6,6 +6,9 @@ const TOKEN_STREAM_CAPACITY = @import("file_utils.zig").TOKEN_STREAM_CAPACITY;
 const token_t = @import("file_utils.zig").token_t;
 
 const csv = @import("csv.zig");
+const json = @import("json.zig");
+const string_utils = @import("string_utils.zig");
+
 const TermPos = @import("server.zig").TermPos;
 const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
 const PruningRadixTrie = @import("pruning_radix_trie.zig").PruningRadixTrie;
@@ -491,6 +494,317 @@ pub const BM25Partition = struct {
         byte_idx.* += buffer_idx;
     }
 
+    pub fn processDocRfc8259(
+        self: *BM25Partition,
+        token_stream: *TokenStream,
+        trie: *const RadixTrie(u32),
+        search_col_mapping: *const std.AutoHashMap(u32, u32),
+        byte_idx: *usize,
+        doc_id: u32,
+        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
+    ) !void {
+        const buffer = try token_stream.getBuffer(byte_idx.*);
+        var buffer_idx: usize = 0;
+        std.debug.print("BUFFER: {s}\n", .{buffer[buffer_idx..][0..64]});
+
+        // Matches key against keys stored in trie. If not found 
+        // maxInt(u32) is returned. If EOL an error is returned.
+        // buffer_idx is incremented to the next key, next line,
+        // or if matched, start of value.
+        const matched_col_idx = json.matchKVPair(
+            buffer,
+            &buffer_idx,
+            trie,
+        ) catch {
+            // EOL. Not indexed key.
+            byte_idx.* += buffer_idx;
+            return;
+        };
+        if (matched_col_idx == std.math.maxInt(u32)) return;
+
+        const II_idx = search_col_mapping.get(matched_col_idx) orelse {
+            try json.iterValueJSON(buffer, &buffer_idx);
+            if (buffer[buffer_idx] == '}') {
+                buffer_idx += 1;
+                while (buffer[buffer_idx] != '{') buffer_idx += 1;
+                byte_idx.* += buffer_idx;
+                return error.EOL;
+            }
+            buffer_idx += 1;
+            buffer_idx += string_utils.simdFindCharIdxEscaped(
+                buffer[buffer_idx..], 
+                '"',
+                false,
+            );
+            byte_idx.* += buffer_idx;
+            return;
+        };
+        // std.debug.print("BUFFER 4: {s}\n", .{buffer[buffer_idx..][0..64]});
+
+        // Empty check.
+        if (
+            (buffer[buffer_idx] == ',') 
+                or 
+            (buffer[buffer_idx] == '}')
+            ) {
+            try token_stream.addToken(
+                true,
+                std.math.maxInt(u7),
+                std.math.maxInt(u24),
+                II_idx,
+            );
+
+            buffer_idx += 1;
+            switch (buffer[buffer_idx - 1]) {
+                '}' => {
+                    buffer_idx += string_utils.simdFindCharIdxEscapedFull(
+                        buffer[buffer_idx..],
+                        '{',
+                        );
+                    byte_idx.* += buffer_idx;
+                    return error.EOL;
+                },
+                ',' => {
+                    buffer_idx += string_utils.simdFindCharIdxEscapedFull(
+                        buffer[buffer_idx..],
+                        '"',
+                        );
+                    byte_idx.* += buffer_idx;
+                },
+                else => unreachable,
+            }
+
+            return;
+        }
+
+        var term_pos: u8 = 0;
+        const is_quoted = (buffer[buffer_idx] == '"');
+        buffer_idx += @intFromBool(is_quoted);
+
+        var cntr: usize   = 0;
+        var new_doc: bool = (doc_id != 0);
+
+        terms_seen.clear();
+
+        if (is_quoted) {
+
+            outer_loop: while (true) {
+                if (self.II[II_idx].doc_sizes[doc_id] >= MAX_NUM_TERMS) {
+                    buffer_idx = 0;
+                    try token_stream.iterFieldJSON(&buffer_idx);
+                    byte_idx.* += buffer_idx;
+                    return;
+                }
+
+                if (cntr > MAX_TERM_LENGTH - 4) {
+                    try self.flushLargeToken(
+                        buffer[buffer_idx - cntr..], 
+                        &cntr, 
+                        doc_id, 
+                        &term_pos, 
+                        II_idx, 
+                        token_stream, 
+                        terms_seen,
+                        &new_doc,
+                        );
+                    buffer_idx += 1;
+                    continue;
+                }
+
+                switch (buffer[buffer_idx]) {
+                    '"' => {
+                        buffer_idx += 1;
+                        json.nextPoint(buffer, &buffer_idx);
+                        break :outer_loop;
+                    },
+                    0...33, 35...47, 58...64, 91, 93...96, 123...126 => {
+                        if (cntr == 0) {
+                            buffer_idx += 1;
+                            continue;
+                        }
+
+                        const start_idx = buffer_idx - @min(buffer_idx, cntr);
+
+                        try self.addToken(
+                            buffer[start_idx..], 
+                            &cntr, 
+                            doc_id, 
+                            &term_pos, 
+                            II_idx, 
+                            token_stream, 
+                            terms_seen,
+                            &new_doc,
+                            );
+                    },
+                    '\\' => buffer_idx += 2,
+                    else => {
+                        cntr += 1;
+                        buffer_idx += 1;
+                    },
+                }
+            }
+        } else {
+
+            outer_loop: while (true) {
+                std.debug.assert(self.II[II_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
+
+                if (cntr > MAX_TERM_LENGTH - 4) {
+                    try self.flushLargeToken(
+                        buffer[buffer_idx - cntr..], 
+                        &cntr, 
+                        doc_id, 
+                        &term_pos, 
+                        II_idx, 
+                        token_stream, 
+                        terms_seen,
+                        &new_doc,
+                        );
+                    buffer_idx += 1;
+                    continue;
+                }
+
+
+                switch (buffer[buffer_idx]) {
+                    ',', '}' => break :outer_loop,
+
+                    78 => {
+                        // NULL
+                        buffer_idx += 4;
+                        cntr = 4;
+
+                        try self.addToken(
+                            buffer[buffer_idx - 4..], 
+                            &cntr, 
+                            doc_id, 
+                            &term_pos, 
+                            II_idx, 
+                            token_stream, 
+                            terms_seen,
+                            &new_doc,
+                            );
+                        json.nextPoint(buffer, &buffer_idx);
+                        break: outer_loop;
+                    },
+                    84 => {
+                        // TRUE
+                        buffer_idx += 4;
+                        cntr = 4;
+
+                        try self.addToken(
+                            buffer[buffer_idx - 4..], 
+                            &cntr, 
+                            doc_id, 
+                            &term_pos, 
+                            II_idx, 
+                            token_stream, 
+                            terms_seen,
+                            &new_doc,
+                            );
+                        json.nextPoint(buffer, &buffer_idx);
+                        break: outer_loop;
+                    },
+                    70 => {
+                        // FALSE
+                        buffer_idx += 5;
+                        cntr = 5;
+
+                        try self.addToken(
+                            buffer[buffer_idx - 5..], 
+                            &cntr, 
+                            doc_id, 
+                            &term_pos, 
+                            II_idx, 
+                            token_stream, 
+                            terms_seen,
+                            &new_doc,
+                            );
+                        json.nextPoint(buffer, &buffer_idx);
+                        break: outer_loop;
+                    },
+                    45, 48...57 => {
+                        if (cntr == 0) {
+                            buffer_idx += 1;
+                            cntr = 0;
+                            continue;
+                        }
+                        while (
+                            (buffer[buffer_idx] == 45)
+                                or
+                            (
+                             (buffer[buffer_idx] >= 48)
+                                and
+                             (buffer[buffer_idx] <= 57)
+                            )
+                        ) {
+                            buffer_idx += 1;
+                            cntr += 1;
+                        }
+
+                        const start_idx = buffer_idx - @min(buffer_idx, cntr);
+
+                        try self.addToken(
+                            buffer[start_idx..], 
+                            &cntr, 
+                            doc_id, 
+                            &term_pos, 
+                            II_idx, 
+                            token_stream, 
+                            terms_seen,
+                            &new_doc,
+                            );
+                        json.nextPoint(buffer, &buffer_idx);
+                        break :outer_loop;
+                    },
+                    else => {
+                        cntr += 1;
+                        buffer_idx += 1;
+                        json.nextPoint(buffer, &buffer_idx);
+                        break :outer_loop;
+                    },
+                }
+            }
+        }
+
+        if (cntr > 0) {
+            std.debug.assert(self.II[II_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
+
+            const start_idx = buffer_idx - @intFromBool(is_quoted) - 
+                              @min(buffer_idx - @intFromBool(is_quoted), cntr + 1);
+            try self.addTerm(
+                buffer[start_idx..],
+                cntr,
+                doc_id,
+                term_pos,
+                II_idx,
+                token_stream,
+                terms_seen,
+                &new_doc,
+                );
+        }
+
+        if (new_doc) {
+            // No terms found. Add null token.
+            try token_stream.addToken(
+                true,
+                std.math.maxInt(u7),
+                std.math.maxInt(u24),
+                II_idx,
+            );
+        }
+
+        switch (buffer[buffer_idx]) {
+            ',' => {
+                while (buffer[buffer_idx] != '"') buffer_idx += 1;
+                byte_idx.* += buffer_idx;
+            },
+            '}' => {
+                while (buffer[buffer_idx] != '{') buffer_idx += 1;
+                byte_idx.* += buffer_idx;
+                return error.EOL;
+            },
+            else => unreachable,
+        }
+    }
 
     pub fn constructFromTokenStream(
         self: *BM25Partition,

@@ -218,7 +218,7 @@ pub export fn getQueryHandlerLocal() *anyopaque {
 }
 
 export fn scanCSVFile(query_handler: *QueryHandlerLocal) void {
-    std.debug.assert(query_handler.index_manager.cols.items.len > 0);
+    std.debug.assert(query_handler.index_manager.col_map.num_keys > 0);
 
     query_handler.index_manager.scanCSVFile() catch {
         @panic("Error scanning file.\n");
@@ -273,8 +273,9 @@ export fn search(
     result_count.* = @intCast(m.*.results_arrays[0].count);
 
     for (0..result_count.*) |doc_idx| {
-        const start_idx = doc_idx * m.*.cols.items.len;
-        const end_idx   = start_idx + m.*.cols.items.len;
+        const num_cols = m.*.col_map.num_keys;
+        const start_idx = doc_idx * num_cols;
+        const end_idx   = start_idx + num_cols;
 
         for (0.., start_idx..end_idx) |col_idx, i| {
             start_positions[i] = m.*.result_positions[doc_idx][col_idx].start_pos;
@@ -289,10 +290,17 @@ pub export fn getColumnNames(
     column_names: [*][*:0]u8,
     num_columns: *u32,
     ) void {
-    num_columns.* = @truncate(query_handler.index_manager.cols.items.len);
-    for (0.., query_handler.index_manager.cols.items) |idx, item| {
-        @memcpy(column_names[idx], item);
-        column_names[idx][item.len] = 0;
+    const num_cols = query_handler.index_manager.col_map.num_keys;
+    num_columns.* = @truncate(num_cols);
+
+    var idx: usize = 0;
+    var iterator = query_handler.index_manager.col_map.iterator() catch {
+        @panic("Error reading column keys.\n");
+    };
+    while (iterator.next() catch {@panic("Error reading column keys.\n");}) |*item| {
+        @memcpy(column_names[idx], item.key);
+        column_names[idx][item.key.len] = 0;
+        idx += 1;
     }
 }
 
@@ -302,7 +310,7 @@ pub export fn getSearchColumns(
     ) void {
     var iterator = query_handler.index_manager.search_cols.iterator();
     while (iterator.next()) |item| {
-        col_mask[item.value_ptr.*.csv_idx] = 1;
+        col_mask[item.key_ptr.*] = 1;
     }
 }
 

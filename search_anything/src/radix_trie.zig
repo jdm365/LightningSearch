@@ -698,6 +698,208 @@ pub fn RadixTrie(comptime T: type) type {
             @panic("This should be unreachable.\n");
         }
 
+        pub fn insertNoReplace(self: *Self, key: []const u8, value: T) !void {
+            if (key.len == 0) return;
+
+            try self.nodes.ensureUnusedCapacity(256);
+
+            var node = &self.nodes.items[0];
+            var key_idx: usize = 0;
+
+            while (true) {
+                var next_node: *NodeType = undefined;
+                var max_edge_idx: usize = 0;
+                var max_lcp: u8 = 0;
+                var partial: bool = false;
+
+                const shift_len: usize = @intCast(self.char_freq_table[key[key_idx]]);
+
+                if (shift_len > 0) {
+                    if ((BITMASKS[shift_len] & node.getMaskU64()) == 0) {
+
+                        // Node doesn't exist. Insert.
+                        try self.addNode(key[key_idx..], node, value);
+                        self.num_keys += 1;
+                        self.num_nodes += 1;
+                        self.num_edges += 1;
+                        return;
+                    }
+
+                    const access_idx: usize = getInsertIdx(
+                        &self.char_freq_table, 
+                        node.getMaskU64(),
+                        key[key_idx],
+                        );
+
+                    const edge   = node.edges[access_idx];
+                    max_lcp      = LCP(key[key_idx..], edge.str[0..edge.len]);
+                    next_node    = &self.nodes.items[node.edges[access_idx].child_idx];
+                    partial      = max_lcp < edge.len;
+                    max_edge_idx = access_idx;
+
+                } else {
+                    const start_idx: usize = @popCount(node.getMaskU64() & FULL_MASKS[0]);
+                    for (start_idx..node.edge_data.num_edges) |edge_idx| {
+                        const current_edge   = node.edges[edge_idx];
+                        const current_prefix = current_edge.str[0..current_edge.len];
+                        const lcp = LCP(key[key_idx..], current_prefix);
+
+                        if (lcp > max_lcp) {
+                            max_lcp   = lcp;
+                            max_edge_idx = edge_idx;
+                            next_node = &self.nodes.items[node.edges[edge_idx].child_idx];
+                            partial   = lcp < current_prefix.len;
+                            break;
+                        }
+                    }
+                    if (max_lcp == 0) {
+                        try self.addNode(key[key_idx..], node, value);
+                        self.num_keys += 1;
+                        self.num_nodes += 1;
+                        self.num_edges += 1;
+                        return;
+                    }
+                }
+
+                key_idx += max_lcp;
+
+                // Matched rest of key. Node already exists. Replace.
+                if (!partial and (key_idx == key.len)) {
+                    // Make terminal if not.
+                    if ((next_node.edge_data.freq_char_bitmask & 1) == 0) {
+                        self.num_keys += 1;
+                        next_node.edge_data.freq_char_bitmask |= 1;
+                        next_node.value = value;
+                    }
+                    return;
+                }
+
+                const rem_chars: usize = key.len - key_idx;
+                if (partial) {
+                    // Split
+                    if (rem_chars == 0) {
+                        var existing_edge = &node.edges[max_edge_idx];
+                        const _new_node = NodeType{
+                            .edge_data = .{
+                                .freq_char_bitmask = 0,
+                                .num_edges = 0,
+                            },
+                            .value = value,
+                            .edges = undefined,
+                        };
+                        try self.nodes.append(_new_node);
+                        const new_node = &self.nodes.items[self.nodes.items.len - 1];
+                        const new_edge = try RadixEdge(T).init(self.allocator);
+
+                        self.num_nodes += 1;
+                        self.num_edges += 1;
+
+                        /////////////////////////////////
+                        //                             //
+                        // \ - existing_edge           //
+                        //  O - existing_node          //
+                        //                             //
+                        // str:           'ABC'        //
+                        // existing_edge: 'ABCD'       //
+                        //                             //
+                        // --------------------------- //
+                        //      SPLIT NO-CREATE        //
+                        // --------------------------- //
+                        // \ - existing_edge           // 
+                        //  O - new_node               //
+                        //   \ - new_edge              //
+                        //    O - existing_node        //
+                        //                             //
+                        // existing_edge: 'ABC'        //
+                        // new_edge:      'D'          //
+                        //                             //
+                        /////////////////////////////////
+
+                        new_edge.len      = existing_edge.len - max_lcp;
+                        existing_edge.len = max_lcp;
+
+                        @memcpy(
+                            new_edge.str[0..new_edge.len], 
+                            existing_edge.str[max_lcp..max_lcp + new_edge.len],
+                            );
+
+                        new_edge.child_idx      = existing_edge.child_idx;
+                        existing_edge.child_idx = self.nodes.items.len - 1;
+
+                        new_node.value = value;
+                        new_node.edge_data.freq_char_bitmask = @truncate(
+                            BITMASKS[self.char_freq_table[new_edge.str[0]]] | BITMASKS[0]
+                            );
+
+                        try new_node.addEdgePos(&self.char_freq_table, self.allocator, new_edge);
+                    } else {
+                        var existing_edge = &node.edges[max_edge_idx];
+                        const _new_node_1 = NodeType{
+                            .edge_data = .{
+                                .freq_char_bitmask = 0,
+                                .num_edges = 0,
+                            },
+                            .value = value,
+                            .edges = undefined,
+                        };
+                        try self.nodes.append(_new_node_1);
+                        const new_node_1 = &self.nodes.items[self.nodes.items.len - 1];
+                        const new_edge_2 = try RadixEdge(T).init(self.allocator);
+
+                        self.num_nodes += 2;
+                        self.num_edges += 2;
+
+                        /////////////////////////////////////////
+                        //                                     //
+                        // \ - existing_edge                   //
+                        //  O - existing_node                  //
+                        //                                     //
+                        // str:           'AEF'                //
+                        // existing_edge: 'ABCD'               //
+                        //                                     //
+                        // ----------------------------------- //
+                        //             SPLIT CREATE            //
+                        // ----------------------------------- //
+                        //  \ - existing_edge                  // 
+                        //   O - new_node_1                    //
+                        //  / \ - (new_edge_1, new_edge_2)     //
+                        // O   O - (new_node_2, existing_node) //
+                        //                                     //
+                        // existing_edge: 'A'                  //
+                        // new_edge_1:    'BCD'                //
+                        // new_edge_2:    'EF'                 //
+                        //                                     //
+                        /////////////////////////////////////////
+
+                        new_edge_2.len    = existing_edge.len - max_lcp;
+                        existing_edge.len = max_lcp;
+
+                        @memcpy(
+                            new_edge_2.str[0..new_edge_2.len], 
+                            existing_edge.str[max_lcp..max_lcp + new_edge_2.len],
+                            );
+
+                        new_edge_2.child_idx    = existing_edge.child_idx;
+                        existing_edge.child_idx = self.nodes.items.len - 1;
+
+                        new_node_1.edge_data.freq_char_bitmask = @intCast(
+                            BITMASKS[self.char_freq_table[new_edge_2.str[0]]] & FULL_MASKS[0]
+                            );
+                        try new_node_1.addEdgePos(&self.char_freq_table, self.allocator, new_edge_2);
+
+                        try self.addNode(key[key.len-rem_chars..], new_node_1, value);
+                    }
+
+                    self.num_keys += 1;
+                    return;
+                }
+
+                // Traverse
+                node = next_node;
+            }
+            @panic("This should be unreachable.\n");
+        }
+
         pub fn find(self: *const Self, key: []const u8) !T {
             var node = self.nodes.items[0];
             var key_idx: usize = 0;

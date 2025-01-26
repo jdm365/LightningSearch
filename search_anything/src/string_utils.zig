@@ -167,6 +167,7 @@ pub inline fn simdFindCharIdxEscapedFull(
     return buffer.len;
 }
 
+
 inline fn removeDoubled(comptime T: type, x: *T) void {
     comptime {
         std.debug.assert((T == u64) or (T == u32) or (T == u16));

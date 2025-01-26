@@ -258,7 +258,6 @@ pub const DoubleBufferedReader = struct {
 
 pub const TokenStream = struct {
     tokens: [][]token_t,
-    // f_data: []align(std.mem.page_size) u8,
     double_buffer: SingleThreadedDoubleBufferedReader,
     num_terms: []u32,
     allocator: std.mem.Allocator,
