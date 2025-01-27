@@ -8,6 +8,7 @@ const token_t = @import("file_utils.zig").token_t;
 const csv = @import("csv.zig");
 const json = @import("json.zig");
 const string_utils = @import("string_utils.zig");
+const file_utils = @import("file_utils.zig");
 
 const TermPos = @import("server.zig").TermPos;
 const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
@@ -889,6 +890,7 @@ pub const BM25Partition = struct {
         file_handle: *std.fs.File,
         query_result: QueryResult,
         record_string: *std.ArrayList(u8),
+        filetype: file_utils.FileType,
     ) !void {
         const doc_id: usize = @intCast(query_result.doc_id);
         const byte_offset = self.line_offsets[doc_id];
@@ -902,7 +904,22 @@ pub const BM25Partition = struct {
             try record_string.resize(bytes_to_read);
         }
         _ = try file_handle.read(record_string.items[0..bytes_to_read]);
-        record_string.items[bytes_to_read - 1] = '\n';
-        try csv.parseRecordCSV(record_string.items[0..bytes_to_read], result_positions);
+
+        switch (filetype) {
+            string_utils.FileType.CSV => {
+                record_string.items[bytes_to_read - 1] = '\n';
+                try csv.parseRecordCSV(
+                    record_string.items[0..bytes_to_read], 
+                    result_positions,
+                    );
+            },
+            string_utils.FileType.JSON => {
+                record_string.items[bytes_to_read - 1] = '{';
+                try json.parseRecordJSON(
+                    record_string.items[0..bytes_to_read], 
+                    result_positions,
+                    );
+            },
+        }
     }
 };

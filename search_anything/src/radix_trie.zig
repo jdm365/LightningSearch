@@ -148,7 +148,7 @@ pub fn RadixNode(comptime T: type) type {
                 const idx = self.edges[edge_idx].child_idx;
                 nodes[idx].deinit(allocator, nodes);
             }
-            allocator.free(self.edges);
+            allocator.free(self.edges[0..self.edge_data.num_edges]);
         }
 
         pub inline fn getMaskU64(self: *const Self) u64 {
@@ -161,7 +161,7 @@ pub fn RadixNode(comptime T: type) type {
             edge: RadixEdge(T),
             ) !void {
             const insert_idx = self.edge_data.num_edges;
-            const alignment = @alignOf(RadixEdge(T));
+            // const alignment = @alignOf(RadixEdge(T));
 
             var new_capacity: usize = 0;
             switch (insert_idx) {
@@ -182,27 +182,27 @@ pub fn RadixNode(comptime T: type) type {
                 }
             }
             std.debug.assert(new_capacity != 0);
-            // const new_slice: []RadixEdge(T) = try allocator.realloc(
-                    // self.edges[0..insert_idx],
+            const new_slice: []RadixEdge(T) = try allocator.realloc(
+                    self.edges[0..insert_idx],
+                    new_capacity,
+                    );
+            // var new_slice: []RadixEdge(T) = undefined;
+            // if (self.edge_data.num_edges == 0) {
+                // // Allocate with proper alignment for first edge
+                // new_slice = try allocator.allocWithOptions(
+                    // RadixEdge(T),
                     // new_capacity,
-                    // );
-            var new_slice: []RadixEdge(T) = undefined;
-            if (self.edge_data.num_edges == 0) {
-                // Allocate with proper alignment for first edge
-                new_slice = try allocator.allocWithOptions(
-                    RadixEdge(T),
-                    new_capacity,
-                    alignment,
-                    null,
-                );
-            } else {
-                // Realloc existing properly aligned memory
-                const old_slice = self.edges[0..self.edge_data.num_edges];
-                new_slice = try allocator.realloc(
-                    old_slice,
-                    new_capacity,
-                );
-            }
+                    // alignment,
+                    // null,
+                // );
+            // } else {
+                // // Realloc existing properly aligned memory
+                // const old_slice = self.edges[0..self.edge_data.num_edges];
+                // new_slice = try allocator.realloc(
+                    // old_slice,
+                    // new_capacity,
+                // );
+            // }
 
             self.edges = new_slice.ptr;
             self.edges[insert_idx] = edge;
@@ -493,7 +493,7 @@ pub fn RadixTrie(comptime T: type) type {
                         .num_edges = 0,
                     },
                     .value = if (is_leaf) value else undefined,
-                    .edges = &[0]RadixEdge(T){},
+                    .edges = undefined,
                 };
                 try self.nodes.append(_new_node);
 
@@ -612,7 +612,7 @@ pub fn RadixTrie(comptime T: type) type {
                                 .num_edges = 0,
                             },
                             .value = value,
-                            .edges =  &[0]RadixEdge(T){},
+                            .edges =  undefined,
                         };
                         try self.nodes.append(_new_node);
                         const new_node = &self.nodes.items[self.nodes.items.len - 1];
@@ -667,7 +667,7 @@ pub fn RadixTrie(comptime T: type) type {
                                 .num_edges = 0,
                             },
                             .value = value,
-                            .edges = &[0]RadixEdge(T){},
+                            .edges = undefined,
                         };
                         try self.nodes.append(_new_node_1);
                         const new_node_1 = &self.nodes.items[self.nodes.items.len - 1];
@@ -815,7 +815,7 @@ pub fn RadixTrie(comptime T: type) type {
                                 .num_edges = 0,
                             },
                             .value = value,
-                            .edges = &[0]RadixEdge(T){},
+                            .edges = undefined,
                         };
                         try self.nodes.append(_new_node);
                         const new_node = &self.nodes.items[self.nodes.items.len - 1];
@@ -870,7 +870,7 @@ pub fn RadixTrie(comptime T: type) type {
                                 .num_edges = 0,
                             },
                             .value = value,
-                            .edges = &[0]RadixEdge(T){},
+                            .edges = undefined,
                         };
                         try self.nodes.append(_new_node_1);
                         const new_node_1 = &self.nodes.items[self.nodes.items.len - 1];

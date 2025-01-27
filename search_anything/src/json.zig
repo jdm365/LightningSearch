@@ -2,6 +2,7 @@ const std = @import("std");
 const string_utils = @import("string_utils.zig");
 const MAX_TERM_LENGTH = @import("index.zig").MAX_TERM_LENGTH;
 const RadixTrie = @import("radix_trie.zig").RadixTrie;
+const TermPos = @import("server.zig").TermPos;
 
 
 pub inline fn nextPoint(buffer: []const u8, byte_idx: *usize) void {
@@ -161,6 +162,7 @@ pub inline fn matchKVPair(
     buffer: []const u8, 
     byte_idx: *usize,
     reference_dict: *const RadixTrie(u32),
+    uppercase_key: bool,
     ) !u32 {
     // Start from key. If key matches reference_dict, iter to value
     // and return dict value (idx). If doesn't match dict, iter to next key
@@ -168,7 +170,6 @@ pub inline fn matchKVPair(
     // '{' and return error.EOL;
 
     // Assert starting at key quote.
-    // std.debug.print("BUFFER: {s}\n", .{buffer[byte_idx.*..][0..64]});
     std.debug.assert(buffer[byte_idx.*] == '"');
     byte_idx.* += 1;
 
@@ -177,9 +178,18 @@ pub inline fn matchKVPair(
         '"',
         false,
     );
-    const match_val = reference_dict.find(
-        buffer[byte_idx.*..byte_idx.* + key_len],
-    ) catch {
+
+    const key = switch (uppercase_key) {
+        true => {
+        const buf: [256]u8 = undefined;
+        @memcpy(buf, buffer[byte_idx.*..byte_idx.* + key_len]);
+        string_utils.stringToUpper(buf.ptr, key_len);
+        return std.mem.bytesAsSlice([256]u8, buf);
+        },
+        false => buffer[byte_idx.*..byte_idx.* + key_len],
+    };
+
+    const match_val = reference_dict.find(key) catch {
         // Key not found. Iter to next key.
         byte_idx.* += key_len + 2;
         nextPoint(buffer, byte_idx);
@@ -334,6 +344,22 @@ pub inline fn iterLineJSONGetUniqueKeys(
     return error.InvalidJson;
 }
 
+pub inline fn parseRecordCSV(
+    buffer: []const u8,
+    result_positions: []TermPos,
+) !void {
+    // Parse JSON record in compliance with RFC 8259.
+    var byte_idx: usize = 0;
+    for (0..result_positions.len) |idx| {
+        const start_pos = byte_idx;
+        _iterFieldJSON(buffer, &byte_idx);
+
+        result_positions[idx] = TermPos{
+            .start_pos = @as(u32, @intCast(start_pos)) + @intFromBool(buffer[start_pos] == '"'),
+            .field_len = @as(u32, @intCast(byte_idx - start_pos - 1)) - @intFromBool(buffer[start_pos] == '"'),
+        };
+    }
+}
 
 
 
