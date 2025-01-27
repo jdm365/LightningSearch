@@ -100,8 +100,10 @@ pub inline fn parseRecordCSV(
         const start_pos = byte_idx;
         _iterFieldCSV(buffer, &byte_idx);
         result_positions[idx] = TermPos{
-            .start_pos = @as(u32, @intCast(start_pos)) + @intFromBool(buffer[start_pos] == '"'),
-            .field_len = @as(u32, @intCast(byte_idx - start_pos - 1)) - @intFromBool(buffer[start_pos] == '"'),
+            .start_pos = @as(u32, @intCast(start_pos)) + 
+                         @intFromBool(buffer[start_pos] == '"'),
+            .field_len = @as(u32, @intCast(byte_idx - start_pos)) - 
+                         2 * @as(u32, @intFromBool(buffer[start_pos] == '"')),
         };
     }
 }

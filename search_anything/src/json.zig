@@ -180,11 +180,11 @@ pub inline fn matchKVPair(
     );
 
     const key = switch (uppercase_key) {
-        true => {
-        const buf: [256]u8 = undefined;
-        @memcpy(buf, buffer[byte_idx.*..byte_idx.* + key_len]);
-        string_utils.stringToUpper(buf.ptr, key_len);
-        return std.mem.bytesAsSlice([256]u8, buf);
+        true => blk: {
+            var buf: [256]u8 = undefined;
+            @memcpy(buf[0..key_len], buffer[byte_idx.*..byte_idx.* + key_len]);
+            string_utils.stringToUpper(buf[0..key_len].ptr, key_len);
+            break :blk buf[0..key_len];
         },
         false => buffer[byte_idx.*..byte_idx.* + key_len],
     };
@@ -344,20 +344,53 @@ pub inline fn iterLineJSONGetUniqueKeys(
     return error.InvalidJson;
 }
 
-pub inline fn parseRecordCSV(
+pub inline fn parseRecordJSON(
     buffer: []const u8,
     result_positions: []TermPos,
+    reference_dict: *const RadixTrie(u32),
 ) !void {
+    std.debug.assert(buffer[0] == '{');
+
     // Parse JSON record in compliance with RFC 8259.
     var byte_idx: usize = 0;
-    for (0..result_positions.len) |idx| {
-        const start_pos = byte_idx;
-        _iterFieldJSON(buffer, &byte_idx);
 
-        result_positions[idx] = TermPos{
-            .start_pos = @as(u32, @intCast(start_pos)) + @intFromBool(buffer[start_pos] == '"'),
-            .field_len = @as(u32, @intCast(byte_idx - start_pos - 1)) - @intFromBool(buffer[start_pos] == '"'),
+    while (buffer[byte_idx] != '"') byte_idx += 1;
+
+    @memset(result_positions, TermPos{.start_pos = 0, .field_len = 0});
+    while (true) {
+        const matched_col_idx = matchKVPair(
+            buffer, 
+            &byte_idx,
+            reference_dict,
+            true,
+            ) catch {
+            // EOL. Not indexed key.
+            return;
         };
+
+        if (matched_col_idx == std.math.maxInt(u32)) continue;
+
+        const start_pos = byte_idx;
+        try iterValueJSON(buffer, &byte_idx);
+
+        result_positions[matched_col_idx] = TermPos{
+            .start_pos = @as(u32, @intCast(start_pos)) + 
+                         @intFromBool(buffer[start_pos] == '"'),
+            .field_len = @as(u32, @intCast(byte_idx - start_pos)) - 
+                         2 * @as(u32, @intFromBool(buffer[start_pos] == '"')),
+        };
+
+        if (buffer[byte_idx] == '}') {
+            byte_idx += 1;
+            while (buffer[byte_idx] != '{') byte_idx += 1;
+            return;
+        }
+        byte_idx += 1;
+        byte_idx += string_utils.simdFindCharIdxEscaped(
+            buffer[byte_idx..], 
+            '"',
+            false,
+        );
     }
 }
 

@@ -988,6 +988,8 @@ pub const IndexManager = struct {
                 &self.file_handles[result.partition_idx],
                 result,
                 &self.result_strings[idx],
+                self.file_type,
+                &self.col_map,
             );
             std.debug.print("Score {d}: {d} - Doc id: {d}\n", .{idx, self.results_arrays[0].scores[idx], self.results_arrays[0].items[idx].doc_id});
         }

@@ -4,6 +4,9 @@ data/
 *.zip
 *.json
 *.parquet
+.*/
+!.gitignore
+!.git
 
 ## Binaries
 *.so

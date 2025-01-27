@@ -519,6 +519,7 @@ pub const BM25Partition = struct {
             buffer,
             &buffer_idx,
             trie,
+            false,
         ) catch {
             // EOL. Not indexed key.
             byte_idx.* += buffer_idx;
@@ -890,7 +891,8 @@ pub const BM25Partition = struct {
         file_handle: *std.fs.File,
         query_result: QueryResult,
         record_string: *std.ArrayList(u8),
-        filetype: file_utils.FileType,
+        file_type: file_utils.FileType,
+        reference_dict: *const RadixTrie(u32),
     ) !void {
         const doc_id: usize = @intCast(query_result.doc_id);
         const byte_offset = self.line_offsets[doc_id];
@@ -905,19 +907,20 @@ pub const BM25Partition = struct {
         }
         _ = try file_handle.read(record_string.items[0..bytes_to_read]);
 
-        switch (filetype) {
-            string_utils.FileType.CSV => {
+        switch (file_type) {
+            file_utils.FileType.CSV => {
                 record_string.items[bytes_to_read - 1] = '\n';
                 try csv.parseRecordCSV(
                     record_string.items[0..bytes_to_read], 
                     result_positions,
                     );
             },
-            string_utils.FileType.JSON => {
+            file_utils.FileType.JSON => {
                 record_string.items[bytes_to_read - 1] = '{';
                 try json.parseRecordJSON(
                     record_string.items[0..bytes_to_read], 
                     result_positions,
+                    reference_dict,
                     );
             },
         }
