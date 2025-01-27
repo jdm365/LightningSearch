@@ -185,10 +185,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
    var detailsTable: NSTableView!
    var selectedRowData: [String: String] = [:]
 
+   private var openPanel: NSOpenPanel!
    private let searchQueue = DispatchQueue(label: "com.search.queue")
    
    func applicationDidFinishLaunching(_ notification: Notification) {
-       print("Application Started.")
        window = NSWindow(
            contentRect: NSRect(x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT),
            styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -241,16 +241,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        window.makeKeyAndOrderFront(nil)
        window.level = .floating
 
-       searchBridge = SearchBridge()
+       DispatchQueue.main.async {
+            self.searchBridge = SearchBridge()
+            self.openPanel = NSOpenPanel()
+            self.openPanel.allowsMultipleSelection = false
+            self.openPanel.canChooseDirectories = false
+            self.openPanel.canChooseFiles = true
+            self.openPanel.allowedContentTypes = [UTType.commaSeparatedText, UTType.json]
+       }
    }
 
    @objc func chooseFile() {
-       let openPanel = NSOpenPanel()
-       openPanel.allowsMultipleSelection = false
-       openPanel.canChooseDirectories = false
-       openPanel.canChooseFiles = true
-       openPanel.allowedContentTypes = [UTType.commaSeparatedText, UTType.json]
-       
        openPanel.beginSheetModal(for: window) { [weak self] response in
            guard let self = self else { return }
            if response == .OK, let url = openPanel.url {
