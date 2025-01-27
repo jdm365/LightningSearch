@@ -107,12 +107,21 @@ pub const QueryHandlerLocal = struct {
         self: *QueryHandlerLocal,
         filename: [*:0]const u8,
     ) void {
-        self.index_manager.readHeader(
-            std.mem.span(filename),
-            FileType.CSV,
-            ) catch {
-            @panic("Failed to read CSV header.\n");
-        };
+        if (std.mem.endsWith(u8, std.mem.span(filename), ".csv")) {
+            self.index_manager.readHeader(
+                std.mem.span(filename),
+                FileType.CSV,
+                ) catch {
+                @panic("Failed to read CSV header.\n");
+            };
+        } else if (std.mem.endsWith(u8, std.mem.span(filename), ".json")) {
+            self.index_manager.readHeader(
+                std.mem.span(filename),
+                FileType.JSON,
+                ) catch {
+                @panic("Failed to read CSV header.\n");
+            };
+        }
     }
 
     inline fn parseQueryString(
@@ -193,10 +202,10 @@ pub export fn getQueryHandlerLocal() *anyopaque {
     return @ptrCast(query_handler);
 }
 
-export fn scanCSVFile(query_handler: *QueryHandlerLocal) void {
+export fn scanFile(query_handler: *QueryHandlerLocal) void {
     std.debug.assert(query_handler.index_manager.col_map.num_keys > 0);
 
-    query_handler.index_manager.scanCSVFile() catch {
+    query_handler.index_manager.scanFile() catch {
         @panic("Error scanning file.\n");
     };
 }

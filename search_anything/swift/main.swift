@@ -51,7 +51,7 @@ private let add_search_col = dlsym(searchLib, "addSearchCol")
         UnsafePointer<CChar>
     ) -> Void).self) }
 
-private let scan_csv_file = dlsym(searchLib, "scanCSVFile")
+private let scan_file = dlsym(searchLib, "scanFile")
     .map { unsafeBitCast($0, to: (@convention(c) (
         UnsafeRawPointer
     ) -> Void).self) }
@@ -203,7 +203,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        fileSelectionView.translatesAutoresizingMaskIntoConstraints = false
        
        let label = NSTextField(frame: .zero)
-       label.stringValue = "Please select a CSV file to index"
+       label.stringValue = "Please select a CSV or JSON file to index"
        label.isEditable = false
        label.isBordered = false
        label.drawsBackground = false
@@ -249,7 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
        openPanel.allowsMultipleSelection = false
        openPanel.canChooseDirectories = false
        openPanel.canChooseFiles = true
-       openPanel.allowedContentTypes = [UTType.commaSeparatedText]
+       openPanel.allowedContentTypes = [UTType.commaSeparatedText, UTType.json]
        
        openPanel.beginSheetModal(for: window) { [weak self] response in
            guard let self = self else { return }
@@ -276,7 +276,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         // Launch scan operation
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            scan_csv_file?(handler)
+            scan_file?(handler)
             group.leave()
         }
         

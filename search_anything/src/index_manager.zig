@@ -551,6 +551,12 @@ pub const IndexManager = struct {
         try self.index_partitions[partition_idx].constructFromTokenStream(&token_stream);
     }
 
+    pub fn scanFile(self: *IndexManager) !void {
+        switch (self.file_type) {
+            FileType.CSV => try self.scanCSVFile(),
+            FileType.JSON => try self.scanJSONFile(),
+        }
+    }
 
     pub fn scanCSVFile(self: *IndexManager) !void {
         const file = try std.fs.cwd().openFile(self.input_filename, .{});
@@ -997,7 +1003,7 @@ test "index_csv" {
     var index_manager = try IndexManager.init();
 
     try index_manager.readHeader(filename, FileType.CSV);
-    try index_manager.scanCSVFile();
+    try index_manager.scanFile();
 
     try index_manager.addSearchCol("title");
     try index_manager.addSearchCol("artist");
@@ -1015,7 +1021,7 @@ test "index_json" {
     var index_manager = try IndexManager.init();
 
     try index_manager.readHeader(filename, FileType.JSON);
-    try index_manager.scanJSONFile();
+    try index_manager.scanFile();
 
     try index_manager.addSearchCol("title");
     try index_manager.addSearchCol("artist");
