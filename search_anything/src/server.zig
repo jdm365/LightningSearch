@@ -269,15 +269,15 @@ pub export fn getColumnNames(
     const num_cols = query_handler.index_manager.col_map.num_keys;
     num_columns.* = @truncate(num_cols);
 
-    // var idx: usize = 0;
     var iterator = query_handler.index_manager.col_map.iterator() catch {
         @panic("Error reading column keys.\n");
     };
+    defer iterator.deinit();
+
     while (iterator.next() catch {@panic("Error reading column keys.\n");}) |*item| {
         const idx = item.value;
         @memcpy(column_names[idx], item.key);
         column_names[idx][item.key.len] = 0;
-        // idx += 1;
     }
 }
 

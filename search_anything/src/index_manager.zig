@@ -46,7 +46,7 @@ const ColTokenPair = packed struct {
 pub const IndexManager = struct {
     index_partitions: []BM25Partition,
     input_filename: []const u8,
-    gpa: std.heap.GeneralPurposeAllocator(.{}),
+    gpa: std.heap.GeneralPurposeAllocator(.{.thread_safe = true}),
     string_arena: std.heap.ArenaAllocator,
     scratch_arena: std.heap.ArenaAllocator,
     search_cols: std.AutoHashMap(u32, u32),
@@ -81,7 +81,6 @@ pub const IndexManager = struct {
         };
         manager.search_cols = std.AutoHashMap(u32, u32).init(manager.gpa.allocator());
         manager.col_map = try RadixTrie(u32).initCapacity(
-            // manager.string_arena.allocator(),
             manager.gpa.allocator(),
             16384,
             );
@@ -110,7 +109,7 @@ pub const IndexManager = struct {
         }
 
         self.search_cols.deinit();
-        // self.col_map.deinit();
+        self.col_map.deinit();
 
         self.string_arena.deinit();
         self.scratch_arena.deinit();
@@ -144,7 +143,7 @@ pub const IndexManager = struct {
         switch (self.file_type) {
             FileType.CSV => {
                 try self.readCSVHeader();
-            },
+           },
             FileType.JSON => {
                 try self.getUniqueJSONKeys(16384);
             },

@@ -133,7 +133,6 @@ class SearchBridge {
         resultCount = 0
         
         print("Query: \(query)")
-        var startTime = CFAbsoluteTimeGetCurrent()
         query.withCString { queryStr in
             search_func?(
                 queryHandler,
@@ -144,10 +143,7 @@ class SearchBridge {
                 &resultBuffers
             )
         }
-        var timeElapsed = CFAbsoluteTimeGetCurrent() - startTime
-        print("Time elapsed: \(timeElapsed) seconds")
-        print("Found \(resultCount) results")
-        startTime = CFAbsoluteTimeGetCurrent()
+
         var results: [[String]] = []
         for i in 0..<Int(resultCount) {
             var row: [String] = []
@@ -165,8 +161,6 @@ class SearchBridge {
             }
             results.append(row)
         }
-        timeElapsed = CFAbsoluteTimeGetCurrent() - startTime
-        print("Time elapsed populate: \(timeElapsed) seconds")
         
         return results
     }
