@@ -102,7 +102,7 @@ pub inline fn parseRecordCSV(
         result_positions[idx] = TermPos{
             .start_pos = @as(u32, @intCast(start_pos)) + 
                          @intFromBool(buffer[start_pos] == '"'),
-            .field_len = @as(u32, @intCast(byte_idx - start_pos)) - 
+            .field_len = @as(u32, @intCast(byte_idx - start_pos - 1)) - 
                          2 * @as(u32, @intFromBool(buffer[start_pos] == '"')),
         };
     }

@@ -191,12 +191,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
    func applicationDidFinishLaunching(_ notification: Notification) {
        window = NSWindow(
            contentRect: NSRect(x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT),
+           // styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
            styleMask: [.titled, .closable, .miniaturizable, .resizable],
            backing: .buffered,
            defer: false
        )
        
-       window.appearance = NSAppearance(named: .vibrantDark)
+        // window.isOpaque = false
+        // window.backgroundColor = NSColor.clear
+        window.appearance = NSAppearance(named: .vibrantDark)
+
+        // // Add the background image
+        // let backgroundImageView = NSImageView(frame: window.contentView!.bounds)
+        // backgroundImageView.image = NSImage(named: "../../logo.png") // Replace with your image name
+        // backgroundImageView.imageScaling = .scaleAxesIndependently
+        // backgroundImageView.alphaValue = 0.8 // Adjust transparency (0.0 = fully transparent, 1.0 = fully opaque)
+        // backgroundImageView.autoresizingMask = [.width, .height] // Ensure it resizes with the window
+        // window.contentView?.addSubview(backgroundImageView, positioned: .below, relativeTo: nil)
        
        fileSelectionView = NSView(frame: window.contentView!.bounds)
        window.contentView?.addSubview(fileSelectionView)
@@ -364,21 +375,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
            subview.isHidden = true
        }
 
-       // let label = NSTextField()
-       // label.isEditable = false
-       // label.isBordered = false
-       // label.drawsBackground = false
-       // label.stringValue = "Indexing file..."
-       // label.font = .systemFont(ofSize: 16)
-       // label.alignment = .center
-       // label.translatesAutoresizingMaskIntoConstraints = false
-       //  
-       // window.contentView?.addSubview(label)
-       // NSLayoutConstraint.activate([
-           // label.centerXAnchor.constraint(equalTo: window.contentView!.centerXAnchor),
-           // label.centerYAnchor.constraint(equalTo: window.contentView!.centerYAnchor)
-       // ])
-
         let totalDocs = Double(get_num_docs!(handler) / 1000)
 
         // Create progress bar
@@ -414,6 +410,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
 
         // Create a timer to update progress
         var progressTimer: Timer?
+        let totalDocsDigits = String(Int(totalDocs/1000)).count
         progressTimer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { [weak self] timer in
             guard let _ = self else {
                 timer.invalidate()
@@ -424,10 +421,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
                 DispatchQueue.main.async {
                     // Update progress bar
                     progressBar.doubleValue = Double(progress) / 1000
-                    
-                    // Update label
-                    // progressLabel.stringValue = "Processed \(Int(progress / 1000)) / \(Int(totalDocs))K documents"
-                    let totalDocsDigits = String(Int(totalDocs/1000)).count
 
                     // Use string format with width specification
                     let text = String(format: "Processed %\(totalDocsDigits)d / %dK documents", 

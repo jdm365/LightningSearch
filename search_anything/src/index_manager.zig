@@ -485,6 +485,8 @@ pub const IndexManager = struct {
                 prev_doc_id = doc_id;
                 timer.reset();
 
+                self.last_progress = current_docs_read;
+
                 if (partition_idx == 0) {
                     progress_bar.update(current_docs_read);
                     self.last_progress = current_docs_read;
