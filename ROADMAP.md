@@ -41,3 +41,20 @@
 36 - 02/25/2025 - Look into prebuilding binaries. Code signing. Etc.
 37 - 02/26/2025 - Look into prebuilding binaries. Code signing. Etc.
 38 - 02/27/2025 - Look into prebuilding binaries. Code signing. Etc.
+
+
+--------------------------
+          ITEMS
+--------------------------
+- Add json support. - DONE
+- Add txt support.
+- Build flat file interface.
+- Add docx support.
+- Add pdf support.
+- Add tab support.
+- Add saving + loading support.
+- Add globbing support.
+- Rename. DONE
+- Make frontend pretty.
+- Update README.md.
+- Look into prebuilding binaries. Code signing. Etc.
