@@ -149,8 +149,9 @@ pub fn RadixNode(comptime T: type) type {
                 nodes[idx].deinit(allocator, nodes);
             }
             const free_size: usize = switch (self.edge_data.num_edges) {
-                0 => 1,
-                1...2 => 3,
+                0 => return,
+                1 => 1,
+                2 => 3,
                 3...4 => 5,
                 5...7 => 8,
                 8...15 => 16,
@@ -158,10 +159,9 @@ pub fn RadixNode(comptime T: type) type {
                 32...63 => 64,
                 64...127 => 128,
                 128...191 => 192,
-                192...255 => 256,
+                192...256 => 256,
                 else => unreachable,
             };
-
             allocator.free(self.edges[0..free_size]);
         }
 
@@ -296,6 +296,7 @@ pub fn RadixTrie(comptime T: type) type {
         num_edges: usize,
         num_keys: usize,
         char_freq_table: [256]u8,
+        scratch_arena: std.heap.ArenaAllocator,
 
 
         pub const Entry = struct {
@@ -331,6 +332,9 @@ pub fn RadixTrie(comptime T: type) type {
                 .num_edges = 0,
                 .num_keys = 0,
                 .char_freq_table = getBaseCharFreqTable(num_bits),
+                .scratch_arena = std.heap.ArenaAllocator.init(
+                    std.heap.page_allocator,
+                    ),
             };
         }
 
@@ -340,6 +344,7 @@ pub fn RadixTrie(comptime T: type) type {
                 self.nodes.items,
             );
             self.nodes.deinit();
+            self.scratch_arena.deinit();
         }
 
         const Stack = struct{
@@ -1004,7 +1009,7 @@ pub fn RadixTrie(comptime T: type) type {
         }
 
         fn gatherChildrenBFS(
-            self: *const Self, 
+            self: *Self, 
             starting_node: *const NodeType, 
             nodes_array: *[]Entry,
             current_node_idx: *usize,
@@ -1018,7 +1023,7 @@ pub fn RadixTrie(comptime T: type) type {
                 const child = self.nodes.items[edge.child_idx];
 
                 const new_prefix = try std.mem.concat(
-                    self.allocator, 
+                    self.scratch_arena.allocator(), 
                     u8, 
                     &[_][]const u8{current_prefix, edge.str[0..edge.len]},
                     );
@@ -1032,12 +1037,17 @@ pub fn RadixTrie(comptime T: type) type {
                 }
 
                 if (current_node_idx.* == nodes_array.len) return;
-                try self.gatherChildrenBFS(&child, nodes_array, current_node_idx, new_prefix);
+                try self.gatherChildrenBFS(
+                    &child, 
+                    nodes_array, 
+                    current_node_idx, 
+                    new_prefix,
+                    );
             }
         }
 
         pub fn getPrefixNodes(
-            self: *const Self, 
+            self: *Self, 
             key: []const u8, 
             matching_nodes: *[]Entry,
             ) !usize {
@@ -1076,6 +1086,7 @@ pub fn RadixTrie(comptime T: type) type {
                                 result_idx += 1;
                             }
 
+                            _ = self.scratch_arena.reset(.{ .retain_with_limit = (1 << 20)});
                             try self.gatherChildrenBFS(
                                 &node, 
                                 matching_nodes, 
@@ -1094,6 +1105,7 @@ pub fn RadixTrie(comptime T: type) type {
                                 result_idx += 1;
                             }
 
+                            _ = self.scratch_arena.reset(.{ .retain_with_limit = (1 << 20)});
                             try self.gatherChildrenBFS(
                                 &node, 
                                 matching_nodes, 
@@ -1124,6 +1136,7 @@ pub fn RadixTrie(comptime T: type) type {
                                     result_idx += 1;
                                 }
 
+                                _ = self.scratch_arena.reset(.{ .retain_with_limit = (1 << 20)});
                                 try self.gatherChildrenBFS(
                                     &node, 
                                     matching_nodes, 
@@ -1145,6 +1158,7 @@ pub fn RadixTrie(comptime T: type) type {
                                 result_idx += 1;
                             }
 
+                            _ = self.scratch_arena.reset(.{ .retain_with_limit = (1 << 20)});
                             try self.gatherChildrenBFS(
                                 &node, 
                                 matching_nodes, 
@@ -1167,6 +1181,7 @@ pub fn RadixTrie(comptime T: type) type {
                     result_idx += 1;
                 }
 
+                _ = self.scratch_arena.reset(.{ .retain_with_limit = (1 << 20)});
                 try self.gatherChildrenBFS(
                     &node, 
                     matching_nodes, 
@@ -1184,6 +1199,7 @@ pub fn RadixTrie(comptime T: type) type {
                     result_idx += 1;
                 }
 
+                _ = self.scratch_arena.reset(.{ .retain_with_limit = (1 << 20)});
                 try self.gatherChildrenBFS(
                     &node, 
                     matching_nodes, 
@@ -1235,6 +1251,7 @@ test "insertion" {
 
     const limit: usize = 10;
     var matching_nodes = try trie.allocator.alloc(RadixTrie(u32).Entry, limit);
+    defer trie.allocator.free(matching_nodes);
 
     const nodes_found = try trie.getPrefixNodes("tes", &matching_nodes);
     for (0..nodes_found) |i| {
@@ -1263,6 +1280,7 @@ test "insertion" {
 }
 
 test "bench" {
+    @breakpoint();
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     // var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
