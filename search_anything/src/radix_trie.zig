@@ -148,7 +148,21 @@ pub fn RadixNode(comptime T: type) type {
                 const idx = self.edges[edge_idx].child_idx;
                 nodes[idx].deinit(allocator, nodes);
             }
-            allocator.free(self.edges[0..self.edge_data.num_edges]);
+            const free_size: usize = switch (self.edge_data.num_edges) {
+                0 => 1,
+                1...2 => 3,
+                3...4 => 5,
+                5...7 => 8,
+                8...15 => 16,
+                16...31 => 32, 
+                32...63 => 64,
+                64...127 => 128,
+                128...191 => 192,
+                192...255 => 256,
+                else => unreachable,
+            };
+
+            allocator.free(self.edges[0..free_size]);
         }
 
         pub inline fn getMaskU64(self: *const Self) u64 {
@@ -1187,10 +1201,14 @@ pub fn RadixTrie(comptime T: type) type {
 test "insertion" {
     print("\n\n", .{});
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    // var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    // // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // defer arena.deinit();
+    var gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){};
+    defer {
+        _ = gpa.deinit();
+    }
+    const allocator = gpa.allocator();
 
     var trie = try RadixTrie(u32).init(allocator);
     defer trie.deinit();

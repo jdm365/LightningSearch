@@ -80,11 +80,13 @@ pub const IndexManager = struct {
             .file_type = undefined,
         };
         manager.search_cols = std.AutoHashMap(u32, u32).init(manager.gpa.allocator());
+        try manager.search_cols.ensureTotalCapacity(50);
+
         manager.col_map = try RadixTrie(u32).initCapacity(
-            manager.gpa.allocator(),
+            // manager.gpa.allocator(),
+            std.heap.c_allocator,
             16384,
             );
-        try manager.search_cols.ensureTotalCapacity(50);
 
         return manager;
     }

@@ -6,6 +6,8 @@ const zap = @import("zap");
 const IndexManager = @import("index_manager.zig").IndexManager;
 const FileType = @import("file_utils.zig").FileType;
 
+const server = @import("server.zig");
+
 
 fn bench(testing: bool) !void {
     // const filename: []const u8 = "../tests/mb_small.csv";
@@ -74,21 +76,29 @@ fn bench(testing: bool) !void {
 }
 
 pub fn main() !void {
-    // try main_cli_runner();
-    // try server_test();
-    // try bench(true);
-
-    const filename: []const u8 = "../data/mb_small.csv";
+    // const filename: []const u8 = "../data/mb_small.csv";
+    const filename: [*:0]const u8 = "../data/mb_small.csv";
     // const filename: []const u8 = "../data/mb.csv";
 
-    var index_manager = try IndexManager.init();
+    // var index_manager = try IndexManager.init();
+// 
+    // try index_manager.readHeader(filename, FileType.CSV);
+    // try index_manager.scanFile();
+// 
+    // try index_manager.addSearchCol("title");
+    // try index_manager.addSearchCol("artist");
+    // try index_manager.addSearchCol("album");
+// 
+    // try index_manager.indexFile();
 
-    try index_manager.readHeader(filename, FileType.CSV);
-    try index_manager.scanCSVFile();
 
-    try index_manager.addSearchCol("title");
-    try index_manager.addSearchCol("artist");
-    try index_manager.addSearchCol("album");
+    server.init_allocators();
+    const QH = @as(*server.QueryHandlerLocal, @alignCast(@ptrCast(server.getQueryHandlerLocal())));
+    QH.readHeader(filename);
+    server.scanFile(QH);
+    server.addSearchCol(QH, "title");
+    server.addSearchCol(QH, "artist");
+    server.addSearchCol(QH, "album");
 
-    try index_manager.indexFile();
+    server.indexFile(QH);
 }

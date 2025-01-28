@@ -103,7 +103,7 @@ pub const QueryHandlerLocal = struct {
         self.search_cols.deinit();
     }
 
-    export fn readHeader(
+    pub export fn readHeader(
         self: *QueryHandlerLocal,
         filename: [*:0]const u8,
     ) void {
@@ -202,7 +202,7 @@ pub export fn getQueryHandlerLocal() *anyopaque {
     return @ptrCast(query_handler);
 }
 
-export fn scanFile(query_handler: *QueryHandlerLocal) void {
+pub export fn scanFile(query_handler: *QueryHandlerLocal) void {
     std.debug.assert(query_handler.index_manager.col_map.num_keys > 0);
 
     query_handler.index_manager.scanFile() catch {
@@ -210,7 +210,7 @@ export fn scanFile(query_handler: *QueryHandlerLocal) void {
     };
 }
 
-export fn indexFile(query_handler: *QueryHandlerLocal) void {
+pub export fn indexFile(query_handler: *QueryHandlerLocal) void {
     std.debug.assert(query_handler.index_manager.search_cols.count() > 0);
 
     query_handler.index_manager.indexFile() catch {
@@ -218,7 +218,7 @@ export fn indexFile(query_handler: *QueryHandlerLocal) void {
     };
 }
 
-export fn addSearchCol(
+pub export fn addSearchCol(
     query_handler: *QueryHandlerLocal,
     col_name: [*:0]const u8,
 ) void {
