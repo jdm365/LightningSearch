@@ -95,7 +95,7 @@ pub inline fn simdFindCharIdxEscaped(
 
     // TODO: Handle escaped escapes.
     char_mask &= ~(effective_escape_mask << 1);
-    char_mask &= ~@as(u64, @intFromBool(escape_first));
+    char_mask &= ~@as(MASK_TYPE, @intFromBool(escape_first));
 
     return @ctz(char_mask);
 }
@@ -144,7 +144,7 @@ pub inline fn simdFindCharIdxEscapedFull(
         char_mask &= ~(effective_escape_mask << 1);
         char_mask &= escape_next_first_mask;
 
-        escape_next_first_mask = ~@as(u64, @popCount(base_mask & effective_escape_mask));
+        escape_next_first_mask = ~@as(MASK_TYPE, @popCount(base_mask & effective_escape_mask));
         const index = @ctz(char_mask);
         if (index != VEC_SIZE) {
             return total_offset + index;
