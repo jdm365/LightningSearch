@@ -231,6 +231,7 @@ pub const IndexManager = struct {
 // 
 
     fn readCSVHeader(self: *IndexManager) !void {
+        // TODO: Add `has_header` option.
         defer {
             _ = self.scratch_arena.reset(.retain_capacity);
         }
@@ -291,21 +292,25 @@ pub const IndexManager = struct {
                     switch (f_data[byte_idx]) {
                         ',', '\n' => {
                             // ADD TERM.
-                            std.debug.assert(cntr > 0);
-                            // const term_copy = try self.string_arena.allocator().dupe(
-                                // u8,
-                                // term[0..cntr],
-                            // );
-                            // std.debug.print("self.input_filename: {s}\n", .{self.input_filename});
-                            // TODO: Just stack allocate?
-                            try self.col_map.insert(
-                                // term_copy,
-                                term[0..cntr],
-                                @truncate(self.col_map.num_keys),
-                                );
-                            // std.debug.print("self.input_filename: {s}\n", .{self.input_filename});
+                            if (cntr > 0) {
+                                try self.col_map.insert(
+                                    term[0..cntr],
+                                    @truncate(self.col_map.num_keys),
+                                    );
+                            } else {
+                                const col_name = try std.fmt.allocPrint(
+                                    self.scratch_arena.allocator(), 
+                                    "col_{d}", 
+                                    .{col_idx}
+                                    );
+                                try self.col_map.insert(
+                                    col_name,
+                                    @truncate(self.col_map.num_keys),
+                                    );
+                            }
 
                             if (f_data[byte_idx] == '\n') {
+                                std.debug.assert(cntr > 0);
                                 self.header_bytes = byte_idx + 1;
                                 return;
                             }
@@ -581,7 +586,7 @@ pub const IndexManager = struct {
         var file_pos: usize = self.header_bytes;
 
         // Time read.
-        const start_time = std.time.milliTimestamp();
+        const start_time = std.time.microTimestamp();
 
         try line_offsets.ensureTotalCapacity(16384);
 
@@ -604,11 +609,11 @@ pub const IndexManager = struct {
         }
         try line_offsets.append(file_size);
 
-        const end_time = std.time.milliTimestamp();
-        const execution_time_ms = end_time - start_time;
-        const mb_s: usize = @as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(execution_time_ms))));
+        const end_time = std.time.microTimestamp();
+        const execution_time_us = end_time - start_time;
+        const mb_s: usize = @as(usize, @intFromFloat(0.000_001 * @as(f64, @floatFromInt(file_size)) / @as(f64, @floatFromInt(execution_time_us))));
 
-        std.debug.print("Read {d} lines in {d}ms\n", .{line_offsets.items.len - 1, execution_time_ms});
+        std.debug.print("Read {d} lines in {d}ms\n", .{line_offsets.items.len - 1, @divFloor(execution_time_us, 1000)});
         std.debug.print("{d}MB/s\n", .{mb_s});
 
         try self.initPartitions(&line_offsets, file_size);

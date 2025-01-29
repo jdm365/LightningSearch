@@ -103,7 +103,7 @@ pub const InvertedIndex = struct {
         allocator: std.mem.Allocator,
         ) !void {
         self.num_terms = @intCast(self.doc_freqs.items.len);
-        self.term_offsets = try allocator.alloc(usize, self.num_terms);
+        self.term_offsets = try allocator.alloc(usize, self.num_terms + 1);
 
         std.debug.assert(self.num_terms == self.vocab.count());
 
@@ -113,7 +113,7 @@ pub const InvertedIndex = struct {
             self.term_offsets[i] = postings_size;
             postings_size += doc_freq;
         }
-        // self.term_offsets[self.num_terms - 1] = postings_size;
+        self.term_offsets[self.num_terms] = postings_size;
         self.postings = try allocator.alloc(token_t, postings_size + 1);
 
         var avg_doc_size: f64 = 0.0;
