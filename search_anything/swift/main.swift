@@ -383,6 +383,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         progressBar.isIndeterminate = false
         progressBar.minValue = 0
         progressBar.maxValue = totalDocs
+        progressBar.controlSize = .large
         progressBar.translatesAutoresizingMaskIntoConstraints = false
         
         // Create progress label
