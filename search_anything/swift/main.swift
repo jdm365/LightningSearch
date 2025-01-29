@@ -167,47 +167,47 @@ class SearchBridge {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate {
-   var window: NSWindow!
-   var tableView: NSTableView!
-   var searchFields: [NSSearchField] = []
-   var searchResults: [[String]] = []
-   var searchStrings: [String] = []
-   var searchBridge: SearchBridge!
-   var columnSelectionWindow: NSWindow!
-   var checkboxes: [NSButton] = []
-   var searchContainer: NSView!
-   var scrollView: NSScrollView!
-   var fileSelectionView: NSView!
+    var window: NSWindow!
+    var tableView: NSTableView!
+    var searchFields: [NSSearchField] = []
+    var searchResults: [[String]] = []
+    var searchStrings: [String] = []
+    var searchBridge: SearchBridge!
+    var columnSelectionWindow: NSWindow!
+    var checkboxes: [NSButton] = []
+    var searchContainer: NSView!
+    var scrollView: NSScrollView!
+    var fileSelectionView: NSView!
 
-   // Side panel data
-   var splitView: NSSplitView!
-   var detailsView: NSScrollView!
-   var detailsTable: NSTableView!
-   var selectedRowData: [String: String] = [:]
+    // Side panel data
+    var splitView: NSSplitView!
+    var detailsView: NSScrollView!
+    var detailsTable: NSTableView!
+    var selectedRowData: [String: String] = [:]
 
-   private var openPanel: NSOpenPanel!
-   private let searchQueue = DispatchQueue(label: "com.search.queue")
+    private var openPanel: NSOpenPanel!
+    private let searchQueue = DispatchQueue(label: "com.search.queue")
+    private var backgroundImageView: NSImageView!
    
-   func applicationDidFinishLaunching(_ notification: Notification) {
-       window = NSWindow(
-           contentRect: NSRect(x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT),
-           // styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-           styleMask: [.titled, .closable, .miniaturizable, .resizable],
-           backing: .buffered,
-           defer: false
-       )
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        window = NSWindow(
+            contentRect: NSRect(
+                x: 0, 
+                y: 0, 
+                width: WINDOW_WIDTH, 
+                height: WINDOW_HEIGHT
+            ),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        setupBackgroundImage()
+        
+        // Make window background clear to show image
+        // window.backgroundColor = NSColor(black: 0.1, alpha: 0.8)
+        window.backgroundColor = NSColor(white: 0.1, alpha: 0.8)
        
-        // window.isOpaque = false
-        // window.backgroundColor = NSColor.clear
         window.appearance = NSAppearance(named: .vibrantDark)
-
-        // // Add the background image
-        // let backgroundImageView = NSImageView(frame: window.contentView!.bounds)
-        // backgroundImageView.image = NSImage(named: "../../logo.png") // Replace with your image name
-        // backgroundImageView.imageScaling = .scaleAxesIndependently
-        // backgroundImageView.alphaValue = 0.8 // Adjust transparency (0.0 = fully transparent, 1.0 = fully opaque)
-        // backgroundImageView.autoresizingMask = [.width, .height] // Ensure it resizes with the window
-        // window.contentView?.addSubview(backgroundImageView, positioned: .below, relativeTo: nil)
        
        fileSelectionView = NSView(frame: window.contentView!.bounds)
        window.contentView?.addSubview(fileSelectionView)
@@ -261,6 +261,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             self.openPanel.allowedContentTypes = [UTType.commaSeparatedText, UTType.json]
        }
    }
+    
+    private func setupBackgroundImage() {
+        // Create background image view that fills the window
+        backgroundImageView = NSImageView(frame: window.contentView!.bounds)
+        if let image = NSImage(contentsOfFile: "logo.png") {
+            backgroundImageView.image = image
+            backgroundImageView.imageScaling = .scaleProportionallyUpOrDown
+            backgroundImageView.alphaValue = 0.15
+            backgroundImageView.autoresizingMask = [.width, .height]
+            
+            // Add the background behind all other content
+            window.contentView?.addSubview(
+                backgroundImageView, 
+                positioned: .below, 
+                relativeTo: nil
+                )
+        }
+    }
 
    @objc func chooseFile() {
        openPanel.beginSheetModal(for: window) { [weak self] response in
@@ -465,6 +483,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
     private func setupSearchInterface() {
         fileSelectionView.removeFromSuperview()
 
+        // Add a semi-transparent overlay to improve content visibility
+        let overlayView = NSView(frame: window.contentView!.bounds)
+        overlayView.wantsLayer = true
+        overlayView.layer?.backgroundColor = NSColor(white: 0.1, alpha: 0.8).cgColor
+        window.contentView?.addSubview(overlayView)
+        overlayView.translatesAutoresizingMaskIntoConstraints = false
+        
+        NSLayoutConstraint.activate([
+            overlayView.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
+            overlayView.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor)
+        ])
+
+        // Ensure background image stays behind new content
+        if let backgroundView = backgroundImageView {
+            window.contentView?.addSubview(
+                backgroundView, 
+                positioned: .below, 
+                relativeTo: nil
+                )
+        }
+
         // Create split view to hold table and details
         splitView = NSSplitView()
         splitView.isVertical = true
@@ -480,6 +521,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
 
         // Add search container to table container
         searchContainer = NSView()
+        searchContainer.wantsLayer = true
+        searchContainer.layer?.backgroundColor = NSColor(
+            white: 0.1, 
+            alpha: 0.4
+            ).cgColor
         tableContainer.addSubview(searchContainer)
         searchContainer.translatesAutoresizingMaskIntoConstraints = false
 
@@ -490,8 +536,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         tableView.action = #selector(tableViewClicked(_:))
         tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
 
-        let searchColPadding = CGFloat(20)
+        // Make table view transparent
+        tableView.backgroundColor = NSColor(white: 0.1, alpha: 0.3)
+        tableView.gridColor = NSColor(white: 0.3, alpha: 0.3)
+        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.gridStyleMask = .solidHorizontalGridLineMask
 
+        let appearance = NSAppearance(named: .vibrantDark)
+        tableView.appearance = appearance
+
+        // Make text white for better visibility
+        // let textAttributes: [NSAttributedString.Key: Any] = [
+            // .foregroundColor: NSColor.white
+        // ]
+        tableView.rowSizeStyle = .default
+        tableView.selectionHighlightStyle = .regular
+
+        let searchColPadding = CGFloat(20)
         NSLayoutConstraint.activate([
             splitView.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
             splitView.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
@@ -582,6 +643,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
         tableContainer.addSubview(scrollView)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
        
@@ -590,6 +653,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             column.title = searchBridge.searchColumnNames[i]
             column.width = columnWidth 
             column.resizingMask = [.userResizingMask, .autoresizingMask]
+
+            // Style the header
+            let headerCell = column.headerCell
+            headerCell.textColor = .white
+            column.headerCell = headerCell
+
             tableView.addTableColumn(column)
         }
        
