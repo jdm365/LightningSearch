@@ -1,10 +1,13 @@
-// import Cocoa
 import AppKit 
 import Foundation
 import UniformTypeIdentifiers
 
-let WINDOW_WIDTH  = 1200
-let WINDOW_HEIGHT = 900 
+let screenFrame = NSScreen.main?.frame
+let screenWidth = screenFrame?.width
+let screenHeight = screenFrame?.height
+
+let WINDOW_WIDTH  = screenWidth! * 0.8
+let WINDOW_HEIGHT = screenHeight! * 0.85
 
 
 // Bridge to C functions
@@ -166,31 +169,123 @@ class SearchBridge {
     }
 }
 
+
+class SmoothProgressBar: NSView {
+    private var progress: Double = 0.0
+    
+    private let progressLayer = CALayer()
+
+    var minValue: Double = 0.0
+    var maxValue: Double = 1.0
+    
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setupView()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupView()
+    }
+    
+    private func setupView() {
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(white: 0.3, alpha: 0.3).cgColor
+        layer?.cornerRadius = 0.75
+        
+        progressLayer.backgroundColor = NSColor.systemBlue.cgColor
+        progressLayer.frame = CGRect(x: 0, y: 0, width: 0, height: bounds.height)
+        progressLayer.cornerRadius = 0.75
+        
+        layer?.addSublayer(progressLayer)
+    }
+    
+    override func layout() {
+        super.layout()
+        progressLayer.frame = CGRect(x: 0, y: 0, width: bounds.width * CGFloat(progress), height: bounds.height)
+    }
+    
+    func setProgress(_ newProgress: Double, animated: Bool = true) {
+        progress = newProgress / (maxValue - minValue)
+        progress = max(0.0, min(1.0, progress))
+        
+        if animated {
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(0.2)
+            progressLayer.frame = CGRect(x: 0, y: 0, width: bounds.width * CGFloat(progress), height: bounds.height)
+            CATransaction.commit()
+        } else {
+            progressLayer.frame = CGRect(x: 0, y: 0, width: bounds.width * CGFloat(progress), height: bounds.height)
+        }
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate {
-    var window: NSWindow!
-    var tableView: NSTableView!
+    var mainWindow: NSWindow!
+    var backgroundImageView: NSImageView!
+
+    // File selection data
+    var fileSelectionView: NSView!
+    var checkboxes: [NSButton] = []
+    var openPanel: NSOpenPanel!
+
+    // Search data
     var searchFields: [NSSearchField] = []
     var searchResults: [[String]] = []
     var searchStrings: [String] = []
     var searchBridge: SearchBridge!
+    let searchQueue = DispatchQueue(label: "com.search.queue")
+
+    // Search interface data
+    var tableView: NSTableView!
     var columnSelectionWindow: NSWindow!
-    var checkboxes: [NSButton] = []
     var searchContainer: NSView!
-    var scrollView: NSScrollView!
-    var fileSelectionView: NSView!
 
     // Side panel data
     var splitView: NSSplitView!
     var detailsView: NSScrollView!
     var detailsTable: NSTableView!
     var selectedRowData: [String: String] = [:]
+    var scrollView: NSScrollView!
 
-    private var openPanel: NSOpenPanel!
-    private let searchQueue = DispatchQueue(label: "com.search.queue")
-    private var backgroundImageView: NSImageView!
    
     func applicationDidFinishLaunching(_ notification: Notification) {
-        window = NSWindow(
+        /*******************************************************
+        -----------------
+             LAYOUT 
+        -----------------
+
+        MAIN WINDOW
+            FILE SELECTION VIEW
+                SELECT FILE BUTTON
+
+            SPLIT VIEW
+                SEARCH CONTAINER
+                    SEARCH FIELDS
+                TABLE VIEW
+                DETAILS VIEW
+                    DETAILS TABLE
+        ********************************************************/
+
+        setupMainWindow()
+        setupBackgroundImage()
+        setupFileSelectionView()
+
+        DispatchQueue.main.async {
+            self.searchBridge = SearchBridge()
+            self.openPanel = NSOpenPanel()
+            self.openPanel.allowsMultipleSelection = false
+            self.openPanel.canChooseDirectories = false
+            self.openPanel.canChooseFiles = true
+            self.openPanel.allowedContentTypes = [
+                UTType.commaSeparatedText, 
+                UTType.json
+                ]
+        }
+   }
+
+    private func setupMainWindow() {
+        mainWindow = NSWindow(
             contentRect: NSRect(
                 x: 0, 
                 y: 0, 
@@ -201,103 +296,111 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             backing: .buffered,
             defer: false
         )
-        setupBackgroundImage()
-        
-        // Make window background clear to show image
-        // window.backgroundColor = NSColor(black: 0.1, alpha: 0.8)
-        window.backgroundColor = NSColor(white: 0.1, alpha: 0.8)
-       
-        window.appearance = NSAppearance(named: .vibrantDark)
-       
-       fileSelectionView = NSView(frame: window.contentView!.bounds)
-       window.contentView?.addSubview(fileSelectionView)
-       fileSelectionView.translatesAutoresizingMaskIntoConstraints = false
-       
-       let label = NSTextField(frame: .zero)
-       label.stringValue = "Please select a CSV or JSON file to index"
-       label.isEditable = false
-       label.isBordered = false
-       label.drawsBackground = false
-       label.alignment = .center
-       label.font = .systemFont(ofSize: 16)
-       label.translatesAutoresizingMaskIntoConstraints = false
-       fileSelectionView.addSubview(label)
-       
-       let button = NSButton(frame: .zero)
-       button.title = "Choose File"
-       button.bezelStyle = .rounded
-       button.target = self
-       button.action = #selector(chooseFile)
-       button.translatesAutoresizingMaskIntoConstraints = false
-       fileSelectionView.addSubview(button)
-       
-       NSLayoutConstraint.activate([
-           fileSelectionView.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
-           fileSelectionView.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
-           fileSelectionView.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
-           fileSelectionView.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor),
-           
-           label.centerXAnchor.constraint(equalTo: fileSelectionView.centerXAnchor),
-           label.bottomAnchor.constraint(equalTo: fileSelectionView.centerYAnchor, constant: -20),
-           
-           button.centerXAnchor.constraint(equalTo: fileSelectionView.centerXAnchor),
-           button.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 20)
-       ])
-       
-       window.title = "Search"
-       window.center()
 
-       NSApp.setActivationPolicy(.regular)
-       NSApp.activate(ignoringOtherApps: true)
-       window.makeKeyAndOrderFront(nil)
-       window.level = .floating
+        mainWindow.appearance = NSAppearance(named: .vibrantDark)
+        mainWindow.title = "Search"
+        mainWindow.center()
 
-       DispatchQueue.main.async {
-            self.searchBridge = SearchBridge()
-            self.openPanel = NSOpenPanel()
-            self.openPanel.allowsMultipleSelection = false
-            self.openPanel.canChooseDirectories = false
-            self.openPanel.canChooseFiles = true
-            self.openPanel.allowedContentTypes = [UTType.commaSeparatedText, UTType.json]
-       }
-   }
-    
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        mainWindow.makeKeyAndOrderFront(nil)
+        mainWindow.level = .floating
+    }
+
+    // private func setupBackgroundImage() {
+        // // Create background image view that fills the mainWindow
+        // backgroundImageView = NSImageView(frame: mainWindow.contentView!.bounds)
+        // if let image = NSImage(contentsOfFile: "logo.png") {
+            // backgroundImageView.image = image
+            // backgroundImageView.imageScaling = .scaleProportionallyUpOrDown
+            // backgroundImageView.alphaValue = 0.65
+            // backgroundImageView.autoresizingMask = [.width, .height]
+// 
+            // // Add the background behind all other content
+            // mainWindow.contentView?.addSubview(
+                // backgroundImageView, 
+                // positioned: .below, 
+                // relativeTo: nil
+                // )
+        // }
+    // }
+
     private func setupBackgroundImage() {
-        // Create background image view that fills the window
-        backgroundImageView = NSImageView(frame: window.contentView!.bounds)
+        backgroundImageView = NSImageView(frame: mainWindow.contentView!.bounds)
         if let image = NSImage(contentsOfFile: "logo.png") {
-            backgroundImageView.image = image
+            // Convert NSImage to CIImage for filtering
+            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+            let ciImage = CIImage(cgImage: cgImage)
+            
+            // Create blur filter
+            let filter = CIFilter(name: "CIGaussianBlur")!
+            filter.setValue(ciImage, forKey: kCIInputImageKey)
+            filter.setValue(3.0, forKey: kCIInputRadiusKey)
+            
+            // Get filtered image
+            if let outputCIImage = filter.outputImage {
+                let context = CIContext()
+                if let outputCGImage = context.createCGImage(outputCIImage, from: outputCIImage.extent) {
+                    let blurredImage = NSImage(cgImage: outputCGImage, size: image.size)
+                    backgroundImageView.image = blurredImage
+                }
+            }
+            
             backgroundImageView.imageScaling = .scaleProportionallyUpOrDown
-            backgroundImageView.alphaValue = 0.15
             backgroundImageView.autoresizingMask = [.width, .height]
             
-            // Add the background behind all other content
-            window.contentView?.addSubview(
+            mainWindow.contentView?.addSubview(
                 backgroundImageView, 
                 positioned: .below, 
                 relativeTo: nil
-                )
+            )
         }
     }
 
-   @objc func chooseFile() {
-       openPanel.beginSheetModal(for: window) { [weak self] response in
-           guard let self = self else { return }
-           if response == .OK, let url = openPanel.url {
-               self.readHeader(fileURL: url)
-           }
-       }
-   }
+    private func setupFileSelectionView() {
+        fileSelectionView = NSView(frame: mainWindow.contentView!.bounds)
+        mainWindow.contentView?.addSubview(fileSelectionView)
+        fileSelectionView.translatesAutoresizingMaskIntoConstraints = false
+       
+        let button = NSButton(frame: .zero)
+        button.target = self
+        button.title = "Select File"
+        button.alignment = .center
+        button.bezelStyle = .rounded
+        button.action = #selector(chooseFile)
+        button.translatesAutoresizingMaskIntoConstraints = false
 
-   private func readHeader(fileURL: URL) {
-       guard let cPath = fileURL.path.cString(using: .utf8) else {
-           print("Failed to convert path to C string")
-           return
-       }
-       guard let handler = searchBridge.queryHandler else {
-           print("QueryHandler is nil")
-           return
-       }
+        fileSelectionView.addSubview(button)
+       
+        NSLayoutConstraint.activate([
+            fileSelectionView.topAnchor.constraint(equalTo: mainWindow.contentView!.topAnchor),
+            fileSelectionView.leadingAnchor.constraint(equalTo: mainWindow.contentView!.leadingAnchor),
+            fileSelectionView.trailingAnchor.constraint(equalTo: mainWindow.contentView!.trailingAnchor),
+            fileSelectionView.bottomAnchor.constraint(equalTo: mainWindow.contentView!.bottomAnchor),
+           
+            button.centerXAnchor.constraint(equalTo: fileSelectionView.centerXAnchor),
+            button.bottomAnchor.constraint(equalTo: fileSelectionView.centerYAnchor, constant: 30),
+        ])
+    }
+
+    @objc func chooseFile() {
+        openPanel.beginSheetModal(for: mainWindow) { [weak self] response in
+            guard let self = self else { return }
+            if response == .OK, let url = openPanel.url {
+                self.readHeader(fileURL: url)
+            }
+        }
+    }
+
+    private func readHeader(fileURL: URL) {
+        guard let cPath = fileURL.path.cString(using: .utf8) else {
+            print("Failed to convert path to C string")
+            return
+        }
+        guard let handler = searchBridge.queryHandler else {
+            print("QueryHandler is nil")
+            return
+        }
         read_header!(handler, cPath)
         searchBridge.getColumnNames()
 
@@ -318,90 +421,92 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         }
         
         // Wait for both to complete
-        group.notify(queue: .main) {
-            // Both operations are now complete
-            // Put any completion handling code here
+        group.notify(queue: .main) {}
+    }
+
+    private func showColumnSelection() {
+        columnSelectionWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: CGFloat(50 + searchBridge.columnNames.count * 30)),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+       
+        let contentView = NSView(frame: columnSelectionWindow.contentRect(forFrameRect: columnSelectionWindow.frame))
+        columnSelectionWindow.contentView = contentView
+
+        let label = NSTextField(frame: NSRect(x: 20, y: CGFloat(10 + searchBridge.columnNames.count * 30), width: 260, height: 30))
+        label.stringValue = "Select columns to include in search:"
+        label.isEditable = false
+        label.isBordered = false
+        label.drawsBackground = false
+        contentView.addSubview(label)
+       
+        checkboxes.removeAll()
+       
+        for (index, column) in searchBridge.columnNames.enumerated() {
+            let checkbox = NSButton(
+                frame: NSRect(
+                    x: 20, 
+                    y: CGFloat((searchBridge.columnNames.count - 1 - index) * 30 + 20), 
+                    width: 200, 
+                    height: 20
+                    )
+                )
+            checkbox.title = column
+            checkbox.setButtonType(.switch)
+            checkbox.state = .off
+            contentView.addSubview(checkbox)
+            checkboxes.append(checkbox)
         }
-   }
+       
+        let startButton = NSButton(frame: NSRect(x: 200, y: 20, width: 80, height: 32))
+        startButton.title = "Start"
+        startButton.bezelStyle = .rounded
+        startButton.target = self
+        startButton.action = #selector(startIndexing)
+        startButton.keyEquivalent = "\r"
+        contentView.addSubview(startButton)
+       
+        columnSelectionWindow.title = "Select Search Columns"
+        columnSelectionWindow.center()
+        mainWindow.beginSheet(columnSelectionWindow) { response in }
+    }
 
-   private func showColumnSelection() {
-       columnSelectionWindow = NSWindow(
-           contentRect: NSRect(x: 0, y: 0, width: 300, height: CGFloat(50 + searchBridge.columnNames.count * 30)),
-           styleMask: [.titled, .closable],
-           backing: .buffered,
-           defer: false
-       )
-       
-       let contentView = NSView(frame: columnSelectionWindow.contentRect(forFrameRect: columnSelectionWindow.frame))
-       columnSelectionWindow.contentView = contentView
-       
-       let label = NSTextField(frame: NSRect(x: 20, y: CGFloat(10 + searchBridge.columnNames.count * 30), width: 260, height: 30))
-       label.stringValue = "Select columns to include in search:"
-       label.isEditable = false
-       label.isBordered = false
-       label.drawsBackground = false
-       contentView.addSubview(label)
-       
-       checkboxes.removeAll()
-       
-       for (index, column) in searchBridge.columnNames.enumerated() {
-           let checkbox = NSButton(frame: NSRect(x: 20, y: CGFloat((searchBridge.columnNames.count - 1 - index) * 30 + 20), width: 200, height: 20))
-           checkbox.title = column
-           checkbox.setButtonType(.switch)
-           checkbox.state = .off
-           contentView.addSubview(checkbox)
-           checkboxes.append(checkbox)
-       }
-       
-       let startButton = NSButton(frame: NSRect(x: 200, y: 20, width: 80, height: 32))
-       startButton.title = "Start"
-       startButton.bezelStyle = .rounded
-       startButton.target = self
-       startButton.action = #selector(startIndexing)
-       contentView.addSubview(startButton)
-       
-       columnSelectionWindow.title = "Select Search Columns"
-       columnSelectionWindow.center()
-       window.beginSheet(columnSelectionWindow) { response in }
-   }
+    @objc func startIndexing() {
+        guard let handler = searchBridge.queryHandler else {
+            print("QueryHandler is nil")
+            return
+        }
 
-   @objc func startIndexing() {
-       guard let handler = searchBridge.queryHandler else {
-           print("QueryHandler is nil")
-           return
-       }
-
-       searchBridge.searchColumnNames = checkboxes.enumerated()
-           .filter { $0.element.state == .on }
-           .map { searchBridge.columnNames[$0.offset] }
-       searchBridge.searchColMask = checkboxes.enumerated()
-           .filter { $0.element.state == .on }
-           .map { $0.offset }
+        searchBridge.searchColumnNames = checkboxes.enumerated()
+            .filter { $0.element.state == .on }
+            .map { searchBridge.columnNames[$0.offset] }
+        searchBridge.searchColMask = checkboxes.enumerated()
+            .filter { $0.element.state == .on }
+            .map { $0.offset }
        
-       if searchBridge.searchColumnNames.isEmpty {
-           let alert = NSAlert()
-           alert.messageText = "Please select at least one column"
-           alert.alertStyle = .warning
-           alert.beginSheetModal(for: columnSelectionWindow) { _ in }
-           return
-       }
+        if searchBridge.searchColumnNames.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "Please select at least one column"
+            alert.alertStyle = .warning
+            alert.beginSheetModal(for: columnSelectionWindow) { _ in }
+            return
+        }
 
-       window.endSheet(columnSelectionWindow)
-       columnSelectionWindow = nil
+        mainWindow.endSheet(columnSelectionWindow)
+        columnSelectionWindow = nil
 
-       for subview in fileSelectionView.subviews {
-           subview.isHidden = true
-       }
+        for subview in fileSelectionView.subviews {
+            subview.isHidden = true
+        }
 
         let totalDocs = Double(get_num_docs!(handler) / 1000)
 
         // Create progress bar
-        let progressBar = NSProgressIndicator()
-        progressBar.style = .bar
-        progressBar.isIndeterminate = false
+        let progressBar = SmoothProgressBar(frame: NSRect(x: 0, y: 0, width: 400, height: 10))
         progressBar.minValue = 0
         progressBar.maxValue = totalDocs
-        progressBar.controlSize = .large
         progressBar.translatesAutoresizingMaskIntoConstraints = false
         
         // Create progress label
@@ -414,16 +519,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         progressLabel.alignment = .center
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
         
-        window.contentView?.addSubview(progressBar)
-        window.contentView?.addSubview(progressLabel)
+        mainWindow.contentView?.addSubview(progressBar)
+        mainWindow.contentView?.addSubview(progressLabel)
         
         // Set up constraints
         NSLayoutConstraint.activate([
-            progressBar.centerXAnchor.constraint(equalTo: window.contentView!.centerXAnchor),
-            progressBar.centerYAnchor.constraint(equalTo: window.contentView!.centerYAnchor),
-            progressBar.widthAnchor.constraint(equalToConstant: 300),
+            progressBar.centerXAnchor.constraint(equalTo: mainWindow.contentView!.centerXAnchor),
+            progressBar.centerYAnchor.constraint(equalTo: mainWindow.contentView!.centerYAnchor),
+            progressBar.widthAnchor.constraint(equalToConstant: progressBar.frame.width),
+            progressBar.heightAnchor.constraint(equalToConstant: progressBar.frame.height),
             
-            progressLabel.centerXAnchor.constraint(equalTo: window.contentView!.centerXAnchor),
+            progressLabel.centerXAnchor.constraint(equalTo: mainWindow.contentView!.centerXAnchor),
             progressLabel.topAnchor.constraint(equalTo: progressBar.bottomAnchor, constant: 10)
         ])
 
@@ -439,7 +545,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             if let progress = get_indexing_progress?(handler) {
                 DispatchQueue.main.async {
                     // Update progress bar
-                    progressBar.doubleValue = Double(progress) / 1000
+                    // progressBar.doubleValue = Double(progress) / 1000
+                    progressBar.setProgress(Double(progress) / 1000)
 
                     // Use string format with width specification
                     let text = String(format: "Processed %\(totalDocsDigits)d / %dK documents", 
@@ -449,57 +556,43 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
                     progressLabel.attributedStringValue = NSAttributedString(
                         string: text,
                         attributes: [.font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)]
-    )
+                        )
                 }
             }
+
         }
 
+        // Do the indexing work asynchronously
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Add columns and index in background
+            for i in 0..<self.searchBridge.searchColumnNames.count {
+                guard let cString = self.searchBridge.searchColumnNames[i].cString(using: .utf8) else {
+                    print("Failed to convert column name to C string")
+                    continue
+                }
+                add_search_col?(handler, cString)
+            }
 
-       // Do the indexing work asynchronously
-       DispatchQueue.global(qos: .userInitiated).async {
-           // Add columns and index in background
-           for i in 0..<self.searchBridge.searchColumnNames.count {
-               guard let cString = self.searchBridge.searchColumnNames[i].cString(using: .utf8) else {
-                   print("Failed to convert column name to C string")
-                   continue
-               }
-               add_search_col?(handler, cString)
-           }
-
-           index_file?(handler)
+            index_file?(handler)
            
-           // Set up UI on main thread
-           DispatchQueue.main.async {
-                // label.removeFromSuperview()
-                progressTimer?.invalidate()
-                progressTimer = nil
-                progressBar.removeFromSuperview()
-                progressLabel.removeFromSuperview()
-                self.setupSearchInterface()
-           }
-       }
-   }
+            // Set up UI on main thread
+            DispatchQueue.main.async {
+                 // label.removeFromSuperview()
+                 progressTimer?.invalidate()
+                 progressTimer = nil
+                 progressBar.removeFromSuperview()
+                 progressLabel.removeFromSuperview()
+                 self.setupSearchInterface()
+            }
+        }
+    }
 
     private func setupSearchInterface() {
         fileSelectionView.removeFromSuperview()
 
-        // Add a semi-transparent overlay to improve content visibility
-        let overlayView = NSView(frame: window.contentView!.bounds)
-        overlayView.wantsLayer = true
-        overlayView.layer?.backgroundColor = NSColor(white: 0.1, alpha: 0.8).cgColor
-        window.contentView?.addSubview(overlayView)
-        overlayView.translatesAutoresizingMaskIntoConstraints = false
-        
-        NSLayoutConstraint.activate([
-            overlayView.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
-            overlayView.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
-            overlayView.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
-            overlayView.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor)
-        ])
-
         // Ensure background image stays behind new content
         if let backgroundView = backgroundImageView {
-            window.contentView?.addSubview(
+            mainWindow.contentView?.addSubview(
                 backgroundView, 
                 positioned: .below, 
                 relativeTo: nil
@@ -509,14 +602,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         // Create split view to hold table and details
         splitView = NSSplitView()
         splitView.isVertical = true
-        splitView.dividerStyle = .thin
+        // splitView.dividerStyle = .thin
+        splitView.dividerStyle = .paneSplitter
         splitView.autoresizingMask = [.width]
-        window.contentView?.addSubview(splitView)
+        splitView.layer?.backgroundColor = .clear
         splitView.translatesAutoresizingMaskIntoConstraints = false
+
+        mainWindow.contentView?.addSubview(splitView)
 
         // Create container for search and table
         let tableContainer = NSView()
         tableContainer.translatesAutoresizingMaskIntoConstraints = false
+
         splitView.addArrangedSubview(tableContainer)
 
         // Add search container to table container
@@ -526,8 +623,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             white: 0.1, 
             alpha: 0.4
             ).cgColor
-        tableContainer.addSubview(searchContainer)
         searchContainer.translatesAutoresizingMaskIntoConstraints = false
+
+        tableContainer.addSubview(searchContainer)
 
         tableView = NSTableView()
         tableView.dataSource = self
@@ -537,42 +635,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
 
         // Make table view transparent
-        tableView.backgroundColor = NSColor(white: 0.1, alpha: 0.3)
-        tableView.gridColor = NSColor(white: 0.3, alpha: 0.3)
-        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.backgroundColor = .clear
+        tableView.gridColor = .clear
         tableView.gridStyleMask = .solidHorizontalGridLineMask
+        tableView.intercellSpacing = NSSize(width: 0, height: 0) 
 
         let appearance = NSAppearance(named: .vibrantDark)
         tableView.appearance = appearance
 
-        // Make text white for better visibility
-        // let textAttributes: [NSAttributedString.Key: Any] = [
-            // .foregroundColor: NSColor.white
-        // ]
         tableView.rowSizeStyle = .default
         tableView.selectionHighlightStyle = .regular
 
         let searchColPadding = CGFloat(20)
         NSLayoutConstraint.activate([
-            splitView.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
-            splitView.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
-            splitView.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
-            splitView.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor)
+            splitView.topAnchor.constraint(equalTo: mainWindow.contentView!.topAnchor),
+            splitView.leadingAnchor.constraint(equalTo: mainWindow.contentView!.leadingAnchor),
+            splitView.trailingAnchor.constraint(equalTo: mainWindow.contentView!.trailingAnchor),
+            splitView.bottomAnchor.constraint(equalTo: mainWindow.contentView!.bottomAnchor)
         ])
-        window.layoutIfNeeded()
-        print("splitView frame width: \(tableContainer.frame.width)")
+        mainWindow.layoutIfNeeded()
 
         // Create details view
         detailsView = NSScrollView()
         detailsView.hasVerticalScroller = true
+        detailsView.drawsBackground = false
+
         detailsTable = NSTableView()
-        detailsTable.addTableColumn(
-            NSTableColumn(identifier: NSUserInterfaceItemIdentifier("key"))
-            )
-        detailsTable.addTableColumn(
-            NSTableColumn(identifier: NSUserInterfaceItemIdentifier("value"))
-            )
-        detailsTable.headerView = nil
+        detailsTable.backgroundColor = .clear
+        detailsTable.gridColor = .clear
+
+        let keyColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("key"))
+        let valueColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("value"))
+        keyColumn.title = "Key"
+        valueColumn.title = "Value"
+        keyColumn.headerCell.font = .systemFont(ofSize: 14)
+        valueColumn.headerCell.font = .systemFont(ofSize: 14)
+        detailsTable.addTableColumn(keyColumn)
+        detailsTable.addTableColumn(valueColumn)
+
+        // Add header to details table
+        let header = NSTableHeaderView()
+        header.frame = NSRect(x: 0, y: 0, width: 200, height: 30)
+        header.layer?.backgroundColor = .clear
+
+        detailsTable.headerView = header
+
         detailsTable.dataSource = self
         detailsTable.delegate = self
         detailsView.documentView = detailsTable
@@ -582,12 +689,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             bottom: 10, 
             right: 0
             )
+
         splitView.addArrangedSubview(tableContainer)
         splitView.addArrangedSubview(detailsView)
-       
+
         // Set the initial division
-        splitView.setPosition(window.frame.width * 0.7, ofDividerAt: 0)
-        window.layoutIfNeeded()
+        splitView.setPosition(mainWindow.frame.width * 0.7, ofDividerAt: 0)
+        mainWindow.layoutIfNeeded()
 
         // Then set up tableContainer constraints
         NSLayoutConstraint.activate([
@@ -596,8 +704,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             tableContainer.topAnchor.constraint(equalTo: splitView.topAnchor),
             tableContainer.leadingAnchor.constraint(equalTo: splitView.leadingAnchor)
         ])
-        window.layoutIfNeeded()
-        print("Table Container frame width: \(tableContainer.frame.width)")
+        mainWindow.layoutIfNeeded()
 
         NSLayoutConstraint.activate([
             searchContainer.widthAnchor.constraint(equalTo: tableContainer.widthAnchor),
@@ -606,8 +713,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             searchContainer.trailingAnchor.constraint(equalTo: tableContainer.trailingAnchor),
             searchContainer.heightAnchor.constraint(equalToConstant: 50)
         ])
-        window.layoutIfNeeded()
-        print("Search Container frame width: \(searchContainer.frame.width)")
+        mainWindow.layoutIfNeeded()
 
         let numCols = searchBridge.searchColumnNames.count
         let searchWidth = searchContainer.frame.width
@@ -638,7 +744,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
            
             searchFields.append(searchField)
             searchStrings.append("")
+
+
+            // Add this when creating each search field
+            searchField.nextKeyView = nil
        }
+
+        for i in 0..<searchFields.count {
+            let currentField = searchFields[i]
+            let nextField = searchFields[(i + 1) % searchFields.count]
+            currentField.nextKeyView = nextField
+        }
+
 
         scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -665,7 +782,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         scrollView.documentView = tableView
 
         // Set up constraints
-        if let _ = window.contentView {
+        if let _ = mainWindow.contentView {
             NSLayoutConstraint.activate([
                 scrollView.topAnchor.constraint(equalTo: searchContainer.bottomAnchor),
                 scrollView.leadingAnchor.constraint(equalTo: tableContainer.leadingAnchor),
@@ -674,35 +791,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             ])
         }
 
-        // NotificationCenter.default.addObserver(
-            // forName: NSView.frameDidChangeNotification, 
-            // object: splitView, 
-            // queue: nil
-            // ) { [weak self] _ in
-            // guard let self = self else { return }
-            // let numCols = self.searchBridge.searchColumnNames.count
-            // let searchWidth = searchContainer.frame.width
-            // let columnWidth = (searchWidth / CGFloat(numCols)) - searchColPadding * 2
-           //  
-            // for (i, searchField) in self.searchFields.enumerated() {
-                // let xPosition = searchColPadding + (CGFloat(i) * (columnWidth + searchColPadding * 2))
-                // if let constraint = searchField.constraints.first(where: { $0.firstAttribute == .leading }) {
-                    // constraint.constant = xPosition
-                // }
-                // if let constraint = searchField.constraints.first(where: { $0.firstAttribute == .width }) {
-                    // constraint.constant = columnWidth
-                // }
-            // }
-        // }
-    
-        // Set initial split view proportions
-        // splitView.setPosition(window.frame.width * 0.7, ofDividerAt: 0)
-       
        if let firstSearchField = searchFields.first {
-           window.makeFirstResponder(firstSearchField)
+           mainWindow.makeFirstResponder(firstSearchField)
        }
 
-        window.makeKeyAndOrderFront(nil)
+        mainWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
    }
 
@@ -714,6 +807,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             return selectedRowData.count
         }
         return 0
+    }
+
+    func tableView(_ tableView: NSTableView, willDisplayCell cell: Any, for tableColumn: NSTableColumn?, row: Int) {
+        if tableView == self.tableView {
+            if let textCell = cell as? NSTextFieldCell {
+                // Set the background color based on row number
+                let backgroundColor = row % 2 == 0 ? 
+                    NSColor(white: 0.2, alpha: 0.6) :  // Even rows - very subtle
+                    NSColor(white: 0.1, alpha: 0.6)    // Odd rows - slightly more visible
+                
+                textCell.backgroundColor = backgroundColor
+                textCell.drawsBackground = true
+            }
+        }
     }
 
     // Add row selection handler
