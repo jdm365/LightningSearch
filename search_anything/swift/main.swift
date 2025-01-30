@@ -307,40 +307,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         mainWindow.level = .floating
     }
 
-    // private func setupBackgroundImage() {
-        // // Create background image view that fills the mainWindow
-        // backgroundImageView = NSImageView(frame: mainWindow.contentView!.bounds)
-        // if let image = NSImage(contentsOfFile: "logo.png") {
-            // backgroundImageView.image = image
-            // backgroundImageView.imageScaling = .scaleProportionallyUpOrDown
-            // backgroundImageView.alphaValue = 0.65
-            // backgroundImageView.autoresizingMask = [.width, .height]
-// 
-            // // Add the background behind all other content
-            // mainWindow.contentView?.addSubview(
-                // backgroundImageView, 
-                // positioned: .below, 
-                // relativeTo: nil
-                // )
-        // }
-    // }
-
     private func setupBackgroundImage() {
         backgroundImageView = NSImageView(frame: mainWindow.contentView!.bounds)
         if let image = NSImage(contentsOfFile: "logo.png") {
             // Convert NSImage to CIImage for filtering
-            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+            guard let cgImage = image.cgImage(
+                forProposedRect: nil, 
+                context: nil, 
+                hints: nil
+                ) else { return }
             let ciImage = CIImage(cgImage: cgImage)
             
             // Create blur filter
             let filter = CIFilter(name: "CIGaussianBlur")!
             filter.setValue(ciImage, forKey: kCIInputImageKey)
-            filter.setValue(3.0, forKey: kCIInputRadiusKey)
+            filter.setValue(5.0, forKey: kCIInputRadiusKey)
             
             // Get filtered image
             if let outputCIImage = filter.outputImage {
                 let context = CIContext()
-                if let outputCGImage = context.createCGImage(outputCIImage, from: outputCIImage.extent) {
+                if let outputCGImage = context.createCGImage(
+                    outputCIImage, 
+                    from: outputCIImage.extent
+                    ) {
                     let blurredImage = NSImage(cgImage: outputCGImage, size: image.size)
                     backgroundImageView.image = blurredImage
                 }
@@ -545,7 +534,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             if let progress = get_indexing_progress?(handler) {
                 DispatchQueue.main.async {
                     // Update progress bar
-                    // progressBar.doubleValue = Double(progress) / 1000
                     progressBar.setProgress(Double(progress) / 1000)
 
                     // Use string format with width specification
@@ -602,8 +590,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         // Create split view to hold table and details
         splitView = NSSplitView()
         splitView.isVertical = true
-        // splitView.dividerStyle = .thin
-        splitView.dividerStyle = .paneSplitter
+        splitView.dividerStyle = .thin
         splitView.autoresizingMask = [.width]
         splitView.layer?.backgroundColor = .clear
         splitView.translatesAutoresizingMaskIntoConstraints = false
@@ -619,10 +606,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         // Add search container to table container
         searchContainer = NSView()
         searchContainer.wantsLayer = true
-        searchContainer.layer?.backgroundColor = NSColor(
-            white: 0.1, 
-            alpha: 0.4
-            ).cgColor
+        searchContainer.layer?.backgroundColor = .clear
         searchContainer.translatesAutoresizingMaskIntoConstraints = false
 
         tableContainer.addSubview(searchContainer)
@@ -717,8 +701,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
 
         let numCols = searchBridge.searchColumnNames.count
         let searchWidth = searchContainer.frame.width
-        let columnWidth = (searchWidth / CGFloat(numCols)) - searchColPadding * 2
-        for i in 0..<searchBridge.searchColumnNames.count {
+        let columnWidth = (searchWidth / CGFloat(searchBridge.searchColumnNames.count)) - searchColPadding * 2
+        for i in 0..<numCols {
             let searchField = NSSearchField()
             searchField.placeholderString = "Search \(searchBridge.searchColumnNames[i])..."
             searchField.sendsSearchStringImmediately = true
@@ -727,6 +711,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             searchField.action = #selector(searchFieldChanged(_:))
             searchField.tag = i
             searchField.translatesAutoresizingMaskIntoConstraints = false
+            searchField.nextKeyView = nil
 
             let xPosition = searchColPadding + 
                             (CGFloat(i) * (columnWidth + searchColPadding * 2))
@@ -744,10 +729,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
            
             searchFields.append(searchField)
             searchStrings.append("")
-
-
-            // Add this when creating each search field
-            searchField.nextKeyView = nil
        }
 
         for i in 0..<searchFields.count {
@@ -809,20 +790,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         return 0
     }
 
-    func tableView(_ tableView: NSTableView, willDisplayCell cell: Any, for tableColumn: NSTableColumn?, row: Int) {
-        if tableView == self.tableView {
-            if let textCell = cell as? NSTextFieldCell {
-                // Set the background color based on row number
-                let backgroundColor = row % 2 == 0 ? 
-                    NSColor(white: 0.2, alpha: 0.6) :  // Even rows - very subtle
-                    NSColor(white: 0.1, alpha: 0.6)    // Odd rows - slightly more visible
-                
-                textCell.backgroundColor = backgroundColor
-                textCell.drawsBackground = true
-            }
-        }
-    }
-
     // Add row selection handler
     @objc func tableViewClicked(_ sender: NSTableView) {
         if (sender.selectedRow < 0) || (sender.selectedRow >= searchResults.count) {
@@ -839,41 +806,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
         detailsTable.reloadData()
     }
    
-   @objc func searchFieldChanged(_ sender: NSSearchField) {
-       let startTime = Date()
+    @objc func searchFieldChanged(_ sender: NSSearchField) {
+        let startTime = Date()
 
-       let column = sender.tag
-       let query  = sender.stringValue
+        let column = sender.tag
+        let query  = sender.stringValue
 
-       searchStrings[column] = query
+        searchStrings[column] = query
        
-       var queryParts = searchBridge.searchColumnNames
-       for i in 0..<searchBridge.searchColumnNames.count {
-           queryParts[i] += "=" + searchStrings[i]
-       }
-       let queryString = queryParts.joined(separator: "&")
+        var queryParts = searchBridge.searchColumnNames
+        for i in 0..<searchBridge.searchColumnNames.count {
+            queryParts[i] += "=" + searchStrings[i]
+        }
+        let queryString = queryParts.joined(separator: "&")
        
-       // DispatchQueue.global(qos: .userInitiated).async {
-       searchQueue.async { [weak self] in
-            guard let self = self else { return }
+        searchQueue.async { [weak self] in
+             guard let self = self else { return }
 
-            let searchStartTime = Date()
-            let results = self.searchBridge.performSearch(query: queryString)
-            let searchTime = -searchStartTime.timeIntervalSinceNow
+             let searchStartTime = Date()
+             let results = self.searchBridge.performSearch(query: queryString)
+             let searchTime = -searchStartTime.timeIntervalSinceNow
            
-            DispatchQueue.main.async {
-                let reloadStartTime = Date()
-                self.searchResults = results
-                self.tableView.reloadData()
-                let reloadTime = -reloadStartTime.timeIntervalSinceNow
+             DispatchQueue.main.async {
+                 let reloadStartTime = Date()
+                 self.searchResults = results
+                 self.tableView.reloadData()
+                 let reloadTime = -reloadStartTime.timeIntervalSinceNow
                
-                let totalTime = -startTime.timeIntervalSinceNow
+                 let totalTime = -startTime.timeIntervalSinceNow
 
-                print("Search Performance Breakdown:")
-                print("- Backend Search Time: \(searchTime * 1000) ms")
-                print("- Table Reload Time: \(reloadTime * 1000) ms")
-                print("- Total Time: \(totalTime * 1000) ms")
-            }
+                 print("Search Performance Breakdown:")
+                 print("- Backend Search Time: \(searchTime * 1000) ms")
+                 print("- Table Reload Time: \(reloadTime * 1000) ms")
+                 print("- Total Time: \(totalTime * 1000) ms")
+             }
         }
         if searchResults.count == 0 {
             return
@@ -887,10 +853,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
 
         // Call the click handler manually
         tableViewClicked(tableView)
-   }
+    }
    
-   func tableView(_ tableView: NSTableView, objectValueFor tableColumn: NSTableColumn?, row: Int) -> Any? {
-       if tableView == self.tableView {
+    func tableView(_ tableView: NSTableView, objectValueFor tableColumn: NSTableColumn?, row: Int) -> Any? {
+        if tableView == self.tableView {
 
             guard let columnIdentifier = tableColumn?.identifier else { return nil }
             let rowData = searchResults[row]
@@ -898,7 +864,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             // Drop 6 charachters column in columnX string.
             let columnIndex = searchBridge.searchColMask[Int(columnIdentifier.rawValue.dropFirst(6))!]
             return rowData[columnIndex]
-       } else if tableView == detailsTable {
+        } else if tableView == detailsTable {
 
             let sortedKeys = selectedRowData.keys.sorted()
             if tableColumn?.identifier.rawValue == "key" {
@@ -906,9 +872,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTab
             } else {
                 return selectedRowData[sortedKeys[row]]
             }
-       }
-       return nil
-   }
+        }
+        return nil
+    }
+
+    func tableView(_ tableView: NSTableView, willDisplayCell cell: Any, for tableColumn: NSTableColumn?, row: Int) {
+        if tableView == self.tableView {
+            if let textCell = cell as? NSTextFieldCell {
+                // Set the background color based on row number
+                let backgroundColor = row % 2 == 0 ? 
+                    NSColor(white: 0.2, alpha: 0.6) :
+                    NSColor(white: 0.1, alpha: 0.6)
+                
+                textCell.backgroundColor = backgroundColor
+                textCell.drawsBackground = true
+            }
+        }
+    }
+
 
    func applicationWillTerminate(_ notification: Notification) {
        NSApp.setActivationPolicy(.prohibited)
