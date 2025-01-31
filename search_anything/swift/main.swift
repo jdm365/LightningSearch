@@ -220,6 +220,10 @@ class SmoothProgressBar: NSView {
     }
 }
 
+
+
+
+
 class AppDelegate: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate {
     var mainWindow: NSWindow!
     var backgroundImageView: NSImageView!

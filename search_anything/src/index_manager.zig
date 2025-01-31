@@ -876,7 +876,8 @@ pub const IndexManager = struct {
             const II_idx: usize = @intCast(_token.col_idx);
             const token:   usize = @intCast(_token.token);
 
-            const II: *InvertedIndex = &self.index_partitions[partition_idx].II[II_idx];
+            const II = &self.index_partitions[partition_idx].II[II_idx];
+
             const inner_term = switch (_token.shallow_query) {
                 true => @as(f32, @floatFromInt(II.doc_freqs.items[token])),
                 false => @as(f32, @floatFromInt(II.num_docs)) / 
@@ -901,7 +902,7 @@ pub const IndexManager = struct {
             const II_idx = @as(usize, @intCast(col_score_pair.col_idx));
             const token   = @as(usize, @intCast(col_score_pair.token));
 
-            const II: *InvertedIndex = &self.index_partitions[partition_idx].II[II_idx];
+            const II = &self.index_partitions[partition_idx].II[II_idx];
 
             const offset      = II.term_offsets[token];
             const last_offset = II.term_offsets[token + 1];
@@ -911,9 +912,13 @@ pub const IndexManager = struct {
                 );
 
             var prev_doc_id: u32 = std.math.maxInt(u32);
-            for (II.postings[offset..last_offset]) |doc_token| {
-                const doc_id:   u32 = @intCast(doc_token.doc_id);
-                const term_pos: u8  = @intCast(doc_token.term_pos);
+            // for (II.postings[offset..last_offset]) |doc_token| {
+            for (
+                II.postings.doc_ids[offset..last_offset],
+                II.postings.term_positions[offset..last_offset],
+                ) |doc_id, term_pos| {
+                // const doc_id:   u32 = @intCast(doc_token.doc_id);
+                // const term_pos: u8  = @intCast(doc_token.term_pos);
 
                 prev_doc_id = doc_id;
 

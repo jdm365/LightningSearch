@@ -44,6 +44,130 @@ const SHM = struct {
     }
 };
 
+pub const token_64t = packed struct(u64) {
+    new_doc: u1,
+    term_pos: u8,
+    doc_id: u32,
+};
+
+pub const Postings = struct {
+    doc_ids: []u32,
+    term_positions: []u8,
+    // new_docs: []u1,
+};
+
+pub const InvertedIndexV2 = struct {
+    postings: Postings,
+
+    vocab: std.hash_map.HashMap([]const u8, u32, SHM, 80),
+    // prt_vocab: PruningRadixTrie(u32),
+    prt_vocab: RadixTrie(u32),
+    term_offsets: []usize,
+    doc_freqs: std.ArrayList(u32),
+    doc_sizes: []u16,
+
+    num_terms: u32,
+    num_docs: u32,
+    avg_doc_size: f32,
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        num_docs: usize,
+        ) !InvertedIndexV2 {
+        var vocab = std.hash_map.HashMap([]const u8, u32, SHM, 80).init(allocator);
+
+        // Guess capacity
+        try vocab.ensureTotalCapacity(@intCast(num_docs / 25));
+
+        const II = InvertedIndexV2{
+            .postings = Postings{
+                .doc_ids = undefined,
+                .term_positions = undefined,
+            },
+            .vocab = vocab,
+            .prt_vocab = try RadixTrie(u32).init(std.heap.c_allocator),
+            .term_offsets = &[_]usize{},
+            .doc_freqs = try std.ArrayList(u32).initCapacity(
+                allocator, @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
+                ),
+            .doc_sizes = try allocator.alloc(u16, num_docs),
+            .num_terms = 0,
+            .num_docs = @intCast(num_docs),
+            .avg_doc_size = 0.0,
+        };
+        @memset(II.doc_sizes, 0);
+        return II;
+    }
+
+    pub fn deinit(
+        self: *InvertedIndexV2,
+        allocator: std.mem.Allocator,
+        ) void {
+        // allocator.free(self.postings.new_docs);
+        allocator.free(self.postings.term_positions);
+        allocator.free(self.postings.doc_ids);
+
+        self.vocab.deinit();
+        self.prt_vocab.deinit();
+
+        allocator.free(self.term_offsets);
+        self.doc_freqs.deinit();
+        allocator.free(self.doc_sizes);
+    }
+
+    pub fn resizePostings(
+        self: *InvertedIndexV2,
+        allocator: std.mem.Allocator,
+        ) !void {
+        self.num_terms = @intCast(self.doc_freqs.items.len);
+        self.term_offsets = try allocator.alloc(usize, self.num_terms + 1);
+
+        std.debug.assert(self.num_terms == self.vocab.count());
+
+        // Num terms is now known.
+        var postings_size: usize = 0;
+        for (0.., self.doc_freqs.items) |i, doc_freq| {
+            self.term_offsets[i] = postings_size;
+            postings_size += doc_freq;
+        }
+        self.term_offsets[self.num_terms] = postings_size;
+
+        self.postings.doc_ids = try allocator.alloc(u32, postings_size + 1);
+        self.postings.term_positions = try allocator.alloc(u8, postings_size + 1);
+
+        var avg_doc_size: f64 = 0.0;
+        for (self.doc_sizes) |doc_size| {
+            avg_doc_size += @floatFromInt(doc_size);
+        }
+        avg_doc_size /= @floatFromInt(self.num_docs);
+        self.avg_doc_size = @floatCast(avg_doc_size);
+
+        try self.buildPRT();
+    }
+
+    pub fn buildPRT(self: *InvertedIndexV2) !void {
+        const start = std.time.milliTimestamp();
+        var vocab_iterator = self.vocab.iterator();
+        while (vocab_iterator.next()) |val| {
+            const df = @as(f32, @floatFromInt(self.doc_freqs.items[val.value_ptr.*]));
+            if (df >= 5.0) {
+                // try self.prt_vocab.insert(
+                    // val.key_ptr.*, 
+                    // val.value_ptr.*, 
+                    // df,
+                    // );
+                try self.prt_vocab.insert(
+                    val.key_ptr.*, 
+                    val.value_ptr.*, 
+                    // df,
+                    );
+            }
+        }
+        const end = std.time.milliTimestamp();
+        std.debug.print("Build PRT in {}ms\n", .{end - start});
+    }
+};
+
 pub const InvertedIndex = struct {
     postings: []token_t,
     vocab: std.hash_map.HashMap([]const u8, u32, SHM, 80),
@@ -150,7 +274,8 @@ pub const InvertedIndex = struct {
 };
 
 pub const BM25Partition = struct {
-    II: []InvertedIndex,
+    // II: []InvertedIndex,
+    II: []InvertedIndexV2,
     line_offsets: []usize,
     allocator: std.mem.Allocator,
     string_arena: std.heap.ArenaAllocator,
@@ -165,7 +290,8 @@ pub const BM25Partition = struct {
         try doc_score_map.ensureTotalCapacity(50_000);
 
         const partition = BM25Partition{
-            .II = try allocator.alloc(InvertedIndex, num_search_cols),
+            // .II = try allocator.alloc(InvertedIndex, num_search_cols),
+            .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
             .line_offsets = line_offsets,
             .allocator = allocator,
             .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
@@ -173,7 +299,8 @@ pub const BM25Partition = struct {
         };
 
         for (0..num_search_cols) |idx| {
-            partition.II[idx] = try InvertedIndex.init(
+            // partition.II[idx] = try InvertedIndex.init(
+            partition.II[idx] = try InvertedIndexV2.init(
                 allocator, 
                 line_offsets.len - 1,
                 // line_offsets.len,
@@ -199,7 +326,8 @@ pub const BM25Partition = struct {
 
         self.II = try self.allocator.realloc(self.II, num_search_cols);
         for (current_length..num_search_cols) |idx| {
-            self.II[idx] = try InvertedIndex.init(
+            // self.II[idx] = try InvertedIndex.init(
+            self.II[idx] = try InvertedIndexV2.init(
                 self.allocator, 
                 self.line_offsets.len - 1,
                 // self.line_offsets.len,
@@ -866,20 +994,23 @@ pub const BM25Partition = struct {
 
                     current_doc_id += @intCast(new_doc);
 
-                    const token = token_t{
-                        .new_doc = 0,
-                        .term_pos = term_pos,
-                        .doc_id = @truncate(current_doc_id),
-                    };
+                    // const token = token_t{
+                        // .new_doc = 0,
+                        // .term_pos = term_pos,
+                        // .doc_id = @truncate(current_doc_id),
+                    // };
 
                     const postings_offset = II.term_offsets[term_id] + term_cntr[term_id];
-                    std.debug.assert(postings_offset < II.postings.len);
+                    std.debug.assert(postings_offset < II.postings.doc_ids.len);
+
                     // std.debug.assert(current_doc_id < II.num_docs);
                     std.debug.assert(current_doc_id <= II.num_docs);
 
                     term_cntr[term_id] += 1;
 
-                    II.postings[postings_offset] = token;
+                    // II.postings[postings_offset] = token;
+                    II.postings.doc_ids[postings_offset] = @intCast(term_pos);
+                    II.postings.term_positions[postings_offset] = @intCast(current_doc_id);
                 }
             }
             std.debug.assert(
