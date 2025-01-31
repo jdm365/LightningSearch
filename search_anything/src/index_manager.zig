@@ -23,6 +23,7 @@ const MAX_TERM_LENGTH = @import("index.zig").MAX_TERM_LENGTH;
 const MAX_NUM_TERMS   = @import("index.zig").MAX_NUM_TERMS;
 
 const RadixTrie = @import("radix_trie.zig").RadixTrie;
+const rt = @import("radix_trie.zig");
 
 const SortedScoreMultiArray = @import("sorted_array.zig").SortedScoreMultiArray;
 const ScorePair             = @import("sorted_array.zig").ScorePair;
@@ -37,10 +38,11 @@ const Column = struct {
     II_idx: usize,
 };
 
-const ColTokenPair = packed struct {
-    term_pos: u8,
-    col_idx: u24,
+const ColTokenPair = struct {
+    col_idx: u32,
     token: u32,
+    term_pos: u8,
+    shallow_query: bool,
 };
 
 pub const IndexManager = struct {
@@ -778,6 +780,7 @@ pub const IndexManager = struct {
                                 .col_idx = @intCast(II_idx),
                                 .term_pos = term_pos,
                                 .token = token.?,
+                                .shallow_query = false,
                             });
                             term_pos += 1;
                             empty_query = false;
@@ -798,6 +801,7 @@ pub const IndexManager = struct {
                                     .col_idx = @intCast(II_idx),
                                     .term_pos = term_pos,
                                     .token = token.?,
+                                    .shallow_query = false,
                                 });
                                 term_pos += 1;
                                 empty_query = false;
@@ -817,17 +821,41 @@ pub const IndexManager = struct {
                         .col_idx = @intCast(II_idx),
                         .term_pos = term_pos,
                         .token = token.?,
+                        .shallow_query = false,
+                        // .shallow_query = tokens.items.len > 0,
                     });
+
+                    // Add prefix matches.
+                    // var trie = self.index_partitions[partition_idx].II[II_idx].prt_vocab;
+                    // var matching_nodes = try self.gpa.allocator().alloc(
+                        // rt.RadixTrie(u32).Entry, 
+                        // 10,
+                        // );
+                    // defer self.gpa.allocator().free(matching_nodes);
+// 
+                    // const nodes_found = try trie.getPrefixNodes(
+                        // term_buffer[0..term_len],
+                        // &matching_nodes,
+                        // );
+// 
+                    // const shallow = tokens.items.len > 1;
+                    // for (0..nodes_found) |idx| {
+                        // try tokens.append(ColTokenPair{
+                            // .col_idx = @intCast(II_idx),
+                            // .term_pos = term_pos,
+                            // .token = matching_nodes[idx].value,
+                            // .shallow_query = shallow,
+                        // });
+                        // std.debug.print("Node {d} - Key: {s} Value: {d}\n", .{idx, matching_nodes[idx].key, matching_nodes[idx].value});
+                    // }
+// 
                     term_pos += 1;
                     empty_query = false;
                 }
             }
         }
 
-        if (empty_query) {
-            // std.debug.print("EMPTY QUERY\n", .{}); 
-            return;
-        }
+        if (empty_query) return;
 
         // For each token in each II, get relevant docs and add to score.
         var doc_scores: *std.AutoHashMap(u32, ScoringInfo) = &self.index_partitions[partition_idx].doc_score_map;
@@ -849,8 +877,13 @@ pub const IndexManager = struct {
             const token:   usize = @intCast(_token.token);
 
             const II: *InvertedIndex = &self.index_partitions[partition_idx].II[II_idx];
+            const inner_term = switch (_token.shallow_query) {
+                true => @as(f32, @floatFromInt(II.doc_freqs.items[token])),
+                false => @as(f32, @floatFromInt(II.num_docs)) / 
+                         @as(f32, @floatFromInt(II.doc_freqs.items[token])),
+            };
             const boost_weighted_idf: f32 = (
-                1.0 + std.math.log2(@as(f32, @floatFromInt(II.num_docs)) / @as(f32, @floatFromInt(II.doc_freqs.items[token])))
+                1.0 + std.math.log2(inner_term)
                 ) * boost_factors.items[II_idx];
             token_scores[idx] = boost_weighted_idf;
 
@@ -873,9 +906,9 @@ pub const IndexManager = struct {
             const offset      = II.term_offsets[token];
             const last_offset = II.term_offsets[token + 1];
 
-            // const is_high_df_term: bool = (score < IDF_THRESHOLD) or
-                                          // (score < 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len)));
-            const is_high_df_term: bool = (score < 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len)));
+            const is_high_df_term: bool = (
+                score < 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len))
+                );
 
             var prev_doc_id: u32 = std.math.maxInt(u32);
             for (II.postings[offset..last_offset]) |doc_token| {
@@ -901,7 +934,7 @@ pub const IndexManager = struct {
                     sorted_scores.insert({}, score_copy);
 
                 } else {
-                    if (!done and !is_high_df_term) {
+                    if (!done and !is_high_df_term and !col_score_pair.shallow_query) {
 
                         if (sorted_scores.count == sorted_scores.capacity - 1) {
                             const min_score = sorted_scores.scores[sorted_scores.count - 1];

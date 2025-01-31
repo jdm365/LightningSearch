@@ -47,8 +47,8 @@ const SHM = struct {
 pub const InvertedIndex = struct {
     postings: []token_t,
     vocab: std.hash_map.HashMap([]const u8, u32, SHM, 80),
-    prt_vocab: PruningRadixTrie(u32),
-    // prt_vocab: RadixTrie(u32),
+    // prt_vocab: PruningRadixTrie(u32),
+    prt_vocab: RadixTrie(u32),
     term_offsets: []usize,
     doc_freqs: std.ArrayList(u32),
     doc_sizes: []u16,
@@ -70,8 +70,8 @@ pub const InvertedIndex = struct {
         const II = InvertedIndex{
             .postings = &[_]token_t{},
             .vocab = vocab,
-            .prt_vocab = try PruningRadixTrie(u32).init(allocator),
-            // .prt_vocab = try RadixTrie(u32).init(allocator),
+            // .prt_vocab = try PruningRadixTrie(u32).init(allocator),
+            .prt_vocab = try RadixTrie(u32).init(std.heap.c_allocator),
             .term_offsets = &[_]usize{},
             .doc_freqs = try std.ArrayList(u32).initCapacity(
                 allocator, @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
@@ -123,7 +123,7 @@ pub const InvertedIndex = struct {
         avg_doc_size /= @floatFromInt(self.num_docs);
         self.avg_doc_size = @floatCast(avg_doc_size);
 
-        // try self.buildPRT();
+        try self.buildPRT();
     }
 
     pub fn buildPRT(self: *InvertedIndex) !void {
@@ -132,10 +132,15 @@ pub const InvertedIndex = struct {
         while (vocab_iterator.next()) |val| {
             const df = @as(f32, @floatFromInt(self.doc_freqs.items[val.value_ptr.*]));
             if (df >= 5.0) {
+                // try self.prt_vocab.insert(
+                    // val.key_ptr.*, 
+                    // val.value_ptr.*, 
+                    // df,
+                    // );
                 try self.prt_vocab.insert(
                     val.key_ptr.*, 
                     val.value_ptr.*, 
-                    df,
+                    // df,
                     );
             }
         }

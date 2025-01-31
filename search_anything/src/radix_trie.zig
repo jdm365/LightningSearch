@@ -34,7 +34,7 @@ pub fn getBaseCharFreqTable(comptime num_bits: usize) [256]u8 {
         242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 127
     };
 
-    for (0..num_bits) |idx| {
+    for (0..num_bits-1) |idx| {
         table[enwik9_byte_freq_ordering[idx]] = @intCast(idx + 1);
     }
     return table;
@@ -561,7 +561,6 @@ pub fn RadixTrie(comptime T: type) type {
                 var partial: bool = false;
 
                 const shift_len: usize = @intCast(self.char_freq_table[key[key_idx]]);
-
                 if (shift_len > 0) {
                     if ((BITMASKS[shift_len] & node.getMaskU64()) == 0) {
 
