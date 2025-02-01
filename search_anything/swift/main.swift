@@ -221,6 +221,45 @@ class SmoothProgressBar: NSView {
 }
 
 
+// First, let's create a class to hold the state for each tab
+class SearchTab: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    // File selection data
+    var fileSelectionView: NSView!
+    var checkboxes: [NSButton] = []
+    
+    // Search data
+    var searchFields: [NSSearchField] = []
+    var searchResults: [[String]] = []
+    var searchStrings: [String] = []
+    var searchBridge: SearchBridge!
+    let searchQueue = DispatchQueue(label: "com.search.queue")
+    
+    // Search interface data
+    var tableView: NSTableView!
+    var columnSelectionWindow: NSWindow!
+    var searchContainer: NSView!
+    
+    // Side panel data
+    var splitView: NSSplitView!
+    var detailsView: NSScrollView!
+    var detailsTable: NSTableView!
+    var selectedRowData: [String: String] = [:]
+    var scrollView: NSScrollView!
+    
+    weak var parentViewController: TabViewController?
+    
+    // Keep track of the file URL for this tab
+    var fileURL: URL?
+    
+    override init() {
+        super.init()
+        searchBridge = SearchBridge()
+    }
+    
+    // Move all the existing table view delegate and data source methods here
+    // Just copy them from your existing AppDelegate and change self.tableView to tableView, etc.
+}
+
 
 
 
