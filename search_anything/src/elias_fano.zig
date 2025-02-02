@@ -1,6 +1,11 @@
 const std = @import("std");
 
 
+inline fn asU64(buffer: []const u8) u64 {
+    // return std.mem.bytesAsValue(u64, &buffer[0..@min(8, buffer.len)]).*; 
+    return std.mem.bytesAsValue(u64, buffer[0..8]); 
+}
+
 pub const EFBlocked = struct{
     buffers: std.ArrayList(EFBuffer),
     partition_mins: std.ArrayList(usize),
@@ -59,8 +64,8 @@ pub const EFBlocked = struct{
 };
 
 const EFBuffer = struct {
-    low_bits: []u8,
-    high_bits: []u8,
+    low_bits: []align(8) u8,
+    high_bits: []align(8) u8,
     num_low_bits: usize,
 
     pub fn init() EFBuffer {
@@ -87,22 +92,19 @@ const EFBuffer = struct {
         const num_elements = sorted_arr.len;
         const max_value    = sorted_arr[num_elements - 1] - sorted_arr[0];
 
-        self.num_low_bits  = std.math.log2(max_value / num_elements);
+        self.num_low_bits  = std.math.log2((max_value + 1) / num_elements);
 
         const max_possible_low_bits  = self.num_low_bits * num_elements;
         const max_possible_high_bits = ((3 + self.num_low_bits) * num_elements) - max_possible_low_bits;
-        // std.debug.print("max_possible_low_bits:  {d}\n",  .{max_possible_low_bits});
-        // std.debug.print("max_possible_high_bits: {d}\n",  .{max_possible_high_bits});
-        // std.debug.print("num_low_bits:           {d}\n",  .{self.num_low_bits});
-        // std.debug.print("max_value:              {d}\n",  .{max_value});
-        // std.debug.print("num_elements:           {d}\n",  .{num_elements});
 
-        self.low_bits  = try allocator.alloc(
+        self.low_bits  = try allocator.alignedAlloc(
             u8, 
+            8,
             try std.math.divCeil(usize, max_possible_low_bits, 8),
             );
-        self.high_bits = try allocator.alloc(
+        self.high_bits = try allocator.alignedAlloc(
             u8, 
+            8,
             try std.math.divCeil(usize, max_possible_high_bits, 8),
             );
 
@@ -145,7 +147,6 @@ const EFBuffer = struct {
             }
 
             high_bit_idx += high_bits + 1;
-            // high_bit_idx += high_bits;
             const high_byte_idx: usize = @divFloor(high_bit_idx, 8);
             self.high_bits[high_byte_idx] |= @as(u8, 1) << @as(u3, @intCast(7 - (high_bit_idx % 8)));
 
@@ -156,6 +157,71 @@ const EFBuffer = struct {
             self.high_bits,
             try std.math.divCeil(usize, high_bit_idx, 8),
         );
+    }
+
+    pub const Iterator = struct {
+        buffer: *EFBuffer,
+        low_bit_idx: usize,
+        high_bit_idx: usize,
+        prev_value: usize,
+
+        pub fn next(self: *Iterator, T: type) ?T {
+            // if (low_byte_idx >= self.buffer.low_bits.len) return null;
+            if (self.high_bit_idx >= self.buffer.high_bits.len * 8) return null;
+            if (self.high_bit_idx == 0) {
+                self.low_bit_idx  += self.buffer.num_low_bits;
+                self.high_bit_idx += 2;
+                return self.prev_value;
+            }
+
+            var low_byte = switch (self.buffer.num_low_bits) {
+                0 => 0,
+                else => blk: {
+                    const low_byte_idx: usize = @divFloor(self.low_bit_idx, 8);
+                    const low_bit_idx = self.low_bit_idx % 8;
+                    const shift_len: u6 = @as(u6, @intCast((64 - self.buffer.num_low_bits) % 64 - low_bit_idx));
+
+                    break :blk @as(u64, @intFromPtr(&self.buffer.low_bits[low_byte_idx..low_byte_idx+8])) >> shift_len;
+                },
+            };
+
+            const high_byte_idx: usize = @divFloor(self.high_bit_idx, 8);
+
+            // TODO: Change so endian swap isn't necessary.
+            const u64_high_byte_idx = @divFloor(high_byte_idx, 8);
+            const u64_high_bit_idx  = @as(u6, @intCast(self.high_bit_idx % 64));
+            const u64_mask = ~@as(u64, 0) >> u64_high_bit_idx;
+            const u64_slice = std.mem.bytesAsSlice(u64, self.buffer.high_bits);
+            const u64_high_val = std.mem.nativeToBig(u64, u64_slice[u64_high_byte_idx]) & u64_mask;
+
+            const high_result = switch (u64_high_val) {
+                0 => blk: {
+                    if (u64_high_byte_idx + 1 == @divFloor(self.buffer.high_bits.len, 8)) return null;
+
+                    const next_byte = std.mem.nativeToBig(u64, u64_slice[u64_high_byte_idx + 1]);
+                    break :blk @clz(next_byte) + (64 - @as(u64, @intCast(u64_high_bit_idx)));
+                },
+                else => @clz(u64_high_val) - u64_high_bit_idx,
+            };
+
+            low_byte |= @as(u64, @intCast(high_result)) << @as(u6, @intCast(self.buffer.num_low_bits));
+            const result = @as(T, @intCast(low_byte)) + self.prev_value;
+            self.prev_value = result;
+
+            self.low_bit_idx  += self.buffer.num_low_bits;
+            self.high_bit_idx += high_result + 1;
+
+            return result;
+        }
+    };
+
+    pub fn iterator(self: *EFBuffer, comptime T: type, min_value: T) Iterator {
+        return Iterator{
+            .buffer = self,
+            .low_bit_idx = 0,
+            .high_bit_idx = 0,
+            .prev_value = min_value,
+        };
     }
 };
 
@@ -173,7 +239,7 @@ test "elias_fano" {
     var arr = try allocator.alloc(usize, 1_000_000);
     defer allocator.free(arr);
     for (0..arr.len) |idx| {
-        arr[idx] = idx * 2;
+        arr[idx] = idx * 9;
     }
 
     var ef_buffer = EFBlocked.init(allocator, 4096);
@@ -190,8 +256,7 @@ test "elias_fano" {
 
     std.debug.print("Num low bits:  {d}\n",  .{ef_buffer.buffers.items[0].num_low_bits});
     // std.debug.print("Low_bits:  {b:0>8}\n",  .{ef_buffer.buffers.items[0].low_bits[0..]});
-    // std.debug.print("High_bits: {b:0>8}\n",  .{ef_buffer.buffers.items[0].high_bits[0..]});
-    std.debug.print("start_vals:  {any}\n",  .{ef_buffer.partition_mins.items[0..]});
+    // std.debug.print("High_bits: {b:0>8}\n",  .{ef_buffer.buffers.items[1].high_bits[0..]});
 
     // Doesn't include overhead.
     std.debug.print(
@@ -202,4 +267,15 @@ test "elias_fano" {
         },
         );
     std.debug.print("Num bytes final: {d}\n", .{ef_buffer.getByteSize()});
+
+
+    // Test iterator
+    var prev_value: usize = ef_buffer.partition_mins.items[0];
+    std.debug.print("prev_value: {d}\n", .{prev_value});
+    var iter = ef_buffer.buffers.items[0].iterator(usize, prev_value);
+    while (iter.next(usize)) |value| {
+        std.debug.assert(value >= prev_value);
+        prev_value = value;
+        std.debug.print("{d} ", .{value});
+    }
 }
