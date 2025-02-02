@@ -1009,8 +1009,8 @@ pub const BM25Partition = struct {
                     term_cntr[term_id] += 1;
 
                     // II.postings[postings_offset] = token;
-                    II.postings.doc_ids[postings_offset] = @intCast(term_pos);
-                    II.postings.term_positions[postings_offset] = @intCast(current_doc_id);
+                    II.postings.doc_ids[postings_offset] = @intCast(current_doc_id);
+                    II.postings.term_positions[postings_offset] = @intCast(term_pos);
                 }
             }
             std.debug.assert(
