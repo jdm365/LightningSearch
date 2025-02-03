@@ -962,18 +962,20 @@ class TabViewController: NSTabViewController {
         tabView.tabViewType = .noTabsNoBorder
 
         // Ensure the tab view controller's view maintains the window size
-        tabView.translatesAutoresizingMaskIntoConstraints = false
-
-        NSLayoutConstraint.activate([
-            tabView.topAnchor.constraint(equalTo: view.topAnchor),
-            tabView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tabView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tabView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
+        view.translatesAutoresizingMaskIntoConstraints = false
+        if let parentView = view.superview {
+            NSLayoutConstraint.activate([
+                view.topAnchor.constraint(equalTo: parentView.topAnchor),
+                view.leadingAnchor.constraint(equalTo: parentView.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: parentView.trailingAnchor),
+                view.bottomAnchor.constraint(equalTo: parentView.bottomAnchor)
+            ])
+        }
     }
 
     override func viewWillAppear() {
         super.viewWillAppear()
+
         // Add first tab once the view is about to appear
         if tabs.isEmpty {
             addNewTab()
@@ -996,10 +998,7 @@ class TabViewController: NSTabViewController {
         
         // Create and set up container view
         let tabContentViewController = NSViewController()
-        let containerView = NSView(
-            frame: NSRect(x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT)
-            )
-        // let containerView = NSView(frame: .zero)
+        let containerView = NSView(frame: .zero)
         containerView.translatesAutoresizingMaskIntoConstraints = false
         tabContentViewController.view = containerView
 
@@ -1103,21 +1102,44 @@ class AppDelegate: NSObject,
         ********************************************************/
 
         setupMainWindow()
-        setupTabViewController()
    }
 
     private func setupMainWindow() {
+        // 1. Calculate content rect first
+        let screenFrame = NSScreen.main?.frame ?? .zero
+        let contentRect = NSRect(
+            x: 0,
+            y: 0,
+            width: screenFrame.width * 0.8,
+            height: screenFrame.height * 0.85
+        )
+        
+        // 2. Calculate window frame using class method
+        let styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+        let frameRect = NSWindow.frameRect(
+            forContentRect: contentRect,
+            styleMask: styleMask
+        )
+        
+        // 3. Create window with calculated frame
         mainWindow = NSWindow(
-            contentRect: NSRect(
-                x: 0, 
-                y: 0, 
-                width: WINDOW_WIDTH, 
-                height: WINDOW_HEIGHT
-            ),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: frameRect,
+            styleMask: styleMask,
             backing: .buffered,
             defer: false
         )
+
+        // mainWindow = NSWindow(
+            // contentRect: NSRect(
+                // x: 0, 
+                // y: 0, 
+                // width: WINDOW_WIDTH, 
+                // height: WINDOW_HEIGHT
+            // ),
+            // styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            // backing: .buffered,
+            // defer: false
+        // )
         print("Window size: \(mainWindow.frame.size)")
 
         mainWindow.appearance = NSAppearance(named: .vibrantDark)
@@ -1141,13 +1163,16 @@ class AppDelegate: NSObject,
         NSApp.activate(ignoringOtherApps: true)
         mainWindow.makeKeyAndOrderFront(nil)
         mainWindow.level = .floating
-    }
 
-    private func setupTabViewController() {
         tabViewController = TabViewController()
-        print("Window size: \(mainWindow.frame.size)")
+        mainWindow.setContentSize(contentRect.size)
         mainWindow.contentViewController = tabViewController
-        print("Window size: \(mainWindow.frame.size)")
+
+        // Force the size again after setting content view controller
+        DispatchQueue.main.async {
+            self.mainWindow.setContentSize(contentRect.size)
+            print("Window size after async resize: \(self.mainWindow.frame.size)")
+        }
     }
 
     @objc func addTab(_ sender: Any?) {
