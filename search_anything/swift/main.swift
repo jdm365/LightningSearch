@@ -449,7 +449,6 @@ extension SearchTab {
     }
 
     func setupFileSelectionView(in container: NSView) {
-        print("Setting up file selection view...")
 
         guard container.window != nil else {
             print("Container view not yet in window hierarchy")
@@ -462,13 +461,9 @@ extension SearchTab {
             return
         }
 
-        fileSelectionView = NSView(frame: container.bounds)
         container.addSubview(fileSelectionView)
         fileSelectionView.translatesAutoresizingMaskIntoConstraints = false
 
-        print("Container bounds: \(container.bounds)")
-        print("FileSelectionView bounds: \(fileSelectionView.bounds)")
-       
         let button = NSButton(frame: .zero)
         button.target = self
         button.title = "Select File"
@@ -478,7 +473,6 @@ extension SearchTab {
         button.translatesAutoresizingMaskIntoConstraints = false
 
         fileSelectionView.addSubview(button)
-        print("Added subview")
        
         NSLayoutConstraint.activate([
             fileSelectionView.topAnchor.constraint(equalTo: container.topAnchor),
@@ -489,7 +483,6 @@ extension SearchTab {
             button.centerXAnchor.constraint(equalTo: fileSelectionView.centerXAnchor),
             button.bottomAnchor.constraint(equalTo: fileSelectionView.centerYAnchor, constant: 30),
         ])
-        print("Constraints activated")
     }
 
     @objc func chooseFile() {
@@ -670,8 +663,6 @@ extension SearchTab {
         progressLabel.alignment = .center
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
         
-        // mainWindow.contentView?.addSubview(progressBar)
-        // mainWindow.contentView?.addSubview(progressLabel)
         container.addSubview(progressBar)
         container.addSubview(progressLabel)
         
@@ -969,6 +960,16 @@ class TabViewController: NSTabViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         tabView.tabViewType = .noTabsNoBorder
+
+        // Ensure the tab view controller's view maintains the window size
+        tabView.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            tabView.topAnchor.constraint(equalTo: view.topAnchor),
+            tabView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tabView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tabView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
     }
 
     override func viewWillAppear() {
@@ -995,7 +996,11 @@ class TabViewController: NSTabViewController {
         
         // Create and set up container view
         let tabContentViewController = NSViewController()
-        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        let containerView = NSView(
+            frame: NSRect(x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT)
+            )
+        // let containerView = NSView(frame: .zero)
+        containerView.translatesAutoresizingMaskIntoConstraints = false
         tabContentViewController.view = containerView
 
         // Create tab view item
@@ -1005,7 +1010,16 @@ class TabViewController: NSTabViewController {
         
         self.addTabViewItem(tabViewItem)
         self.selectedTabViewItemIndex = self.tabViewItems.count - 1
-        print("Added tab...")
+
+        // At this point, ensure that the containerView fills its parent's view.
+        if let parentView = tabContentViewController.view.superview {
+            NSLayoutConstraint.activate([
+                containerView.topAnchor.constraint(equalTo: parentView.topAnchor),
+                containerView.leadingAnchor.constraint(equalTo: parentView.leadingAnchor),
+                containerView.trailingAnchor.constraint(equalTo: parentView.trailingAnchor),
+                containerView.bottomAnchor.constraint(equalTo: parentView.bottomAnchor)
+            ])
+        }
 
         // Wait for view to be in window hierarchy
         DispatchQueue.main.async {
@@ -1074,15 +1088,18 @@ class AppDelegate: NSObject,
         -----------------
 
         MAIN WINDOW
-            FILE SELECTION VIEW
-                SELECT FILE BUTTON
+            TOOLBAR
+                ADD TAB BUTTON
+            TAB
+                FILE SELECTION VIEW
+                    SELECT FILE BUTTON
 
-            SPLIT VIEW
-                SEARCH CONTAINER
-                    SEARCH FIELDS
-                TABLE VIEW
-                DETAILS VIEW
-                    DETAILS TABLE
+                SPLIT VIEW
+                    SEARCH CONTAINER
+                        SEARCH FIELDS
+                    TABLE VIEW
+                    DETAILS VIEW
+                        DETAILS TABLE
         ********************************************************/
 
         setupMainWindow()
@@ -1101,6 +1118,7 @@ class AppDelegate: NSObject,
             backing: .buffered,
             defer: false
         )
+        print("Window size: \(mainWindow.frame.size)")
 
         mainWindow.appearance = NSAppearance(named: .vibrantDark)
         mainWindow.title = "Search"
@@ -1127,7 +1145,9 @@ class AppDelegate: NSObject,
 
     private func setupTabViewController() {
         tabViewController = TabViewController()
+        print("Window size: \(mainWindow.frame.size)")
         mainWindow.contentViewController = tabViewController
+        print("Window size: \(mainWindow.frame.size)")
     }
 
     @objc func addTab(_ sender: Any?) {
