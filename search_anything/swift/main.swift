@@ -493,18 +493,16 @@ extension SearchTab {
 
     @objc func chooseFile() {
         guard let parentVC = parentViewController,
-              let window = parentVC.view.window else { return }
+              let window = parentVC.view.window,
+              let appDelegate = NSApp.delegate as? AppDelegate else {
+            print("Could not access required components")
+            return
+        }
         
-        // Create openPanel locally or use the one from parent if needed
-        let openPanel = NSOpenPanel()
-        openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = false
-        openPanel.canChooseFiles = true
-        openPanel.allowedContentTypes = [UTType.commaSeparatedText, UTType.json]
-        
-        openPanel.beginSheetModal(for: window) { [weak self] response in  // Use window, not container
+        // Get openPanel from AppDelegate
+        appDelegate.openPanel.beginSheetModal(for: window) { [weak self] response in  // Use window, not container
             guard let self = self else { return }
-            if response == .OK, let url = openPanel.url {
+            if response == .OK, let url = appDelegate.openPanel.url {
                 self.fileURL = url  // Store the URL for this tab
                 // Update the tab title with the filename
                 if let tabViewItem = parentVC.tabView.selectedTabViewItem {
@@ -1085,6 +1083,8 @@ class AppDelegate: NSObject,
     var toolbar: NSToolbar!
     var tabViewController: TabViewController!
 
+    var openPanel: NSOpenPanel!
+
    
     func applicationDidFinishLaunching(_ notification: Notification) {
         /*******************************************************
@@ -1178,6 +1178,14 @@ class AppDelegate: NSObject,
         DispatchQueue.main.async {
             self.mainWindow.setContentSize(contentRect.size)
             print("Window size after async resize: \(self.mainWindow.frame.size)")
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.openPanel = NSOpenPanel()
+                self.openPanel.allowsMultipleSelection = false
+                self.openPanel.canChooseDirectories = false
+                self.openPanel.canChooseFiles = true
+                self.openPanel.allowedContentTypes = [UTType.commaSeparatedText, UTType.json]
+            }
         }
     }
 
