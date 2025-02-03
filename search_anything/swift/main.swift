@@ -415,6 +415,7 @@ extension SearchTab {
             let filter = CIFilter(name: "CIGaussianBlur")!
             filter.setValue(ciImage, forKey: kCIInputImageKey)
             filter.setValue(5.0, forKey: kCIInputRadiusKey)
+            // filter.setValue(0.0, forKey: kCIInputRadiusKey)
             
             // Get filtered image
             if let outputCIImage = filter.outputImage {
@@ -427,9 +428,14 @@ extension SearchTab {
                     backgroundImageView.image = blurredImage
                 }
             }
-            
+
+            // Set proper scaling mode
             backgroundImageView.imageScaling = .scaleProportionallyUpOrDown
-            backgroundImageView.autoresizingMask = [.width, .height]
+            backgroundImageView.imageAlignment = .alignCenter
+            
+            // Enable layer backing for better performance
+            backgroundImageView.wantsLayer = true
+            backgroundImageView.layer?.contentsGravity = .resizeAspectFill
             
             container.addSubview(
                 backgroundImageView, 
