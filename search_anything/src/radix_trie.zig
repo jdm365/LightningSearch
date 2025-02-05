@@ -1,7 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 
-// TODO: Define second node type for nodes with more than ~48 values.
+// TODO: Define second node type for nodes with more than ~54 values.
 //       Use all charachter frequencies here and do popCount with AVX2 instructions.
 
 const MAX_STRING_LEN = 7;

@@ -1,6 +1,7 @@
-const std   = @import("std");
+const std = @import("std");
 
 const string_utils = @import("string_utils.zig");
+const file_utils   = @import("file_utils.zig");
 
 const DoubleBufferedReader = @import("file_utils.zig").DoubleBufferedReader;
 const FileType             = @import("file_utils.zig").FileType;
@@ -16,7 +17,6 @@ const json = @import("json.zig");
 const TermPos = @import("server.zig").TermPos;
 
 const BM25Partition   = @import("index.zig").BM25Partition;
-const InvertedIndex   = @import("index.zig").InvertedIndex;
 const QueryResult     = @import("index.zig").QueryResult;
 const ScoringInfo     = @import("index.zig").ScoringInfo;
 const MAX_TERM_LENGTH = @import("index.zig").MAX_TERM_LENGTH;
@@ -464,7 +464,7 @@ pub const IndexManager = struct {
         };
 
         const start_byte = self.index_partitions[partition_idx].line_offsets[0];
-        var token_stream = try TokenStream.init(
+        var token_stream = try TokenStream(file_utils.token_32t).init(
             self.input_filename,
             output_filename,
             self.gpa.allocator(),
