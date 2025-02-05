@@ -145,6 +145,7 @@ pub const DoubleBufferedReader = struct {
     current_buffer: usize,
     thread: ?std.Thread = null,
     end_token: u8,
+    uppercase: bool,
 
     semaphore: std.Thread.Semaphore,
 
@@ -154,13 +155,18 @@ pub const DoubleBufferedReader = struct {
         allocator: std.mem.Allocator, 
         file: std.fs.File,
         comptime end_token: u8,
+        uppercase: bool,
         ) !DoubleBufferedReader {
 
         const buffer_size = 1 << 22;
         const overflow_size = 16384;
         const buffers = try allocator.alloc(u8, 2 * buffer_size);
         const overflow_buffer = try allocator.alloc(u8, 2 * overflow_size);
-        _ = try file.read(buffers);
+        const bytes_read = try file.read(buffers);
+
+        if (uppercase) {
+            string_utils.stringToUpper(buffers.ptr, bytes_read);
+        }
         @memcpy(
             overflow_buffer[0..overflow_size], 
             buffers[(2 * buffer_size) - overflow_size..],
@@ -174,6 +180,7 @@ pub const DoubleBufferedReader = struct {
             .current_buffer = 0,
             .semaphore = .{},
             .end_token = end_token,
+            .uppercase = uppercase,
         };
     }
 
@@ -186,24 +193,27 @@ pub const DoubleBufferedReader = struct {
     }
 
     fn readBufferThread(
-        reader: *DoubleBufferedReader,
+        self: *DoubleBufferedReader,
         buffer: []u8,
         overflow_dest: []u8,
         overflow_size: usize,
         current_buffer: usize,
     ) void {
-        const bytes_read = reader.file.read(buffer) catch {
+        const bytes_read = self.file.read(buffer) catch {
             std.debug.print("Error reading file\n", .{});
             return;
         };
-        if (bytes_read != buffer.len) buffer[bytes_read] = reader.end_token;
+        if (bytes_read != buffer.len) buffer[bytes_read] = self.end_token;
+        if (self.uppercase) {
+            string_utils.stringToUpper(self.buffers.ptr, bytes_read);
+        }
 
         const start_idx = (buffer.len - overflow_size) * (1 - current_buffer);
         const end_idx   = start_idx + overflow_size;
         @memcpy(overflow_dest, buffer[start_idx..end_idx]);
 
-        reader.active_read.store(false, .release);
-        reader.semaphore.post();
+        self.active_read.store(false, .release);
+        self.semaphore.post();
     }
 
     pub fn getBuffer(

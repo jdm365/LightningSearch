@@ -349,6 +349,7 @@ pub const IndexManager = struct {
             self.gpa.allocator(),
             file,
             '{',
+            false,
         );
         defer buffered_reader.deinit(self.gpa.allocator());
 
@@ -385,6 +386,7 @@ pub const IndexManager = struct {
             self.gpa.allocator(),
             file,
             '{',
+            false,
         );
         defer buffered_reader.deinit(self.gpa.allocator());
 
@@ -498,10 +500,6 @@ pub const IndexManager = struct {
                     progress_bar.update(current_docs_read);
                     self.last_progress = current_docs_read;
                 }
-            } else {
-                // std.debug.print("partition_idx: {d}\n", .{partition_idx});
-                // std.debug.print("timer.read(): {d}\n", .{timer.read()});
-                // std.debug.print("interval_ns:  {d}\n\n", .{interval_ns});
             }
 
             switch (self.file_type) {
@@ -579,6 +577,7 @@ pub const IndexManager = struct {
             self.gpa.allocator(),
             file,
             '\n',
+            false,
         );
         defer buffered_reader.deinit(self.gpa.allocator());
 

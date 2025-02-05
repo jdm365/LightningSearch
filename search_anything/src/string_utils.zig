@@ -136,11 +136,6 @@ pub inline fn simdFindCharIdxEscapedFull(
 
         const effective_escape_mask = escape_mask & ~(escape_mask << 1);
 
-        // std.debug.print("\nEM:  {b:0>64}\n", .{escape_mask});
-        // std.debug.print("EEM: {b:0>64}\n", .{effective_escape_mask});
-        // std.debug.print("ENF: {b:0>64}\n", .{escape_next_first_mask});
-        // std.debug.print("CM:  {b:0>64}\n\n", .{char_mask});
-
         char_mask &= ~(effective_escape_mask << 1);
         char_mask &= escape_next_first_mask;
 
@@ -164,6 +159,82 @@ pub inline fn simdFindCharIdxEscapedFull(
         if (remaining[idx] == char) return total_offset + idx;
         idx += 1;
     }
+    return buffer.len;
+}
+
+
+const Range = struct {
+    low: u8,
+    high: u8,
+};
+
+const SEP_RANGES: []const Range = .{
+    .{ .low = 0, .high = 9 },
+    .{ .low = 11, .high = 43 },
+    .{ .low = 45, .high = 47 },
+    .{ .low = 58, .high = 64 },
+    .{ .low = 91, .high = 96 },
+    .{ .low = 123, .high = 126 },
+};
+
+pub inline fn simdFindCharInRangesEscapedFull(
+    buffer: []const u8,
+    comptime ranges: []const Range,
+) usize {
+    var remaining = buffer;
+    var total_offset: usize = 0;
+
+    const base_mask: MASK_TYPE = comptime 1 << (@bitSizeOf(MASK_TYPE) - 1);
+    var escape_next_first_mask: MASK_TYPE =
+        comptime std.math.maxInt(MASK_TYPE);
+
+    while (remaining.len >= VEC_SIZE) {
+        const vec_buffer = @as(*align(1) const VEC, @alignCast(@ptrCast(remaining[0..VEC_SIZE])));
+        var range_mask: MASK_TYPE = 0;
+
+        for (ranges) |range| {
+            const diff = vec_buffer.* - comptime @as(VEC, @splat(range.low));
+            range_mask |= @bitCast(diff <= comptime @as(VEC, @splat(range.high - range.low)));
+        }
+
+        const _escape_mask: VEC = comptime @splat('\\');
+        const escape_mask: MASK_TYPE = @bitCast(vec_buffer.* == _escape_mask);
+        const effective_escape_mask = escape_mask & ~(escape_mask << 1);
+
+        // Skip over any range hits that are escaped.
+        range_mask &= ~(effective_escape_mask << 1);
+        range_mask &= escape_next_first_mask;
+
+        escape_next_first_mask = ~@as(MASK_TYPE, @popCount(base_mask & effective_escape_mask));
+
+        const index = @ctz(range_mask);
+        if (index != VEC_SIZE) {
+            return total_offset + index;
+        }
+
+        remaining = remaining[VEC_SIZE..];
+        total_offset += VEC_SIZE;
+    }
+
+    // Process any remaining bytes.
+    var idx: usize = 0;
+    while (idx < remaining.len) {
+        if (remaining[idx] == '\\') {
+            idx += 2;
+            continue;
+        }
+        // Scan through the ranges.
+        var in_range = false;
+        for (ranges) |range| {
+            if (remaining[idx] >= range.low and remaining[idx] <= range.high) {
+                in_range = true;
+                break;
+            }
+        }
+        if (in_range) return total_offset + idx;
+        idx += 1;
+    }
+
     return buffer.len;
 }
 
