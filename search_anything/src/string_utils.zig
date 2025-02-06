@@ -29,6 +29,8 @@ const PAIR_LOOKUP_TABLE = blk: {
     break :blk table;
 };
 
+// TODO: Lookup table. 8x32 comptime generataed. SIMD shuffle_mask @cntz
+
 // Unrolled once max SIMD lane. Fast than not unrolling in practice.
 pub const VEC_SIZE = 2 * (std.simd.suggestVectorLength(u8) orelse 64);
 const MASK_TYPE = switch (VEC_SIZE) {
