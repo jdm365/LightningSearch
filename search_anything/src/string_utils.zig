@@ -30,6 +30,75 @@ const PAIR_LOOKUP_TABLE = blk: {
 };
 
 // TODO: Lookup table. 8x32 comptime generataed. SIMD shuffle_mask @cntz
+pub fn LOOKUP_TABLE(comptime ranges: []const Range) struct{table: [8][32]u8, set_table_ranges: u8} {
+    var table: [8][32]u8 = undefined;
+    for (0..8) |idx| {
+        @memset(&table[idx], 0);
+    }
+    var set_table_ranges: u8 = 0;
+    for (ranges) |range| {
+        for (range.low..range.high + 1) |c| {
+            const table_idx = c / 32;
+            const byte_idx  = c % 32;
+            table[table_idx][byte_idx] = 1;
+            set_table_ranges |= 1 << table_idx;
+        }
+    }
+    return .{table, set_table_ranges};
+}
+
+pub fn SCALAR_LOOKUP_TABLE(comptime ranges: []const Range) [256]u8 {
+    var table: [256]u8 = undefined;
+    @memset(&table, 0);
+
+    for (ranges) |range| {
+        for (range.low..range.high + 1) |c| {
+            table[c] = 1;
+        }
+    }
+    return table;
+}
+
+pub inline fn simdFindCharInRanges(
+    buffer: []const u8,
+    comptime ranges: []const Range,
+) usize {
+    var remaining = buffer;
+    var total_offset: usize = 0;
+
+    const table_struct = LOOKUP_TABLE(ranges);
+    const table = table_struct.table;
+    // const set_table_ranges = table_struct.set_table_ranges;
+
+    // NOT DONE.
+    while (remaining.len >= VEC_SIZE) {
+        const vec_buffer = @as(*align(1) const VEC, @alignCast(@ptrCast(remaining[0..VEC_SIZE])));
+        var range_mask: MASK_TYPE = 0;
+
+        inline for (0..8) |idx| {
+            range_mask |= @bitCast(vec_buffer.* & comptime @as(VEC, @splat(table[idx][0])) != 0);
+        }
+
+        const index = @ctz(range_mask);
+        if (index != VEC_SIZE) {
+            return total_offset + index;
+        }
+
+        remaining = remaining[VEC_SIZE..];
+        total_offset += VEC_SIZE;
+    }
+
+    // Process any remaining bytes.
+    var idx: usize = 0;
+    while (idx < remaining.len) {
+        if (table[buffer[idx] / 32][buffer[idx] % 32] != 0) {
+            return total_offset + idx;
+        }
+        idx += 1;
+    }
+
+    return buffer.len;
+}
 
 // Unrolled once max SIMD lane. Fast than not unrolling in practice.
 pub const VEC_SIZE = 2 * (std.simd.suggestVectorLength(u8) orelse 64);
@@ -170,7 +239,7 @@ const Range = struct {
     high: u8,
 };
 
-const SEP_RANGES: []const Range = .{
+pub const SEP_RANGES: [6]Range = .{
     .{ .low = 0, .high = 9 },
     .{ .low = 11, .high = 43 },
     .{ .low = 45, .high = 47 },
@@ -183,60 +252,12 @@ pub inline fn simdFindCharInRangesEscapedFull(
     buffer: []const u8,
     comptime ranges: []const Range,
 ) usize {
-    var remaining = buffer;
-    var total_offset: usize = 0;
-
-    const base_mask: MASK_TYPE = comptime 1 << (@bitSizeOf(MASK_TYPE) - 1);
-    var escape_next_first_mask: MASK_TYPE =
-        comptime std.math.maxInt(MASK_TYPE);
-
-    while (remaining.len >= VEC_SIZE) {
-        const vec_buffer = @as(*align(1) const VEC, @alignCast(@ptrCast(remaining[0..VEC_SIZE])));
-        var range_mask: MASK_TYPE = 0;
-
-        for (ranges) |range| {
-            const diff = vec_buffer.* - comptime @as(VEC, @splat(range.low));
-            range_mask |= @bitCast(diff <= comptime @as(VEC, @splat(range.high - range.low)));
+    // Not actually SIMD for now.
+    for (0..buffer.len) |idx| {
+        if (SCALAR_LOOKUP_TABLE(ranges)[buffer[idx]] == 1) {
+            return idx;
         }
-
-        const _escape_mask: VEC = comptime @splat('\\');
-        const escape_mask: MASK_TYPE = @bitCast(vec_buffer.* == _escape_mask);
-        const effective_escape_mask = escape_mask & ~(escape_mask << 1);
-
-        // Skip over any range hits that are escaped.
-        range_mask &= ~(effective_escape_mask << 1);
-        range_mask &= escape_next_first_mask;
-
-        escape_next_first_mask = ~@as(MASK_TYPE, @popCount(base_mask & effective_escape_mask));
-
-        const index = @ctz(range_mask);
-        if (index != VEC_SIZE) {
-            return total_offset + index;
-        }
-
-        remaining = remaining[VEC_SIZE..];
-        total_offset += VEC_SIZE;
     }
-
-    // Process any remaining bytes.
-    var idx: usize = 0;
-    while (idx < remaining.len) {
-        if (remaining[idx] == '\\') {
-            idx += 2;
-            continue;
-        }
-        // Scan through the ranges.
-        var in_range = false;
-        for (ranges) |range| {
-            if (remaining[idx] >= range.low and remaining[idx] <= range.high) {
-                in_range = true;
-                break;
-            }
-        }
-        if (in_range) return total_offset + idx;
-        idx += 1;
-    }
-
     return buffer.len;
 }
 
