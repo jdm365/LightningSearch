@@ -239,10 +239,11 @@ const Range = struct {
     high: u8,
 };
 
-pub const SEP_RANGES: [6]Range = .{
+pub const SEP_RANGES: [5]Range = .{
     .{ .low = 0, .high = 9 },
-    .{ .low = 11, .high = 43 },
-    .{ .low = 45, .high = 47 },
+    // .{ .low = 11, .high = 43 },
+    // .{ .low = 45, .high = 47 },
+    .{ .low = 11, .high = 47 },
     .{ .low = 58, .high = 64 },
     .{ .low = 91, .high = 96 },
     .{ .low = 123, .high = 126 },

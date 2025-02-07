@@ -1063,6 +1063,7 @@ test "index_csv" {
 }
 
 test "index_json" {
+    @breakpoint();
     const filename: []const u8 = "../data/mb_small.json";
     // const filename: []const u8 = "../data/mb.json";
 

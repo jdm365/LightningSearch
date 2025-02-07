@@ -9,7 +9,6 @@ const index = @import("index.zig");
 const FlatFileIndex = struct {
     gpa: std.heap.GeneralPurposeAllocator(.{}),
     string_arena: std.heap.ArenaAllocator,
-    // postings: index.Postings,
     postings: index.PostingsDynamic,
 
     vocab: std.StringHashMap(u32),
@@ -20,16 +19,29 @@ const FlatFileIndex = struct {
 
     pub fn init() !FlatFileIndex {
 
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        const string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        const gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+
+        // const allocator = gpa.allocator();
+
+        // Weird arena bug. Need to call alloc once first.
+        _ = try string_arena.allocator().alloc(u8, 0);
+        // _ = try allocator.alloc(u8, 0);
+
         const FFI = FlatFileIndex{
             .gpa = gpa,
             .string_arena = string_arena,
 
-            .postings = try index.PostingsDynamic.init(gpa.allocator()),
-            .vocab = std.StringHashMap(u32).init(gpa.allocator()),
-            .doc_freqs = std.ArrayList(u32).init(gpa.allocator()),
-            .doc_sizes = std.ArrayList(u64).init(gpa.allocator()),
+            // .postings = try index.PostingsDynamic.init(allocator),
+            // .vocab = std.StringHashMap(u32).init(allocator),
+            // .doc_freqs = std.ArrayList(u32).init(allocator),
+            // .doc_sizes = std.ArrayList(u64).init(allocator),
+
+            .postings = try index.PostingsDynamic.init(std.heap.c_allocator),
+            .vocab = std.StringHashMap(u32).init(std.heap.c_allocator),
+            .doc_freqs = std.ArrayList(u32).init(std.heap.c_allocator),
+            .doc_sizes = std.ArrayList(u64).init(std.heap.c_allocator),
             .avg_doc_size = 0.0,
         };
         return FFI;
@@ -56,9 +68,10 @@ const FlatFileIndex = struct {
         token_stream: *file_utils.TokenStream(file_utils.token_64t),
         file_terms: *std.AutoHashMap(u32, void),
     ) !void {
+        std.debug.assert(term_len > 0);
+        std.debug.assert(term_len < index.MAX_TERM_LENGTH);
 
         const gop = try self.vocab.getOrPut(term[0..term_len]);
-
         if (!gop.found_existing) {
             const term_copy = try self.string_arena.allocator().dupe(
                 u8, 
@@ -66,7 +79,7 @@ const FlatFileIndex = struct {
                 );
 
             gop.key_ptr.* = term_copy;
-            gop.value_ptr.* = @truncate(self.vocab.count());
+            gop.value_ptr.* = @truncate(self.vocab.count() - 1);
             try self.doc_freqs.append(1);
             try token_stream.addToken64(term_pos, gop.value_ptr.*);
 
@@ -84,7 +97,7 @@ const FlatFileIndex = struct {
         }
     }
 
-    fn tokenize(
+    inline fn tokenize(
         self: *FlatFileIndex,
         buffer: []const u8,
         token_stream: *file_utils.TokenStream(file_utils.token_64t),
@@ -93,21 +106,29 @@ const FlatFileIndex = struct {
         ) !usize {
         var buffer_pos: usize = 0;
         while (buffer_pos < buffer.len) {
-            const skip_chars = string_utils.simdFindCharInRangesEscapedFull(
+            const skip_chars = @min(string_utils.simdFindCharInRangesEscapedFull(
                 buffer[buffer_pos..], 
                 &string_utils.SEP_RANGES,
-                );
-            try self.addTerm(
-                buffer[buffer_pos..],
-                skip_chars,
-                doc_size.*,
-                token_stream,
-                file_terms,
-                );
+                ), index.MAX_TERM_LENGTH);
+
+            if (skip_chars > 0) {
+                try self.addTerm(
+                    buffer[buffer_pos..],
+                    skip_chars,
+                    doc_size.*,
+                    token_stream,
+                    file_terms,
+                    );
+            }
             buffer_pos += skip_chars + 1;
-            while (buffer[buffer_pos] == ' ') buffer_pos += 1;
+            if (buffer_pos >= buffer.len) break;
+            while (
+                (string_utils.SCALAR_LOOKUP_TABLE(&string_utils.SEP_RANGES)[buffer[buffer_pos]] == 1)
+                    and
+                (buffer_pos < buffer.len - 1)
+                ) buffer_pos += 1;
         }
-        return buffer.len;
+        return buffer_pos;
     }
 
     pub fn indexFile(
@@ -152,6 +173,7 @@ const FlatFileIndex = struct {
         var file_terms = std.AutoHashMap(u32, void).init(self.gpa.allocator());
         defer file_terms.deinit();
 
+        const start = std.time.milliTimestamp();
         var doc_size: usize = 0;
         const file_size = try token_stream.input_file.getEndPos();
         while (file_pos < file_size - 1) {
@@ -162,8 +184,13 @@ const FlatFileIndex = struct {
                 &file_terms, 
                 &doc_size,
                 );
+            std.debug.print("File pos: {d}\n", .{file_pos});
         }
         try token_stream.flushTokenStream(0);
+        const end = std.time.milliTimestamp();
+        const execution_time_ms = end - start;
+        const mb_s: usize = @as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(execution_time_ms))));
+        std.debug.print("{d}MB/s\n", .{mb_s});
 
         try self.updateFromTokenStream(&token_stream);
     }
@@ -238,4 +265,6 @@ test "index_txt" {
     defer index_manager.deinit();
 
     try index_manager.indexFile(filename);
+
+    std.debug.print("Vocab size: {d}\n", .{index_manager.vocab.count()});
 }
