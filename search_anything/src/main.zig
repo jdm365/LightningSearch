@@ -6,6 +6,8 @@ const zap = @import("zap");
 const IndexManager = @import("index_manager.zig").IndexManager;
 const FileType = @import("file_utils.zig").FileType;
 
+const FlatFileIndex = @import("flat_index.zig").FlatFileIndex;
+
 const server = @import("server.zig");
 
 
@@ -76,7 +78,7 @@ fn bench(testing: bool) !void {
 }
 
 pub fn main() !void {
-    const filename: [*:0]const u8 = "../data/mb.csv";
+    // const filename: [*:0]const u8 = "../data/mb.csv";
     // const filename: [*:0]const u8 = "../data/mb_small.csv";
     // const filename: []const u8 = "../data/mb.csv";
 
@@ -91,14 +93,25 @@ pub fn main() !void {
 // 
     // try index_manager.indexFile();
 
+// 
+    // server.init_allocators();
+    // const QH = @as(*server.QueryHandlerLocal, @alignCast(@ptrCast(server.getQueryHandlerLocal())));
+    // QH.readHeader(filename);
+    // server.scanFile(QH);
+    // server.addSearchCol(QH, "title");
+    // server.addSearchCol(QH, "artist");
+    // server.addSearchCol(QH, "album");
+// 
+    // server.indexFile(QH);
 
-    server.init_allocators();
-    const QH = @as(*server.QueryHandlerLocal, @alignCast(@ptrCast(server.getQueryHandlerLocal())));
-    QH.readHeader(filename);
-    server.scanFile(QH);
-    server.addSearchCol(QH, "title");
-    server.addSearchCol(QH, "artist");
-    server.addSearchCol(QH, "album");
+    // Treat as txt flat file.
+    const filename: []const u8 = "../data/mb_small.csv";
+    // const filename: []const u8 = "../data/mb.csv";
 
-    server.indexFile(QH);
+    var index_manager = try FlatFileIndex.init();
+    defer index_manager.deinit();
+
+    try index_manager.indexFile(filename);
+
+    std.debug.print("Vocab size: {d}\n", .{index_manager.vocab.count()});
 }

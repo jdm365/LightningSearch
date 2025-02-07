@@ -6,8 +6,8 @@ const rt = @import("radix_trie.zig");
 const index = @import("index.zig");
 
 
-const FlatFileIndex = struct {
-    gpa: std.heap.GeneralPurposeAllocator(.{}),
+pub const FlatFileIndex = struct {
+    gpa: *std.heap.GeneralPurposeAllocator(.{}),
     string_arena: std.heap.ArenaAllocator,
     postings: index.PostingsDynamic,
 
@@ -18,30 +18,19 @@ const FlatFileIndex = struct {
     avg_doc_size: f32,
 
     pub fn init() !FlatFileIndex {
-
-        // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        const gpa = std.heap.GeneralPurposeAllocator(.{}){};
         var string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-
-        // const allocator = gpa.allocator();
-
-        // Weird arena bug. Need to call alloc once first.
-        _ = try string_arena.allocator().alloc(u8, 0);
-        // _ = try allocator.alloc(u8, 0);
+        var gpa = try string_arena.allocator().create(std.heap.GeneralPurposeAllocator(.{}));
+        gpa.* = std.heap.GeneralPurposeAllocator(.{}){};
 
         const FFI = FlatFileIndex{
             .gpa = gpa,
             .string_arena = string_arena,
 
-            // .postings = try index.PostingsDynamic.init(allocator),
-            // .vocab = std.StringHashMap(u32).init(allocator),
-            // .doc_freqs = std.ArrayList(u32).init(allocator),
-            // .doc_sizes = std.ArrayList(u64).init(allocator),
+            .postings = try index.PostingsDynamic.init(gpa.allocator()),
+            .vocab = std.StringHashMap(u32).init(gpa.allocator()),
+            .doc_freqs = std.ArrayList(u32).init(gpa.allocator()),
+            .doc_sizes = std.ArrayList(u64).init(gpa.allocator()),
 
-            .postings = try index.PostingsDynamic.init(std.heap.c_allocator),
-            .vocab = std.StringHashMap(u32).init(std.heap.c_allocator),
-            .doc_freqs = std.ArrayList(u32).init(std.heap.c_allocator),
-            .doc_sizes = std.ArrayList(u64).init(std.heap.c_allocator),
             .avg_doc_size = 0.0,
         };
         return FFI;
@@ -56,8 +45,8 @@ const FlatFileIndex = struct {
         self.doc_freqs.deinit();
         self.doc_sizes.deinit();
 
-        _ = self.gpa.deinit();
         self.string_arena.deinit();
+        _ = self.gpa.deinit();
     }
 
     inline fn addTerm(
@@ -72,6 +61,7 @@ const FlatFileIndex = struct {
         std.debug.assert(term_len < index.MAX_TERM_LENGTH);
 
         const gop = try self.vocab.getOrPut(term[0..term_len]);
+
         if (!gop.found_existing) {
             const term_copy = try self.string_arena.allocator().dupe(
                 u8, 
@@ -145,7 +135,7 @@ const FlatFileIndex = struct {
             ".{x:0>32}", .{std.fmt.fmtSliceHexLower(file_hash[0..16])}
             );
         const output_filename = try std.fmt.allocPrint(
-            self.string_arena.allocator(), 
+            self.string_arena.allocator(),
             "{s}/output", 
             .{tmp_dir}
             );
