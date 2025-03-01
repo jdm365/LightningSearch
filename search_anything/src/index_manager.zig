@@ -628,8 +628,8 @@ pub const IndexManager = struct {
 
         const num_lines = line_offsets.items.len - 1;
 
-        const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
-        // const num_partitions = 1;
+        // const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
+        const num_partitions = 1;
 
         self.file_handles     = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
@@ -772,7 +772,8 @@ pub const IndexManager = struct {
                         if (term_len == 0) continue;
 
                         const token = self.index_partitions[partition_idx].II[II_idx].vocab.get(
-                            term_buffer[0..term_len]
+                            term_buffer[0..term_len],
+                            self.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
                             );
                         if (token != null) {
                             try tokens.append(ColTokenPair{
@@ -793,7 +794,8 @@ pub const IndexManager = struct {
 
                         if (term_len == MAX_TERM_LENGTH) {
                             const token = self.index_partitions[partition_idx].II[II_idx].vocab.get(
-                                term_buffer[0..term_len]
+                                term_buffer[0..term_len],
+                                self.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
                                 );
                             if (token != null) {
                                 try tokens.append(ColTokenPair{
@@ -813,7 +815,8 @@ pub const IndexManager = struct {
 
             if (term_len > 0) {
                 const token = self.index_partitions[partition_idx].II[II_idx].vocab.get(
-                    term_buffer[0..term_len]
+                    term_buffer[0..term_len],
+                    self.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
                     );
                 if (token != null) {
                     try tokens.append(ColTokenPair{

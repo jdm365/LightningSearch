@@ -30,16 +30,67 @@ pub const QueryResult = packed struct(u64){
     partition_idx: u32,
 };
 
-// const SHM = std.HashMap([]const u8, u32, std.hash.XxHash64, 80);
-const SHM = struct {
-    pub fn hash(self: @This(), key: []const u8) u64 {
-        _ = self;
-        return std.hash.Wyhash.hash(0, key);
+const SHM = std.HashMap([]const u8, u32, std.hash.XxHash64, 80);
+
+const IndexContext = struct {
+    string_bytes: *const std.ArrayList(u8),
+
+    pub fn eql(_: IndexContext, a: u32, b: u32) bool {
+        return a == b;
     }
 
-    pub fn eql(self: @This(), a: []const u8, b: []const u8) bool {
-        _ = self;
-        return std.mem.eql(u8, a, b);
+    pub fn hash(self: IndexContext, x: u32) u64 {
+        const x_slice = std.mem.span(
+            @as([*:0]u8, @ptrCast(&self.string_bytes.items[x]))
+            );
+        return std.hash_map.hashString(x_slice);
+    }
+};
+
+const SliceAdapter = struct {
+    string_bytes: *const std.ArrayList(u8),
+
+    pub fn eql(self: SliceAdapter, a_slice: []u8, b: u32) bool {
+        const b_slice = std.mem.span(
+            @as([*:0]u8, @ptrCast(&self.string_bytes.items[b])),
+            );
+        return std.mem.eql(u8, a_slice, b_slice);
+    }
+
+    pub fn hash(_: SliceAdapter, adapted_key: []u8) u64 {
+        return std.hash_map.hashString(adapted_key);
+    }
+};
+
+const Vocab = struct {
+    string_bytes: std.ArrayList(u8),
+    map: std.hash_map.HashMap(u32, u32, IndexContext, 80),
+
+    pub fn init(allocator: std.mem.Allocator) Vocab {
+        return Vocab{
+            .string_bytes = std.ArrayList(u8).init(allocator),
+            .map = std.hash_map.HashMap(u32, u32, IndexContext, 80).initContext(
+                allocator, 
+                undefined,
+                ),
+        };
+    }
+
+    pub fn deinit(self: *Vocab) void {
+        self.string_bytes.deinit();
+        self.map.deinit();
+    }
+
+    pub inline fn getCtx(self: *Vocab) IndexContext {
+        return IndexContext{ .string_bytes = &self.string_bytes };
+    }
+
+    pub inline fn getAdapter(self: *Vocab) SliceAdapter {
+        return SliceAdapter{ .string_bytes = &self.string_bytes };
+    }
+
+    pub inline fn get(self: *Vocab, key: []u8, adapter: SliceAdapter) ?u32 {
+        return self.map.getAdapted(key, adapter);
     }
 };
 
@@ -52,7 +103,8 @@ pub const Postings = struct {
 pub const InvertedIndexV2 = struct {
     postings: Postings,
 
-    vocab: std.hash_map.HashMap([]const u8, u32, SHM, 80),
+    vocab: Vocab,
+    // vocab: std.hash_map.HashMap([]const u8, u32, SHM, 80),
     // prt_vocab: PruningRadixTrie(u32),
     prt_vocab: RadixTrie(u32),
     term_offsets: []usize,
@@ -68,17 +120,13 @@ pub const InvertedIndexV2 = struct {
         allocator: std.mem.Allocator,
         num_docs: usize,
         ) !InvertedIndexV2 {
-        var vocab = std.hash_map.HashMap([]const u8, u32, SHM, 80).init(allocator);
-
-        // Guess capacity
-        try vocab.ensureTotalCapacity(@intCast(num_docs / 25));
-
-        const II = InvertedIndexV2{
+        // var vocab = std.hash_map.HashMap([]const u8, u32, SHM, 80).init(allocator);
+        var II = InvertedIndexV2{
             .postings = Postings{
                 .doc_ids = undefined,
                 .term_positions = undefined,
             },
-            .vocab = vocab,
+            .vocab = undefined,
             .prt_vocab = try RadixTrie(u32).init(std.heap.c_allocator),
             .term_offsets = &[_]usize{},
             .doc_freqs = try std.ArrayList(u32).initCapacity(
@@ -90,6 +138,17 @@ pub const InvertedIndexV2 = struct {
             .avg_doc_size = 0.0,
         };
         @memset(II.doc_sizes, 0);
+
+        II.vocab = Vocab.init(allocator);
+
+        // Guess capacity
+        try II.vocab.string_bytes.ensureTotalCapacity(@intCast(num_docs));
+        try II.vocab.map.ensureTotalCapacity(@intCast(num_docs / 25));
+
+        II.vocab.map = std.hash_map.HashMap(u32, u32, IndexContext, 80).initContext(
+            allocator, 
+            II.vocab.getCtx(),
+            );
         return II;
     }
 
@@ -116,7 +175,7 @@ pub const InvertedIndexV2 = struct {
         self.num_terms = @intCast(self.doc_freqs.items.len);
         self.term_offsets = try allocator.alloc(usize, self.num_terms + 1);
 
-        std.debug.assert(self.num_terms == self.vocab.count());
+        std.debug.assert(self.num_terms == self.vocab.map.count());
 
         // Num terms is now known.
         var postings_size: usize = 0;
@@ -136,30 +195,30 @@ pub const InvertedIndexV2 = struct {
         avg_doc_size /= @floatFromInt(self.num_docs);
         self.avg_doc_size = @floatCast(avg_doc_size);
 
-        try self.buildPRT();
+        // try self.buildPRT();
     }
 
-    pub fn buildPRT(self: *InvertedIndexV2) !void {
-        const start = std.time.milliTimestamp();
-        var vocab_iterator = self.vocab.iterator();
-        while (vocab_iterator.next()) |val| {
-            const df = @as(f32, @floatFromInt(self.doc_freqs.items[val.value_ptr.*]));
-            if (df >= 5.0) {
+    // pub fn buildPRT(self: *InvertedIndexV2) !void {
+        // const start = std.time.milliTimestamp();
+        // var vocab_iterator = self.vocab.iterator();
+        // while (vocab_iterator.next()) |val| {
+            // const df = @as(f32, @floatFromInt(self.doc_freqs.items[val.value_ptr.*]));
+            // if (df >= 5.0) {
+                // // try self.prt_vocab.insert(
+                    // // val.key_ptr.*, 
+                    // // val.value_ptr.*, 
+                    // // df,
+                    // // );
                 // try self.prt_vocab.insert(
                     // val.key_ptr.*, 
                     // val.value_ptr.*, 
-                    // df,
+                    // // df,
                     // );
-                try self.prt_vocab.insert(
-                    val.key_ptr.*, 
-                    val.value_ptr.*, 
-                    // df,
-                    );
-            }
-        }
-        const end = std.time.milliTimestamp();
-        std.debug.print("Build PRT in {}ms\n", .{end - start});
-    }
+            // }
+        // }
+        // const end = std.time.milliTimestamp();
+        // std.debug.print("Build PRT in {}ms\n", .{end - start});
+    // }
 };
 
 pub const BM25Partition = struct {
@@ -231,17 +290,26 @@ pub const BM25Partition = struct {
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
-
-        const gop = try self.II[col_idx].vocab.getOrPut(term[0..term_len]);
+        // const gop = try self.II[col_idx].vocab.getOrPut(term[0..term_len]);
+        const gop = try self.II[col_idx].vocab.map.getOrPutAdapted(
+            term[0..term_len],
+            self.II[col_idx].vocab.getAdapter(),
+            );
 
         if (!gop.found_existing) {
-            const term_copy = try self.string_arena.allocator().dupe(
-                u8, 
-                term[0..term_len],
-                );
+            // const term_copy = try self.string_arena.allocator().dupe(
+                // u8, 
+                // term[0..term_len],
+                // );
+            try self.II[col_idx].vocab.string_bytes.appendSlice(term[0..term_len]);
+            try self.II[col_idx].vocab.string_bytes.append(0);
 
-            gop.key_ptr.* = term_copy;
+            // gop.key_ptr.* = term_copy;
+            gop.key_ptr.* = @truncate(
+                self.II[col_idx].vocab.string_bytes.items.len - term_len - 1,
+                );
             gop.value_ptr.* = self.II[col_idx].num_terms;
+
             self.II[col_idx].num_terms += 1;
             try self.II[col_idx].doc_freqs.append(1);
             try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*, col_idx);
@@ -564,7 +632,6 @@ pub const BM25Partition = struct {
             byte_idx.* += buffer_idx;
             return;
         };
-        // std.debug.print("BUFFER 4: {s}\n", .{buffer[buffer_idx..][0..64]});
 
         // Empty check.
         if (
