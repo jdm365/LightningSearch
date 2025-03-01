@@ -48,30 +48,6 @@ pub const Postings = struct {
     term_positions: []u8,
 };
 
-pub const PostingsDynamic = struct {
-    doc_ids: std.ArrayList(std.ArrayListUnmanaged(u32)),
-    term_positions: std.ArrayList(std.ArrayListUnmanaged(u64)),
-
-    pub fn init(allocator: std.mem.Allocator) !PostingsDynamic {
-        const PD = PostingsDynamic{
-            .doc_ids = std.ArrayList(std.ArrayListUnmanaged(u32)).init(allocator),
-            .term_positions = std.ArrayList(std.ArrayListUnmanaged(u64)).init(allocator),
-        };
-        return PD;
-    }
-
-    pub fn deinit(self: *PostingsDynamic) void {
-        for (self.doc_ids.items) |*doc_ids| {
-            doc_ids.deinit(self.doc_ids.allocator);
-        }
-        for (self.term_positions.items) |*term_positions| {
-            term_positions.deinit(self.term_positions.allocator);
-        }
-
-        self.doc_ids.deinit();
-        self.term_positions.deinit();
-    }
-};
 
 pub const InvertedIndexV2 = struct {
     postings: Postings,

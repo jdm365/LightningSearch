@@ -6,7 +6,7 @@ const zap = @import("zap");
 const IndexManager = @import("index_manager.zig").IndexManager;
 const FileType = @import("file_utils.zig").FileType;
 
-const FlatFileIndex = @import("flat_index.zig").FlatFileIndex;
+const FlatFileIndexManager = @import("flat_index.zig").FlatFileIndexManager;
 
 const server = @import("server.zig");
 
@@ -108,7 +108,7 @@ pub fn main() !void {
     const filename: []const u8 = "../data/mb_small.csv";
     // const filename: []const u8 = "../data/mb.csv";
 
-    var index_manager = try FlatFileIndex.init();
+    var index_manager = try FlatFileIndexManager.init();
     defer index_manager.deinit();
 
     try index_manager.indexFile(filename);
