@@ -191,7 +191,7 @@ pub export fn deinit_allocators() void {
 
 pub export fn getQueryHandlerLocal() *anyopaque {
     const index_manager = global_arena.allocator().create(IndexManager) catch @panic("BAD\n");
-    index_manager.* = IndexManager.init() catch @panic("BAD\n");
+    index_manager.* = IndexManager.init(global_arena.allocator()) catch @panic("BAD\n");
 
     const query_handler = global_arena.allocator().create(QueryHandlerLocal) catch @panic("BAD\n");
     query_handler.* = QueryHandlerLocal.init(

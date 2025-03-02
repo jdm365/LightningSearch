@@ -78,9 +78,16 @@ fn bench(testing: bool) !void {
 pub fn main() !void {
     // const filename: [*:0]const u8 = "../data/mb.csv";
     // const filename: [*:0]const u8 = "../data/mb_small.csv";
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+
     const filename: []const u8 = "../data/mb.csv";
 
-    var index_manager = try IndexManager.init();
+    var index_manager = try IndexManager.init(gpa.allocator());
+
+    defer {
+        index_manager.deinit(gpa.allocator()) catch {};
+        _ = gpa.deinit();
+    }
 
     try index_manager.readHeader(filename, FileType.CSV);
     try index_manager.scanFile();

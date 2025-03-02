@@ -48,9 +48,9 @@ const ColTokenPair = struct {
 pub const IndexManager = struct {
     index_partitions: []BM25Partition,
     input_filename: []const u8,
-    gpa: std.heap.GeneralPurposeAllocator(.{.thread_safe = true}),
-    string_arena: std.heap.ArenaAllocator,
-    scratch_arena: std.heap.ArenaAllocator,
+    gpa: *std.heap.GeneralPurposeAllocator(.{.thread_safe = true}),
+    string_arena: *std.heap.ArenaAllocator,
+    scratch_arena: *std.heap.ArenaAllocator,
     search_cols: std.AutoHashMap(u32, u32),
     col_map: RadixTrie(u32),
     file_handles: []std.fs.File,
@@ -63,13 +63,13 @@ pub const IndexManager = struct {
     last_progress: usize,
     file_type: FileType,
 
-    pub fn init() !IndexManager {
+    pub fn init(allocator: std.mem.Allocator) !IndexManager {
         var manager = IndexManager{
             .index_partitions = undefined,
             .input_filename = undefined,
-            .gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){},
-            .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
-            .scratch_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+            .gpa = try allocator.create(std.heap.GeneralPurposeAllocator(.{.thread_safe = true})),
+            .string_arena = try allocator.create(std.heap.ArenaAllocator),
+            .scratch_arena = try allocator.create(std.heap.ArenaAllocator),
             .search_cols = undefined,
             .col_map = undefined,
             .tmp_dir = undefined,
@@ -81,6 +81,10 @@ pub const IndexManager = struct {
             .last_progress = 0,
             .file_type = undefined,
         };
+        manager.gpa.* = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){};
+        manager.string_arena.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        manager.scratch_arena.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+
         manager.search_cols = std.AutoHashMap(u32, u32).init(manager.gpa.allocator());
         try manager.search_cols.ensureTotalCapacity(50);
 
@@ -93,7 +97,7 @@ pub const IndexManager = struct {
         return manager;
     }
     
-    pub fn deinit(self: *IndexManager) !void {
+    pub fn deinit(self: *IndexManager, allocator: std.mem.Allocator) !void {
         for (0..self.index_partitions.len) |idx| {
             self.results_arrays[idx].deinit();
             self.index_partitions[idx].deinit();
@@ -118,6 +122,10 @@ pub const IndexManager = struct {
         self.string_arena.deinit();
         self.scratch_arena.deinit();
         _ = self.gpa.deinit();
+
+        allocator.destroy(self.gpa);
+        allocator.destroy(self.string_arena);
+        allocator.destroy(self.scratch_arena);
     }
 
 
