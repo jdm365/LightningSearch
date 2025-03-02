@@ -33,7 +33,7 @@ pub const QueryResult = packed struct(u64){
 const SHM = std.HashMap([]const u8, u32, std.hash.XxHash64, 80);
 
 const IndexContext = struct {
-    string_bytes: *const std.ArrayList(u8),
+    string_bytes: *const std.ArrayListUnmanaged(u8),
 
     pub fn eql(_: IndexContext, a: u32, b: u32) bool {
         return a == b;
@@ -48,7 +48,7 @@ const IndexContext = struct {
 };
 
 const SliceAdapter = struct {
-    string_bytes: *const std.ArrayList(u8),
+    string_bytes: *const std.ArrayListUnmanaged(u8),
 
     pub fn eql(self: SliceAdapter, a_slice: []u8, b: u32) bool {
         const b_slice = std.mem.span(
@@ -63,22 +63,19 @@ const SliceAdapter = struct {
 };
 
 const Vocab = struct {
-    string_bytes: std.ArrayList(u8),
-    map: std.hash_map.HashMap(u32, u32, IndexContext, 80),
+    string_bytes: std.ArrayListUnmanaged(u8),
+    map: std.hash_map.HashMapUnmanaged(u32, u32, IndexContext, 80),
 
-    pub fn init(allocator: std.mem.Allocator) Vocab {
+    pub fn init() Vocab {
         return Vocab{
-            .string_bytes = std.ArrayList(u8).init(allocator),
-            .map = std.hash_map.HashMap(u32, u32, IndexContext, 80).initContext(
-                allocator, 
-                undefined,
-                ),
+            .string_bytes = .{},
+            .map = .{},
         };
     }
 
-    pub fn deinit(self: *Vocab) void {
-        self.string_bytes.deinit();
-        self.map.deinit();
+    pub fn deinit(self: *Vocab, allocator: std.mem.Allocator) void {
+        self.string_bytes.deinit(allocator);
+        self.map.deinit(allocator);
     }
 
     pub inline fn getCtx(self: *Vocab) IndexContext {
@@ -127,7 +124,7 @@ pub const InvertedIndexV2 = struct {
                 .term_positions = undefined,
             },
             .vocab = undefined,
-            .prt_vocab = try RadixTrie(u32).init(std.heap.c_allocator),
+            .prt_vocab = try RadixTrie(u32).init(allocator),
             .term_offsets = &[_]usize{},
             .doc_freqs = try std.ArrayList(u32).initCapacity(
                 allocator, @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
@@ -139,16 +136,12 @@ pub const InvertedIndexV2 = struct {
         };
         @memset(II.doc_sizes, 0);
 
-        II.vocab = Vocab.init(allocator);
+        II.vocab = Vocab.init();
 
         // Guess capacity
-        try II.vocab.string_bytes.ensureTotalCapacity(@intCast(num_docs));
-        try II.vocab.map.ensureTotalCapacity(@intCast(num_docs / 25));
+        try II.vocab.string_bytes.ensureTotalCapacity(allocator, @intCast(num_docs));
+        try II.vocab.map.ensureTotalCapacityContext(allocator, @intCast(num_docs / 25), II.vocab.getCtx());
 
-        II.vocab.map = std.hash_map.HashMap(u32, u32, IndexContext, 80).initContext(
-            allocator, 
-            II.vocab.getCtx(),
-            );
         return II;
     }
 
@@ -160,7 +153,7 @@ pub const InvertedIndexV2 = struct {
         allocator.free(self.postings.term_positions);
         allocator.free(self.postings.doc_ids);
 
-        self.vocab.deinit();
+        self.vocab.deinit(allocator);
         self.prt_vocab.deinit();
 
         allocator.free(self.term_offsets);
@@ -291,9 +284,11 @@ pub const BM25Partition = struct {
         new_doc: *bool,
     ) !void {
         // const gop = try self.II[col_idx].vocab.getOrPut(term[0..term_len]);
-        const gop = try self.II[col_idx].vocab.map.getOrPutAdapted(
+        const gop = try self.II[col_idx].vocab.map.getOrPutContextAdapted(
+            self.allocator,
             term[0..term_len],
             self.II[col_idx].vocab.getAdapter(),
+            self.II[col_idx].vocab.getCtx(),
             );
 
         if (!gop.found_existing) {
@@ -301,8 +296,8 @@ pub const BM25Partition = struct {
                 // u8, 
                 // term[0..term_len],
                 // );
-            try self.II[col_idx].vocab.string_bytes.appendSlice(term[0..term_len]);
-            try self.II[col_idx].vocab.string_bytes.append(0);
+            try self.II[col_idx].vocab.string_bytes.appendSlice(self.allocator, term[0..term_len]);
+            try self.II[col_idx].vocab.string_bytes.append(self.allocator, 0);
 
             // gop.key_ptr.* = term_copy;
             gop.key_ptr.* = @truncate(

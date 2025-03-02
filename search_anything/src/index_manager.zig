@@ -85,8 +85,8 @@ pub const IndexManager = struct {
         try manager.search_cols.ensureTotalCapacity(50);
 
         manager.col_map = try RadixTrie(u32).initCapacity(
-            // manager.gpa.allocator(),
-            std.heap.c_allocator,
+            manager.gpa.allocator(),
+            // std.heap.c_allocator,
             16384,
             );
 
@@ -628,8 +628,8 @@ pub const IndexManager = struct {
 
         const num_lines = line_offsets.items.len - 1;
 
-        // const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
-        const num_partitions = 1;
+        const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
+        // const num_partitions = 1;
 
         self.file_handles     = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
