@@ -98,7 +98,6 @@ pub fn main() !void {
 
     try index_manager.indexFile();
 
-// 
     // server.init_allocators();
     // const QH = @as(*server.QueryHandlerLocal, @alignCast(@ptrCast(server.getQueryHandlerLocal())));
     // QH.readHeader(filename);
@@ -106,6 +105,6 @@ pub fn main() !void {
     // server.addSearchCol(QH, "title");
     // server.addSearchCol(QH, "artist");
     // server.addSearchCol(QH, "album");
-// 
+ 
     // server.indexFile(QH);
 }
