@@ -298,14 +298,14 @@ pub fn RadixTrie(comptime T: type) type {
         char_freq_table: [256]u8,
         scratch_arena: std.heap.ArenaAllocator,
 
-        edge_4s: std.ArrayList([4]RadixEdge(T)),
-        edge_4s_freelist: std.ArrayList(u32),
-
-        edge_8s: std.ArrayList([8]RadixEdge(T)),
-        edge_8s_freelist: std.ArrayList(u32),
-
-        edge_16s: std.ArrayList([16]RadixEdge(T)),
-        edge_16s_freelist: std.ArrayList(u32),
+        // edge_4s: std.ArrayList([4]RadixEdge(T)),
+        // edge_4s_freelist: std.ArrayList(u32),
+// 
+        // edge_8s: std.ArrayList([8]RadixEdge(T)),
+        // edge_8s_freelist: std.ArrayList(u32),
+// 
+        // edge_16s: std.ArrayList([16]RadixEdge(T)),
+        // edge_16s_freelist: std.ArrayList(u32),
 
 
         pub const Entry = struct {
@@ -345,14 +345,14 @@ pub fn RadixTrie(comptime T: type) type {
                     std.heap.page_allocator,
                     ),
 
-                .edge_4s = try std.ArrayList([4]RadixEdge(T)).initCapacity(allocator, n),
-                .edge_4s_freelist = try std.ArrayList(u32).initCapacity(allocator, n),
-
-                .edge_8s = try std.ArrayList([8]RadixEdge(T)).initCapacity(allocator, n),
-                .edge_8s_freelist = try std.ArrayList(u32).initCapacity(allocator, n),
-
-                .edge_16s = try std.ArrayList([16]RadixEdge(T)).initCapacity(allocator, n),
-                .edge_16s_freelist = try std.ArrayList(u32).initCapacity(allocator, n),
+                // .edge_4s = try std.ArrayList([4]RadixEdge(T)).initCapacity(allocator, n),
+                // .edge_4s_freelist = try std.ArrayList(u32).initCapacity(allocator, n),
+// 
+                // .edge_8s = try std.ArrayList([8]RadixEdge(T)).initCapacity(allocator, n),
+                // .edge_8s_freelist = try std.ArrayList(u32).initCapacity(allocator, n),
+// 
+                // .edge_16s = try std.ArrayList([16]RadixEdge(T)).initCapacity(allocator, n),
+                // .edge_16s_freelist = try std.ArrayList(u32).initCapacity(allocator, n),
 
             };
         }
@@ -365,14 +365,14 @@ pub fn RadixTrie(comptime T: type) type {
             self.nodes.deinit();
             self.scratch_arena.deinit();
 
-            self.edge_4s.deinit();
-            self.edge_4s_freelist.deinit();
-
-            self.edge_8s.deinit();
-            self.edge_8s_freelist.deinit();
-
-            self.edge_16s.deinit();
-            self.edge_16s_freelist.deinit();
+            // self.edge_4s.deinit();
+            // self.edge_4s_freelist.deinit();
+// 
+            // self.edge_8s.deinit();
+            // self.edge_8s_freelist.deinit();
+// 
+            // self.edge_16s.deinit();
+            // self.edge_16s_freelist.deinit();
         }
 
         const Stack = struct{

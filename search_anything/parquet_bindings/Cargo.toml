@@ -1,0 +1,11 @@
+[package]
+name = "parquet_bindings"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bindgen = "0.71.1"
+parquet = "54.2.1"
+
+[lib]
+crate-type = ["staticlib"]
