@@ -21,3 +21,6 @@ build/
 
 ## Misc
 .old/
+
+## Rust
+target/
