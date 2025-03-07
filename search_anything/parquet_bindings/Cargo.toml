@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arrow-array = "54.2.1"
 bindgen = "0.71.1"
-parquet = "54.2.1"
+parquet = { version = "54.2.1", features = ["arrow"] }
+pathbuf = "1.0.0"
 
 [lib]
 crate-type = ["staticlib"]

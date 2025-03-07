@@ -711,8 +711,10 @@ dependencies = [
 name = "parquet_bindings"
 version = "0.1.0"
 dependencies = [
+ "arrow-array",
  "bindgen",
  "parquet",
+ "pathbuf",
 ]
 
 [[package]]
@@ -720,6 +722,12 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "pathbuf"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc5ef818343d9b62a8391bfbc8fbd449acf2e6ddd2f1a9aede0eae4c7d91c25c"
 
 [[package]]
 name = "pkg-config"
