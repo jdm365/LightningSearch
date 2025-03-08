@@ -7,7 +7,6 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use std::ffi::CStr;
-use std::mem::transmute;
 /*
 pub fn read_parquet_row_group_column_utf8(
     filename: &str,
@@ -53,8 +52,8 @@ pub fn read_parquet_row_group_column_utf8_null_terminated(
 ) {
     // Paths to the Parquet files
     let path = PathBuf::from(filename);
-    let file = File::open(path).unwrap();
-    let rdr = SerializedFileReader::try_from(filename).unwrap();
+    let file = File::open(path).expect("Failed to open file");
+    let rdr = SerializedFileReader::try_from(filename).expect("Failed to create reader");
     let schema_desc = rdr.metadata().file_metadata().schema_descr();
 
     println!("{:?}", schema_desc);
@@ -66,13 +65,12 @@ pub fn read_parquet_row_group_column_utf8_null_terminated(
         .with_batch_size(1 << 26)
         .with_row_groups(vec![row_group_index])
         .with_projection(mask);
-    let reader = builder.build().unwrap();
+    let reader = builder.build().expect("Failed to build reader");
 
     for batch in reader {
-        let rb = batch.unwrap();
+        let rb = batch.expect("Reading batch failed");
         let col = rb.column(0);
-        let col_arr = col.as_any().downcast_ref::<LargeStringArray>().unwrap();
-        println!("{:?}", col.len());
+        let col_arr = col.as_any().downcast_ref::<LargeStringArray>().expect("Failed to downcast");
         for val in col_arr.iter() {
             match val {
                 Some(v) => values.extend_from_slice(v.as_bytes()),
@@ -87,23 +85,23 @@ pub extern "C" fn read_parquet_row_group_column_utf8_null_terminated_c(
     filename: *const u8,
     row_group_index: usize,
     column_index: usize,
-    values: *mut u8,
     values_len: *mut usize,
-) {
+) -> *mut u8 {
     if filename.is_null() {
         eprintln!("Error: Filename pointer is null");
-        // return 0; // Or another appropriate error value
+        return std::ptr::null_mut();
     }
 
     // Convert C string to Rust string safely
-    let filename_rs_result = unsafe {
-        let fname: *const i8 = transmute(filename);
-        CStr::from_ptr(fname).to_str()
+    let filename_rs = unsafe {
+        CStr::from_ptr(filename as *const i8)
+            .to_string_lossy()
+            .into_owned()
     };
 
     let mut values_rs: Vec<u8> = Vec::new();
     read_parquet_row_group_column_utf8_null_terminated(
-        &filename_rs_result.unwrap(), 
+        &filename_rs, 
         row_group_index, 
         column_index, 
         &mut values_rs,
@@ -111,7 +109,19 @@ pub extern "C" fn read_parquet_row_group_column_utf8_null_terminated_c(
 
     unsafe {
         *values_len = values_rs.len();
-        std::ptr::copy_nonoverlapping(values_rs.as_ptr(), values, values_rs.len());
+    }
+
+    let values_ptr = values_rs.as_mut_ptr();
+    std::mem::forget(values_rs);
+    values_ptr
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn free_vec(ptr: *mut u8, size: usize) {
+    if !ptr.is_null() {
+        unsafe {
+            let _ = Vec::from_raw_parts(ptr, size, size);
+        }
     }
 }
 
@@ -128,12 +138,13 @@ pub extern "C" fn get_num_row_groups_c(filename: *const u8) -> usize {
     }
 
     // Convert C string to Rust string safely
-    let filename_rs_result = unsafe {
-        let fname: *const i8 = transmute(filename);
-        CStr::from_ptr(fname).to_str()
+    let filename_rs = unsafe {
+        CStr::from_ptr(filename as *const i8)
+            .to_string_lossy()
+            .into_owned()
     };
 
-    get_num_row_groups(&filename_rs_result.unwrap())
+    get_num_row_groups(&filename_rs)
 }
 
 pub fn get_col_names(filename: &str) -> Vec<String> {
@@ -149,11 +160,12 @@ pub extern "C" fn get_col_names_c(
     ) {
     // Convert C string to Rust string
     let filename_rs = unsafe {
-        let fname: *const i8 = transmute(filename);
-        CStr::from_ptr(fname).to_str()
+        CStr::from_ptr(filename as *const i8)
+            .to_string_lossy()
+            .into_owned()
     };
 
-    let col_names_rs = get_col_names(&filename_rs.unwrap());
+    let col_names_rs = get_col_names(&filename_rs);
     let mut col_names_ptrs = Vec::new();
     for s in col_names_rs {
         col_names_ptrs.extend_from_slice(s.as_bytes());
@@ -162,7 +174,11 @@ pub extern "C" fn get_col_names_c(
     col_names_ptrs.push(0);
 
     unsafe {
-        std::ptr::copy_nonoverlapping(col_names_ptrs.as_ptr(), col_names, col_names_ptrs.len());
+        std::ptr::copy_nonoverlapping(
+            col_names_ptrs.as_ptr(), 
+            col_names, 
+            col_names_ptrs.len(),
+            );
     }
 }
 
@@ -280,5 +296,23 @@ mod tests {
 
         let num_row_groups = get_num_row_groups(path);
         println!("{:?}", num_row_groups);
+    }
+
+    #[test]
+    fn test_read_string_col_c() {
+        use std::ffi::CString;
+        // Paths to the Parquet files
+        let path = "../../data/mb.parquet";
+        // let c_path = path.as_bytes();
+        let c_path = CString::new(path).expect("Failed to create CString");
+
+        let mut values_len: usize = 0;
+        read_parquet_row_group_column_utf8_null_terminated_c(
+            c_path.as_ptr() as *const u8, 
+            0, 
+            7, 
+            &mut values_len,
+            );
+        free_vec(std::ptr::null_mut(), values_len);
     }
 }

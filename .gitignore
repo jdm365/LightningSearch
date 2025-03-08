@@ -11,6 +11,9 @@ data/
 ## Binaries
 *.so
 *.o
+*.a
+*.dylib
+*.d
 
 ## Zig
 .zig-cache/
@@ -24,3 +27,4 @@ build/
 
 ## Rust
 target/
+Cargo.lock

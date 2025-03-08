@@ -3,6 +3,9 @@ name = "parquet_bindings"
 version = "0.1.0"
 edition = "2024"
 
+[build-dependencies]
+cbindgen = "0.28.0"
+
 [dependencies]
 arrow-array = "54.2.1"
 bindgen = "0.71.1"
@@ -11,3 +14,7 @@ pathbuf = "1.0.0"
 
 [lib]
 crate-type = ["staticlib"]
+
+[profile.release]
+## lto = "thin"
+lto = "fat"

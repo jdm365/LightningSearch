@@ -10,14 +10,14 @@ pub fn build(b: *std.Build) void {
         // .openssl = false, // set to true to enable TLS support
     // });
 
-    const lib = b.addStaticLibrary(.{
-        .name = "search_anything",
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    // lib.root_module.addImport("zap", zap.module("zap"));
-    b.installArtifact(lib);
+    // const lib = b.addStaticLibrary(.{
+        // .name = "search_anything",
+        // .root_source_file = b.path("src/root.zig"),
+        // .target = target,
+        // .optimize = optimize,
+    // });
+    // // lib.root_module.addImport("zap", zap.module("zap"));
+    // b.installArtifact(lib);
 
     const shared_lib = b.addSharedLibrary(.{
         .name = "search_app",
@@ -27,6 +27,10 @@ pub fn build(b: *std.Build) void {
         .optimize = .ReleaseSafe,
         // .optimize = .Debug,
     });
+    shared_lib.linkLibC();
+    shared_lib.linkSystemLibrary("unwind");
+    shared_lib.addObjectFile(b.path("lib/libparquet_bindings.a"));
+
     const shared_install = b.addInstallArtifact(shared_lib, .{});
     b.installArtifact(shared_lib);
 
@@ -36,7 +40,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    // exe.root_module.addImport("zap", zap.module("zap"));
+    exe.linkLibC();
+    exe.linkSystemLibrary("unwind");
+    exe.addObjectFile(b.path("lib/libparquet_bindings.a"));
 
     b.installArtifact(exe);
 
@@ -50,10 +56,10 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const lib_step = b.step("lib", "Build the static library");
+    // const lib_step = b.step("lib", "Build the static library");
     const shared_step = b.step("shared", "Build the shared library");
     const exe_step = b.step("exe", "Build the executable");
-    lib_step.dependOn(&lib.step);
+    // lib_step.dependOn(&lib.step);
     shared_step.dependOn(&shared_lib.step);
     shared_step.dependOn(&shared_install.step);
     exe_step.dependOn(&exe.step);
