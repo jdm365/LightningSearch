@@ -1,11 +1,13 @@
 const std = @import("std");
 const csv = @import("csv.zig");
 const json = @import("json.zig");
+const pq   = @import("parquet.zig");
 const string_utils = @import("string_utils.zig");
 
 pub const FileType = enum {
     CSV,
     JSON,
+    PARQUET,
 };
 
 pub const token_32t = packed struct(u32) {
@@ -421,6 +423,148 @@ pub fn TokenStream(comptime token_t: type) type {
             var buffer_idx: usize = 0;
             try json._iterFieldJSON(buffer, &buffer_idx);
             byte_idx.* += buffer_idx;
+        }
+    };
+}
+
+pub fn ParquetTokenStream(comptime token_t: type) type {
+    return struct {
+        const Self = @This();
+
+        tokens: [][]token_t,
+        num_terms: []u32,
+        allocator: std.mem.Allocator,
+        output_files: []std.fs.File,
+        input_filename: []const u8,
+        column_buffer: [*]u8,
+        current_idx: usize,
+
+        search_col_idxs: []usize,
+        min_row_group: usize,
+        max_row_group: usize,
+        current_row_group: usize,
+        current_col_idx: usize,
+        buffer_len: usize,
+
+        pub fn init(
+            input_filename: []const u8,
+            output_filename: []const u8,
+            allocator: std.mem.Allocator,
+
+            search_col_idxs: []usize,
+            min_row_group: usize,
+            max_row_group: usize,
+        ) !Self {
+            const num_search_cols = search_col_idxs.len;
+
+            var output_files = try allocator.alloc(std.fs.File, num_search_cols);
+            for (0..num_search_cols) |idx| {
+                const _output_filename = try std.fmt.allocPrint(
+                    allocator,
+                    "{s}_{d}.bin",
+                    .{output_filename, idx},
+                );
+                defer allocator.free(_output_filename);
+
+                output_files[idx] = try std.fs.cwd().createFile(
+                    _output_filename, 
+                    .{ .read = true },
+                    );
+            }
+
+            const num_terms = try allocator.alloc(u32, num_search_cols);
+            @memset(num_terms, 0);
+
+            const token_buffers = try allocator.alloc([]token_t, num_search_cols);
+            for (0..token_buffers.len) |idx| {
+                token_buffers[idx] = try allocator.alloc(
+                    token_t, 
+                    TOKEN_STREAM_CAPACITY,
+                    );
+            }
+
+            return Self{
+                .tokens = token_buffers,
+                .num_terms = num_terms,
+                .allocator = allocator,
+                .output_files = output_files,
+                .input_filename = input_filename,
+                .column_buffer = undefined,
+                .current_idx = 0,
+
+                .search_col_idxs = search_col_idxs,
+                .min_row_group = min_row_group,
+                .max_row_group = max_row_group,
+                .current_row_group = min_row_group,
+                .current_col_idx = 0,
+                .buffer_len = 0,
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            for (0.., self.output_files) |col_idx, *file| {
+                self.allocator.free(self.tokens[col_idx]);
+                file.close();
+            }
+            self.allocator.free(self.output_files);
+            self.allocator.free(self.num_terms);
+            self.allocator.free(self.tokens);
+        }
+        
+        pub fn addToken(
+            self: *Self,
+            new_doc: bool,
+            term_pos: u8,
+            term_id: u32,
+            search_col_idx: usize,
+        ) !void {
+            comptime std.debug.assert(token_t == token_32t);
+
+            self.tokens[search_col_idx][self.num_terms[search_col_idx]] = token_t{
+                .new_doc = @intFromBool(new_doc),
+                .term_pos = @truncate(term_pos),
+                .term_id = @truncate(term_id),
+            };
+            self.num_terms[search_col_idx] += 1;
+
+            if (self.num_terms[search_col_idx] == TOKEN_STREAM_CAPACITY) {
+                try self.flushTokenStream(search_col_idx);
+            }
+        }
+
+        pub inline fn flushTokenStream(self: *Self, search_col_idx: usize) !void {
+            const bytes_to_write = @sizeOf(token_t) * self.num_terms[search_col_idx];
+            _ = try self.output_files[search_col_idx].write(
+                std.mem.asBytes(&self.num_terms[search_col_idx]),
+                );
+            const bytes_written = try self.output_files[search_col_idx].write(
+                std.mem.sliceAsBytes(
+                    self.tokens[search_col_idx][0..self.num_terms[search_col_idx]]
+                    )
+                );
+            
+            std.debug.assert(bytes_written == bytes_to_write);
+
+            self.num_terms[search_col_idx] = 0;
+        }
+
+        pub inline fn getNextBuffer(self: *Self) !bool {
+            if (self.current_col_idx == self.search_col_idxs.len) {
+                if (self.current_row_group == self.max_row_group) return true;
+                self.current_row_group += 1;
+                self.current_col_idx = 0;
+            } else {
+                self.current_col_idx += 1;
+            }
+            self.column_buffer = try pq.readParquetRowGroupColumnUtf8Vbyte(
+                self.allocator,
+                self.input_filename,
+                self.current_row_group,
+                self.search_col_idxs[self.current_col_idx],
+                self.buffer_len,
+            );
+            string_utils.stringToUpper(self.column_buffer, self.buffer_len);
+            return false;
         }
     };
 }

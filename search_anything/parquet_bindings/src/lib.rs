@@ -7,42 +7,33 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use std::ffi::CStr;
-/*
-pub fn read_parquet_row_group_column_utf8(
-    filename: &str,
-    row_group_index: usize,
-    column_index: usize,
-    values: &mut Vec<String>,
-) {
-    // Paths to the Parquet files
-    let path = PathBuf::from(filename);
-    let file = File::open(path).unwrap();
-    let rdr = SerializedFileReader::try_from(filename).unwrap();
-    let schema_desc = rdr.metadata().file_metadata().schema_descr();
 
-    let mask = ProjectionMask::leaves(schema_desc, vec![column_index]);
-
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-        .expect("Failed to build reader.")
-        .with_batch_size(1 << 26)
-        .with_row_groups(vec![row_group_index])
-        .with_projection(mask);
-    let reader = builder.build().unwrap();
-
-    for batch in reader {
-        let rb = batch.unwrap();
-        let col = rb.column(0);
-        let col_arr = col.as_any().downcast_ref::<LargeStringArray>().unwrap();
-        println!("{:?}", col.len());
-        for val in col_arr.iter() {
-            match val {
-                Some(v) => values.push(v.to_string()),
-                None => values.push("".to_string()),
-            }
-        }
+#[inline]
+pub fn vbyte_encode(value: u64, buffer: &mut Vec<u8>) {
+    let mut value = value;
+    while value >= 0x80 {
+        buffer.push((value as u8) | 0x80);
+        value >>= 7;
     }
+    buffer.push(value as u8);
 }
-*/
+
+#[inline]
+pub fn vbyte_decode(buffer: &[u8]) -> (u64, usize) {
+    let mut value: u64 = 0;
+    let mut shift: usize = 0;
+    let mut i: usize = 0;
+    loop {
+        let byte = buffer[i];
+        value |= ((byte & 0x7F) as u64) << shift;
+        if byte < 0x80 {
+            break;
+        }
+        shift += 7;
+        i += 1;
+    }
+    (value, i + 1)
+}
 
 pub fn read_parquet_row_group_column_utf8_null_terminated(
     filename: &str,
@@ -52,11 +43,23 @@ pub fn read_parquet_row_group_column_utf8_null_terminated(
 ) {
     // Paths to the Parquet files
     let path = PathBuf::from(filename);
-    let file = File::open(path).expect("Failed to open file");
-    let rdr = SerializedFileReader::try_from(filename).expect("Failed to create reader");
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open file {:?} {:?}", filename, e);
+            return;
+        }
+    };
+    let rdr = match SerializedFileReader::try_from(filename) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Failed to create reader for file {:?} {:?}", filename, e);
+            return;
+        }
+    };
     let schema_desc = rdr.metadata().file_metadata().schema_descr();
 
-    println!("{:?}", schema_desc);
+    assert_eq!(schema_desc.column(column_index).logical_type(), Some(parquet::basic::LogicalType::String));
 
     let mask = ProjectionMask::leaves(schema_desc, vec![column_index]);
 
@@ -70,10 +73,19 @@ pub fn read_parquet_row_group_column_utf8_null_terminated(
     for batch in reader {
         let rb = batch.expect("Reading batch failed");
         let col = rb.column(0);
-        let col_arr = col.as_any().downcast_ref::<LargeStringArray>().expect("Failed to downcast");
+        let col_arr = match col.as_any().downcast_ref::<LargeStringArray>() {
+            Some(arr) => arr,
+            None => {
+                eprintln!("Failed to downcast column to LargeStringArray");
+                return;
+            }
+        };
         for val in col_arr.iter() {
             match val {
-                Some(v) => values.extend_from_slice(v.as_bytes()),
+                Some(v) => {
+                    values.extend_from_slice(v.as_bytes());
+                    values.push(0);
+                },
                 None => values.push(0),
             }
         }
@@ -101,6 +113,100 @@ pub extern "C" fn read_parquet_row_group_column_utf8_null_terminated_c(
 
     let mut values_rs: Vec<u8> = Vec::new();
     read_parquet_row_group_column_utf8_null_terminated(
+        &filename_rs, 
+        row_group_index, 
+        column_index, 
+        &mut values_rs,
+        );
+
+    unsafe {
+        *values_len = values_rs.len();
+    }
+
+    let values_ptr = values_rs.as_mut_ptr();
+    std::mem::forget(values_rs);
+    values_ptr
+}
+
+pub fn read_parquet_row_group_column_utf8_vbyte(
+    filename: &str,
+    row_group_index: usize,
+    column_index: usize,
+    values: &mut Vec<u8>,
+) {
+    // Paths to the Parquet files
+    let path = PathBuf::from(filename);
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open file {:?} {:?}", filename, e);
+            return;
+        }
+    };
+    let rdr = match SerializedFileReader::try_from(filename) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Failed to create reader for file {:?} {:?}", filename, e);
+            return;
+        }
+    };
+    let schema_desc = rdr.metadata().file_metadata().schema_descr();
+
+    assert_eq!(schema_desc.column(column_index).logical_type(), Some(parquet::basic::LogicalType::String));
+
+    let mask = ProjectionMask::leaves(schema_desc, vec![column_index]);
+
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+        .expect("Failed to build reader.")
+        .with_batch_size(1 << 26)
+        .with_row_groups(vec![row_group_index])
+        .with_projection(mask);
+    let reader = builder.build().expect("Failed to build reader");
+
+    for batch in reader {
+        let rb = batch.expect("Reading batch failed");
+        let col = rb.column(0);
+        let col_arr = match col.as_any().downcast_ref::<LargeStringArray>() {
+            Some(arr) => arr,
+            None => {
+                eprintln!("Failed to downcast column to LargeStringArray");
+                return;
+            }
+        };
+        for val in col_arr.iter() {
+            match val {
+                Some(v) => {
+                    let bytes: &[u8] = v.as_bytes();
+                    values.extend_from_slice(bytes);
+                    vbyte_encode(bytes.len() as u64, values);
+                },
+                None => values.push(0),
+            }
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn read_parquet_row_group_column_utf8_vbyte_c(
+    filename: *const u8,
+    row_group_index: usize,
+    column_index: usize,
+    values_len: *mut usize,
+) -> *mut u8 {
+    if filename.is_null() {
+        eprintln!("Error: Filename pointer is null");
+        return std::ptr::null_mut();
+    }
+
+    // Convert C string to Rust string safely
+    let filename_rs = unsafe {
+        CStr::from_ptr(filename as *const i8)
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    let mut values_rs: Vec<u8> = Vec::new();
+    read_parquet_row_group_column_utf8_vbyte(
         &filename_rs, 
         row_group_index, 
         column_index, 
@@ -145,6 +251,33 @@ pub extern "C" fn get_num_row_groups_c(filename: *const u8) -> usize {
     };
 
     get_num_row_groups(&filename_rs)
+}
+
+pub fn get_num_rows(filename: &str) -> usize {
+    let rdr = SerializedFileReader::try_from(filename).unwrap();
+    let metadata = rdr.metadata();
+    let mut num_rows = 0;
+    for i in 0..rdr.num_row_groups() {
+        num_rows += metadata.row_group(i).num_rows();
+    }
+    num_rows as usize
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_num_rows_c(filename: *const u8) -> usize {
+    if filename.is_null() {
+        eprintln!("Error: Filename pointer is null");
+        return 0; // Or another appropriate error value
+    }
+
+    // Convert C string to Rust string safely
+    let filename_rs = unsafe {
+        CStr::from_ptr(filename as *const i8)
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    get_num_rows(&filename_rs)
 }
 
 pub fn get_col_names(filename: &str) -> Vec<String> {
@@ -313,6 +446,17 @@ mod tests {
             7, 
             &mut values_len,
             );
+
+
+        read_parquet_row_group_column_utf8_vbyte_c(
+            c_path.as_ptr() as *const u8, 
+            0, 
+            7, 
+            &mut values_len,
+            );
         free_vec(std::ptr::null_mut(), values_len);
+
+        let num_rows = get_num_rows_c(c_path.as_ptr() as *const u8);
+        println!("{:?}", num_rows);
     }
 }

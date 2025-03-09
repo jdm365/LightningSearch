@@ -6,6 +6,7 @@ const file_utils   = @import("file_utils.zig");
 const DoubleBufferedReader = @import("file_utils.zig").DoubleBufferedReader;
 const FileType             = @import("file_utils.zig").FileType;
 const TokenStream          = @import("file_utils.zig").TokenStream;
+const ParquetTokenStream   = @import("file_utils.zig").ParquetTokenStream;
 
 const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
 
@@ -13,6 +14,7 @@ const progress = @import("progress.zig");
 
 const csv  = @import("csv.zig");
 const json = @import("json.zig");
+const pq   = @import("parquet.zig");
 
 const TermPos = @import("server.zig").TermPos;
 
@@ -159,6 +161,17 @@ pub const IndexManager = struct {
             FileType.JSON => {
                 try self.getUniqueJSONKeys(16384);
             },
+            FileType.PARQUET => {
+                var cols = std.ArrayListUnmanaged([]const u8){};
+                try pq.getParquetCols(
+                    self.scratch_arena.allocator(),
+                    &cols,
+                    self.input_filename,
+                    );
+                for (0.., cols.items) |idx, col| {
+                    try self.col_map.insert(col, idx);
+                }
+            },
         }
 
         std.debug.assert(self.col_map.num_keys > 0);
@@ -188,7 +201,7 @@ pub const IndexManager = struct {
         );
 
         switch (self.file_type) {
-            FileType.CSV, FileType.JSON => {
+            FileType.CSV, FileType.JSON, FileType.PARQUET => {
                 const matched_col_idx = self.col_map.find(col_name_upper) catch {
                     return error.ColumnNotFound;
                 };
@@ -471,6 +484,7 @@ pub const IndexManager = struct {
         const end_token: u8 = switch (self.file_type) {
             FileType.CSV => '\n',
             FileType.JSON => '{',
+            FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
         };
 
         const start_byte = self.index_partitions[partition_idx].line_offsets[0];
@@ -487,7 +501,12 @@ pub const IndexManager = struct {
         var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
 
         // Sort search_col_idxs
-        std.sort.insertion(usize, search_col_idxs, {}, comptime std.sort.asc(usize));
+        std.sort.insertion(
+            usize, 
+            search_col_idxs, 
+            {}, 
+            comptime std.sort.asc(usize),
+            );
 
         var byte_idx: usize = 0;
 
@@ -555,6 +574,7 @@ pub const IndexManager = struct {
                             ) catch break;
                     }
                 },
+                FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
             }
         }
 
@@ -568,10 +588,90 @@ pub const IndexManager = struct {
         try self.index_partitions[partition_idx].constructFromTokenStream(&token_stream);
     }
 
+    fn readPartitionParquet(
+        self: *IndexManager,
+        partition_idx: usize,
+        min_row_group: usize,
+        max_row_group: usize,
+        search_col_idxs: []usize,
+        total_docs_read: *AtomicCounter,
+        progress_bar: *progress.ProgressBar,
+    ) !void {
+        std.debug.assert(self.file_type == .PARQUET);
+
+        defer {
+            _ = self.scratch_arena.reset(.retain_capacity);
+        }
+
+        var timer = try std.time.Timer.start();
+        const interval_ns: u64 = 1_000_000_000 / 30;
+
+        const output_filename = try std.fmt.allocPrint(
+            self.scratch_arena.allocator(), 
+            "{s}/output_{d}", 
+            .{self.tmp_dir, partition_idx}
+            );
+
+        var token_stream = try ParquetTokenStream(file_utils.token_32t).init(
+            self.input_filename,
+            output_filename,
+            self.gpa.allocator(),
+            search_col_idxs,
+            min_row_group,
+            max_row_group,
+        );
+        defer token_stream.deinit();
+
+        var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
+
+        var docs_read: usize = 0;
+        while (try token_stream.getNextBuffer()) {
+
+            if (timer.read() >= interval_ns) {
+                const current_docs_read = total_docs_read.fetchAdd(
+                    docs_read,
+                    .monotonic
+                    );
+                docs_read = 0;
+                timer.reset();
+
+                self.last_progress = current_docs_read;
+
+                if (partition_idx == 0) {
+                    progress_bar.update(current_docs_read);
+                    self.last_progress = current_docs_read;
+                }
+            }
+
+            var row_idx: u32 = 0;
+            while (token_stream.current_idx < token_stream.buffer_len) {
+                try self.index_partitions[partition_idx].processDocVbyte(
+                    &token_stream,
+                    row_idx, 
+                    &terms_seen_bitset,
+                    );
+                row_idx += 1;
+                if (token_stream.current_col_idx == 0) {
+                    docs_read += 1;
+                }
+            }
+        }
+
+        // Flush remaining tokens.
+        for (0..token_stream.num_terms.len) |search_col_idx| {
+            try token_stream.flushTokenStream(search_col_idx);
+        }
+        _ = total_docs_read.fetchAdd(docs_read, .monotonic);
+
+        // Construct II
+        try self.index_partitions[partition_idx].constructFromTokenStream(&token_stream);
+    }
+
     pub fn scanFile(self: *IndexManager) !void {
         switch (self.file_type) {
             FileType.CSV => try self.scanCSVFile(),
             FileType.JSON => try self.scanJSONFile(),
+            FileType.PARQUET => try self.scanParquetFile(),
         }
     }
 
@@ -626,6 +726,34 @@ pub const IndexManager = struct {
         std.debug.print("{d}MB/s\n", .{mb_s});
 
         try self.initPartitions(&line_offsets, file_size);
+    }
+
+    pub fn scanParquetFile(self: *IndexManager) !void {
+        const num_row_groups = pq.getNumRowGroupsParuqet(
+            self.scratch_arena.allocator(),
+            self.input_filename,
+        );
+
+        var line_offsets = std.ArrayList(usize).init(self.gpa.allocator());
+        defer line_offsets.deinit();
+
+        const num_partitions = @min(try std.Thread.getCpuCount(), num_row_groups);
+
+        self.file_handles     = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
+        self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
+        self.results_arrays   = try self.gpa.allocator().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
+
+        for (0..num_partitions) |idx| {
+            self.file_handles[idx]   = try std.fs.cwd().openFile(self.input_filename, .{});
+            self.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa.allocator(), MAX_NUM_RESULTS);
+            // TODO: Assign row groups here.
+            //       Calculate num rows per partition. Use this in BM25Partition/InvertedIndexV2 initialization.
+            self.index_partitions[idx] = try BM25Partition.init(
+                self.gpa.allocator(), 
+                1, 
+                partition_line_offsets
+                );
+        }
     }
 
     fn initPartitions(

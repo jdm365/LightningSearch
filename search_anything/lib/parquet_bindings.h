@@ -13,9 +13,16 @@ uint8_t *read_parquet_row_group_column_utf8_null_terminated_c(const uint8_t *fil
                                                               uintptr_t column_index,
                                                               uintptr_t *values_len);
 
+uint8_t *read_parquet_row_group_column_utf8_vbyte_c(const uint8_t *filename,
+                                                    uintptr_t row_group_index,
+                                                    uintptr_t column_index,
+                                                    uintptr_t *values_len);
+
 void free_vec(uint8_t *ptr, uintptr_t size);
 
 uintptr_t get_num_row_groups_c(const uint8_t *filename);
+
+uintptr_t get_num_rows_c(const uint8_t *filename);
 
 void get_col_names_c(const uint8_t *filename, uint8_t *col_names);
 

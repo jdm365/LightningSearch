@@ -2,10 +2,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const TokenStream = @import("file_utils.zig").TokenStream;
+const ParquetTokenStream = @import("file_utils.zig").ParquetTokenStream;
 const TOKEN_STREAM_CAPACITY = @import("file_utils.zig").TOKEN_STREAM_CAPACITY;
 
-const csv = @import("csv.zig");
+const csv  = @import("csv.zig");
 const json = @import("json.zig");
+const pq   = @import("parquet.zig");
 const string_utils = @import("string_utils.zig");
 const file_utils = @import("file_utils.zig");
 
@@ -577,6 +579,110 @@ pub const BM25Partition = struct {
         }
 
         byte_idx.* += buffer_idx;
+    }
+
+    pub fn processDocVbyte(
+        self: *BM25Partition,
+        token_stream: *ParquetTokenStream(file_utils.token_32t),
+        byte_idx: *usize,
+        doc_id: u32,
+        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
+    ) !void {
+        const buffer = token_stream.column_buffer;
+        const field_len = pq.decodeVbyte(buffer, &token_stream.current_idx);
+        defer token_stream.current_idx += field_len;
+
+        var buffer_idx: usize = token_stream.current_idx;
+        const col_idx = token_stream.current_col_idx;
+
+        if (field_len == 0) {
+            try token_stream.addToken(
+                true,
+                std.math.maxInt(u7),
+                std.math.maxInt(u24),
+                col_idx,
+            );
+            return;
+        }
+
+        var term_pos: u8 = 0;
+
+        var cntr: usize = 0;
+        var new_doc: bool = (doc_id != 0);
+
+        terms_seen.clear();
+
+        while (buffer_idx < token_stream.current_idx + field_len) {
+            std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
+
+            if (cntr > MAX_TERM_LENGTH - 4) {
+                try self.flushLargeToken(
+                    buffer[buffer_idx - cntr..], 
+                    &cntr, 
+                    doc_id, 
+                    &term_pos, 
+                    col_idx, 
+                    token_stream, 
+                    terms_seen,
+                    &new_doc,
+                    );
+                buffer_idx += 1;
+                continue;
+            }
+
+
+            switch (buffer[buffer_idx]) {
+                0...47, 58...64, 91...96, 123...126 => {
+                    if (cntr == 0) {
+                        buffer_idx += 1;
+                        cntr = 0;
+                        continue;
+                    }
+
+                    const start_idx = buffer_idx - @min(buffer_idx, cntr);
+                    try self.addToken(
+                        buffer[start_idx..], 
+                        &cntr, 
+                        doc_id, 
+                        &term_pos, 
+                        col_idx, 
+                        token_stream, 
+                        terms_seen,
+                        &new_doc,
+                        );
+                },
+                else => {
+                    cntr += 1;
+                    buffer_idx += 1;
+                },
+            }
+        }
+
+        if (cntr > 0) {
+            std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
+
+            const start_idx = buffer_idx - @min(buffer_idx, cntr + 1);
+            try self.addTerm(
+                buffer[start_idx..], 
+                cntr, 
+                doc_id, 
+                term_pos, 
+                col_idx, 
+                token_stream, 
+                terms_seen,
+                &new_doc,
+                );
+        }
+
+        if (new_doc) {
+            // No terms found. Add null token.
+            try token_stream.addToken(
+                true,
+                std.math.maxInt(u7),
+                std.math.maxInt(u24),
+                col_idx,
+            );
+        }
     }
 
     pub fn processDocRfc8259(
