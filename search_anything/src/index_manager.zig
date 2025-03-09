@@ -50,6 +50,8 @@ const ColTokenPair = struct {
 pub const IndexManager = struct {
     index_partitions: []BM25Partition,
     input_filename: []const u8,
+    input_filename_c: [*:0]const u8,
+    num_row_groups: usize,
     gpa: *std.heap.GeneralPurposeAllocator(.{.thread_safe = true}),
     string_arena: *std.heap.ArenaAllocator,
     scratch_arena: *std.heap.ArenaAllocator,
@@ -69,6 +71,8 @@ pub const IndexManager = struct {
         var manager = IndexManager{
             .index_partitions = undefined,
             .input_filename = undefined,
+            .input_filename_c = undefined,
+            .num_row_groups = undefined,
             .gpa = try allocator.create(std.heap.GeneralPurposeAllocator(.{.thread_safe = true})),
             .string_arena = try allocator.create(std.heap.ArenaAllocator),
             .scratch_arena = try allocator.create(std.heap.ArenaAllocator),
@@ -137,6 +141,7 @@ pub const IndexManager = struct {
         filetype: FileType,
         ) !void {
         self.input_filename = try self.string_arena.allocator().dupe(u8, filename);
+        self.input_filename_c = try self.string_arena.allocator().dupeZ(u8, filename);
         self.file_type = filetype;
 
         const file_hash = blk: {
@@ -164,12 +169,12 @@ pub const IndexManager = struct {
             FileType.PARQUET => {
                 var cols = std.ArrayListUnmanaged([]const u8){};
                 try pq.getParquetCols(
-                    self.scratch_arena.allocator(),
+                    self.string_arena.allocator(),
                     &cols,
-                    self.input_filename,
+                    self.input_filename_c,
                     );
                 for (0.., cols.items) |idx, col| {
-                    try self.col_map.insert(col, idx);
+                    try self.col_map.insert(col, @truncate(idx));
                 }
             },
         }
@@ -613,7 +618,7 @@ pub const IndexManager = struct {
             );
 
         var token_stream = try ParquetTokenStream(file_utils.token_32t).init(
-            self.input_filename,
+            self.input_filename_c,
             output_filename,
             self.gpa.allocator(),
             search_col_idxs,
@@ -624,27 +629,30 @@ pub const IndexManager = struct {
 
         var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
 
+        var first = true;
         var docs_read: usize = 0;
-        while (try token_stream.getNextBuffer()) {
-
-            if (timer.read() >= interval_ns) {
-                const current_docs_read = total_docs_read.fetchAdd(
-                    docs_read,
-                    .monotonic
-                    );
-                docs_read = 0;
-                timer.reset();
-
-                self.last_progress = current_docs_read;
-
-                if (partition_idx == 0) {
-                    progress_bar.update(current_docs_read);
-                    self.last_progress = current_docs_read;
-                }
-            }
+        while (token_stream.getNextBuffer(first)) {
+            first = false;
 
             var row_idx: u32 = 0;
             while (token_stream.current_idx < token_stream.buffer_len) {
+
+                if (timer.read() >= interval_ns) {
+                    const current_docs_read = total_docs_read.fetchAdd(
+                        docs_read,
+                        .monotonic
+                        );
+                    docs_read = 0;
+                    timer.reset();
+
+                    self.last_progress = current_docs_read;
+
+                    if (partition_idx == 0) {
+                        progress_bar.update(current_docs_read);
+                        self.last_progress = current_docs_read;
+                    }
+                }
+
                 try self.index_partitions[partition_idx].processDocVbyte(
                     &token_stream,
                     row_idx, 
@@ -664,7 +672,8 @@ pub const IndexManager = struct {
         _ = total_docs_read.fetchAdd(docs_read, .monotonic);
 
         // Construct II
-        try self.index_partitions[partition_idx].constructFromTokenStream(&token_stream);
+        // TODO: Make all ***Pq functions unioned on token stream, instead of duplicated.
+        try self.index_partitions[partition_idx].constructFromTokenStreamPq(&token_stream);
     }
 
     pub fn scanFile(self: *IndexManager) !void {
@@ -729,12 +738,15 @@ pub const IndexManager = struct {
     }
 
     pub fn scanParquetFile(self: *IndexManager) !void {
-        const num_row_groups = pq.getNumRowGroupsParuqet(
-            self.scratch_arena.allocator(),
-            self.input_filename,
+        self.num_row_groups = pq.getNumRowGroupsParquet(
+            self.input_filename_c,
         );
 
-        const num_partitions = @min(try std.Thread.getCpuCount(), num_row_groups);
+        const num_partitions = @min(
+            try std.Thread.getCpuCount(), 
+            self.num_row_groups,
+            );
+        // const num_partitions = 1;
 
         self.file_handles     = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
         self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
@@ -743,16 +755,21 @@ pub const IndexManager = struct {
         for (0..num_partitions) |idx| {
             self.file_handles[idx]   = try std.fs.cwd().openFile(self.input_filename, .{});
             self.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa.allocator(), MAX_NUM_RESULTS);
-            const min_row_group = idx * @divFloor(num_row_groups, num_partitions);
-            const max_row_group = @min((idx + 1) * @divFloor(num_row_groups, num_partitions), num_row_groups);
+            const min_row_group = @divFloor(idx * self.num_row_groups, num_partitions);
+            const max_row_group = @min(
+                @divFloor((idx + 1) * self.num_row_groups, num_partitions), 
+                self.num_row_groups,
+                );
 
-            var row_group_sizes = self.string_arena.allocator().alloc(usize, max_row_group - min_row_group);
+            var row_group_sizes = try self.string_arena.allocator().alloc(
+                usize, 
+                max_row_group - min_row_group,
+                );
 
             var num_rows: usize = 0;
             for (0.., min_row_group..max_row_group) |i, rg_idx| {
                 row_group_sizes[i] = pq.getNumRowGroupsInRowGroup(
-                    self.scratch_arena.allocator(),
-                    self.input_filename,
+                    self.input_filename_c,
                     rg_idx,
                 );
                 num_rows += row_group_sizes[i];
@@ -824,8 +841,16 @@ pub const IndexManager = struct {
         std.debug.print("Indexing {d} partitions\n", .{num_partitions});
 
         var num_lines: usize = 0;
-        for (self.index_partitions) |*p| {
-            num_lines += p.line_offsets.len - 1;
+        if (self.file_type == .PARQUET) {
+            for (self.index_partitions) |*p| {
+                for (p.line_offsets) |size| {
+                    num_lines += size;
+                }
+            }
+        } else {
+            for (self.index_partitions) |*p| {
+                num_lines += p.line_offsets.len - 1;
+            }
         }
 
         const time_start = std.time.milliTimestamp();
@@ -854,21 +879,44 @@ pub const IndexManager = struct {
             try self.index_partitions[partition_idx].resizeNumSearchCols(
                 num_search_cols
                 );
-            threads[partition_idx] = try std.Thread.spawn(
-                .{},
-                readPartition,
-                .{
-                    self,
-                    partition_idx,
-                    self.index_partitions[0].line_offsets.len - 1,
-                    self.index_partitions[num_partitions - 1].line_offsets.len - 1,
-                    num_partitions,
-                    num_search_cols,
-                    search_col_idxs,
-                    &total_docs_read,
-                    &progress_bar,
-                    },
-                );
+
+            if (self.file_type == .PARQUET) {
+                const min_row_group = @divFloor(partition_idx * self.num_row_groups, num_partitions);
+                const max_row_group = @min(
+                    @divFloor((partition_idx + 1) * self.num_row_groups, num_partitions), 
+                    self.num_row_groups,
+                    );
+
+                threads[partition_idx] = try std.Thread.spawn(
+                    .{},
+                    readPartitionParquet,
+                    .{
+                        self,
+                        partition_idx,
+                        min_row_group,
+                        max_row_group,
+                        search_col_idxs,
+                        &total_docs_read,
+                        &progress_bar,
+                        },
+                    );
+            } else {
+                threads[partition_idx] = try std.Thread.spawn(
+                    .{},
+                    readPartition,
+                    .{
+                        self,
+                        partition_idx,
+                        self.index_partitions[0].line_offsets.len - 1,
+                        self.index_partitions[num_partitions - 1].line_offsets.len - 1,
+                        num_partitions,
+                        num_search_cols,
+                        search_col_idxs,
+                        &total_docs_read,
+                        &progress_bar,
+                        },
+                    );
+            }
         }
 
         for (threads) |thread| {
@@ -1183,7 +1231,7 @@ pub const IndexManager = struct {
             try self.index_partitions[result.partition_idx].fetchRecords(
                 self.result_positions[idx],
                 &self.file_handles[result.partition_idx],
-                self.input_filename,
+                self.input_filename_c,
                 result,
                 &self.result_strings[idx],
                 self.file_type,

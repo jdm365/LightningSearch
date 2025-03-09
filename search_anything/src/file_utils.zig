@@ -435,7 +435,7 @@ pub fn ParquetTokenStream(comptime token_t: type) type {
         num_terms: []u32,
         allocator: std.mem.Allocator,
         output_files: []std.fs.File,
-        input_filename: []const u8,
+        input_filename: [*:0]const u8,
         column_buffer: [*]u8,
         current_idx: usize,
 
@@ -447,7 +447,7 @@ pub fn ParquetTokenStream(comptime token_t: type) type {
         buffer_len: usize,
 
         pub fn init(
-            input_filename: []const u8,
+            input_filename: [*:0]const u8,
             output_filename: []const u8,
             allocator: std.mem.Allocator,
 
@@ -548,23 +548,24 @@ pub fn ParquetTokenStream(comptime token_t: type) type {
             self.num_terms[search_col_idx] = 0;
         }
 
-        pub inline fn getNextBuffer(self: *Self) !bool {
-            if (self.current_col_idx == self.search_col_idxs.len) {
-                if (self.current_row_group == self.max_row_group) return true;
-                self.current_row_group += 1;
-                self.current_col_idx = 0;
-            } else {
-                self.current_col_idx += 1;
+        pub inline fn getNextBuffer(self: *Self, first: bool) bool {
+            if (!first) {
+                if (self.current_col_idx == self.search_col_idxs.len - 1) {
+                    if (self.current_row_group == self.max_row_group - 1) return false;
+                    self.current_row_group += 1;
+                    self.current_col_idx = 0;
+                } else {
+                    self.current_col_idx += 1;
+                }
             }
-            self.column_buffer = try pq.readParquetRowGroupColumnUtf8Vbyte(
-                self.allocator,
+            self.column_buffer = pq.readParquetRowGroupColumnUtf8Vbyte(
                 self.input_filename,
                 self.current_row_group,
                 self.search_col_idxs[self.current_col_idx],
-                self.buffer_len,
+                &self.buffer_len,
             );
-            string_utils.stringToUpper(self.column_buffer, self.buffer_len);
-            return false;
+            self.current_idx = 0;
+            return true;
         }
     };
 }

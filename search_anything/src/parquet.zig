@@ -8,17 +8,13 @@ const lp = @cImport({
 
 
 pub fn readParquetRowGroupColumnUtf8NullTerminated(
-    allocator: std.mem.Allocator,
-    filename: []const u8,
+    filename_c: [*:0]const u8,
     row_group_idx: usize,
     col_idx: usize,
     num_values: *usize,
-) ![*]u8 {
-    const c_filename = try allocator.dupeZ(u8, filename);
-    defer allocator.free(c_filename);
-
+) [*]u8 {
     return lp.read_parquet_row_group_column_utf8_null_terminated_c(
-        c_filename,
+        filename_c,
         row_group_idx,
         col_idx,
         num_values,
@@ -26,17 +22,14 @@ pub fn readParquetRowGroupColumnUtf8NullTerminated(
 }
 
 pub fn readParquetRowGroupColumnUtf8Vbyte(
-    allocator: std.mem.Allocator,
-    filename: []const u8,
+    filename_c: [*:0]const u8,
     row_group_idx: usize,
     col_idx: usize,
     num_values: *usize,
-) ![*]u8 {
-    const c_filename = try allocator.dupeZ(u8, filename);
-    defer allocator.free(c_filename);
+) [*]u8 {
 
     return lp.read_parquet_row_group_column_utf8_vbyte_c(
-        c_filename,
+        filename_c,
         row_group_idx,
         col_idx,
         num_values,
@@ -45,27 +38,24 @@ pub fn readParquetRowGroupColumnUtf8Vbyte(
 
 pub inline fn decodeVbyte(buffer: [*]u8, idx: *usize) u64 {
     var value: u64 = 0;
-    var shift: usize = 0;
+    var shift: u6 = 0;
     while (true) {
         const byte = buffer[idx.*];
         value |= @as(u64, @intCast(byte & 0b01111111)) << shift;
+        idx.* += 1;
         if (byte < 128) break;
         shift += 7;
-        idx.* += 1;
     }
     return value;
 }
 
-pub fn getParuqetCols(
+pub fn getParquetCols(
     allocator: std.mem.Allocator,
     cols: *std.ArrayListUnmanaged([]const u8),
-    filename: []const u8,
+    filename_c: [*:0]const u8,
 ) !void {
-    const c_filename = try allocator.dupeZ(u8, filename);
-    defer allocator.free(c_filename);
-
     var col_buffer: [8192]u8 = undefined;
-    lp.get_col_names_c(c_filename, @ptrCast(&col_buffer));
+    lp.get_col_names_c(filename_c, @ptrCast(&col_buffer));
 
     var idx: usize = 0;
     while (true) {
@@ -81,59 +71,47 @@ pub fn getParuqetCols(
         );
         try cols.append(
             allocator,
-            col_buffer[idx..idx+length],
+            try allocator.dupe(u8, col_buffer[idx..idx+length]),
             );
         idx += length + 1;
     }
 }
 
-pub fn getNumRowGroupsParuqet(
-    allocator: std.mem.Allocator,
-    filename: []const u8,
-) !usize {
-    const c_filename = try allocator.dupeZ(u8, filename);
-    defer allocator.free(c_filename);
-    return lp.get_num_row_groups_c(c_filename);
+pub fn getNumRowGroupsParquet(
+    filename_c: [*:0]const u8,
+) usize {
+    return lp.get_num_row_groups_c(filename_c);
 }
 
-pub fn getNumRowsParuqet(
-    allocator: std.mem.Allocator,
-    filename: []const u8,
-) !usize {
-    const c_filename = try allocator.dupeZ(u8, filename);
-    defer allocator.free(c_filename);
-    return lp.get_num_rows_c(c_filename);
+pub fn getNumRowsParquet(
+    filename_c: [*:0]const u8,
+) usize {
+    return lp.get_num_rows_c(filename_c);
 }
 
 pub fn getNumRowGroupsInRowGroup(
-    allocator: std.mem.Allocator,
-    filename: []const u8,
+    filename_c: [*:0]const u8,
     row_group_idx: usize,
-) !usize {
-    const c_filename = try allocator.dupeZ(u8, filename);
-    defer allocator.free(c_filename);
+) usize {
     return lp.get_num_rows_in_row_group_c(
-        c_filename,
+        filename_c,
         row_group_idx,
     );
 }
 
 pub fn fetchRowFromRowGroup(
-    allocator: std.mem.Allocator,
-    filename: []const u8,
+    filename_c: [*:0]const u8,
     row_group_idx: usize,
     row_idx: usize,
     values_ptr: [*]u8,
     result_positions_ptr: [*]u64,
-) !void {
-    const c_filename = try allocator.dupeZ(u8, filename);
-    defer allocator.free(c_filename);
+) void {
     return lp.fetch_row_from_row_group_c(
-        c_filename,
+        filename_c,
         row_group_idx,
         row_idx,
         values_ptr,
-        result_positions_ptr,
+        @ptrCast(result_positions_ptr),
     );
 }
 
@@ -152,14 +130,13 @@ test "read_parquet_col" {
         _ = gpa.deinit();
     }
 
-    try getParuqetCols(gpa.allocator(), &cols, filename);
+    try getParquetCols(gpa.allocator(), &cols, filename);
     for (0.., cols.items) |idx, col| {
         std.debug.print("Col: {d} - {s}\n", .{idx, col});
     }
-    std.debug.print("Num row groups: {d}\n", .{try getNumRowGroupsParuqet(gpa.allocator(), filename)});
+    std.debug.print("Num row groups: {d}\n", .{getNumRowGroupsParquet(filename)});
 
-    var data = try readParquetRowGroupColumnUtf8NullTerminated(
-        gpa.allocator(),
+    var data = readParquetRowGroupColumnUtf8NullTerminated(
         filename,
         0,
         8,
@@ -168,8 +145,7 @@ test "read_parquet_col" {
     // std.debug.print("Num values: {d}\n", .{num_values});
     // std.debug.print("Data: {s}\n", .{data[0..64]});
 
-    data = try readParquetRowGroupColumnUtf8NullTerminated(
-        gpa.allocator(),
+    data = readParquetRowGroupColumnUtf8NullTerminated(
         filename,
         0,
         8,

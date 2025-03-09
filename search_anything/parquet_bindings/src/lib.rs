@@ -176,8 +176,8 @@ pub fn read_parquet_row_group_column_utf8_vbyte(
             match val {
                 Some(v) => {
                     let bytes: &[u8] = v.as_bytes();
-                    values.extend_from_slice(bytes);
                     vbyte_encode(bytes.len() as u64, values);
+                    values.extend_from_slice(bytes);
                 },
                 None => values.push(0),
             }

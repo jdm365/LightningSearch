@@ -80,16 +80,18 @@ pub fn main() !void {
     // const filename: [*:0]const u8 = "../data/mb_small.csv";
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
-    const filename: []const u8 = "../data/mb.csv";
+    // const filename: []const u8 = "../data/mb.csv";
+    const filename: []const u8 = "../data/mb.parquet";
 
     var index_manager = try IndexManager.init(gpa.allocator());
 
     defer {
-        index_manager.deinit(gpa.allocator()) catch {};
-        _ = gpa.deinit();
+        // index_manager.deinit(gpa.allocator()) catch {};
+        // _ = gpa.deinit();
     }
 
-    try index_manager.readHeader(filename, FileType.CSV);
+    try index_manager.readHeader(filename, FileType.PARQUET);
+    // try index_manager.readHeader(filename, FileType.CSV);
     try index_manager.scanFile();
 
     try index_manager.addSearchCol("title");

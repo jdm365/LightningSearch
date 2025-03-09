@@ -219,6 +219,7 @@ pub const InvertedIndexV2 = struct {
 pub const BM25Partition = struct {
     II: []InvertedIndexV2,
     line_offsets: []usize,
+    num_records: usize,
     allocator: std.mem.Allocator,
     string_arena: std.heap.ArenaAllocator,
     doc_score_map: std.AutoHashMap(u32, ScoringInfo),
@@ -235,6 +236,7 @@ pub const BM25Partition = struct {
         const partition = BM25Partition{
             .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
             .line_offsets = line_offsets,
+            .num_records = num_records,
             .allocator = allocator,
             .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
             .doc_score_map = doc_score_map,
@@ -243,7 +245,8 @@ pub const BM25Partition = struct {
         for (0..num_search_cols) |idx| {
             partition.II[idx] = try InvertedIndexV2.init(
                 allocator, 
-                num_records - 1,
+                // num_records - 1,
+                num_records,
                 // line_offsets.len - 1,
                 // line_offsets.len,
                 );
@@ -253,7 +256,7 @@ pub const BM25Partition = struct {
     }
 
     pub fn deinit(self: *BM25Partition) void {
-        self.allocator.free(self.line_offsets);
+        // self.allocator.free(self.line_offsets);
         for (0..self.II.len) |i| {
             self.II[i].deinit(self.allocator);
         }
@@ -270,8 +273,8 @@ pub const BM25Partition = struct {
         for (current_length..num_search_cols) |idx| {
             self.II[idx] = try InvertedIndexV2.init(
                 self.allocator, 
-                self.line_offsets.len - 1,
-                // self.line_offsets.len,
+                self.num_records,
+                // self.line_offsets.len - 1,
                 );
         }
     }
@@ -356,6 +359,85 @@ pub const BM25Partition = struct {
         cntr.* = 0;
     }
 
+    inline fn addTermPq(
+        self: *BM25Partition,
+        term: []u8,
+        term_len: usize,
+        doc_id: u32,
+        term_pos: u8,
+        col_idx: usize,
+        token_stream: *ParquetTokenStream(file_utils.token_32t),
+        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
+        new_doc: *bool,
+    ) !void {
+        const gop = try self.II[col_idx].vocab.map.getOrPutContextAdapted(
+            self.allocator,
+            term[0..term_len],
+            self.II[col_idx].vocab.getAdapter(),
+            self.II[col_idx].vocab.getCtx(),
+            );
+
+        if (!gop.found_existing) {
+            // const term_copy = try self.string_arena.allocator().dupe(
+                // u8, 
+                // term[0..term_len],
+                // );
+            try self.II[col_idx].vocab.string_bytes.appendSlice(self.allocator, term[0..term_len]);
+            try self.II[col_idx].vocab.string_bytes.append(self.allocator, 0);
+
+            // gop.key_ptr.* = term_copy;
+            gop.key_ptr.* = @truncate(
+                self.II[col_idx].vocab.string_bytes.items.len - term_len - 1,
+                );
+            gop.value_ptr.* = self.II[col_idx].num_terms;
+
+            self.II[col_idx].num_terms += 1;
+            try self.II[col_idx].doc_freqs.append(1);
+            try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*, col_idx);
+
+        } else {
+
+            const val = gop.value_ptr.*;
+            if (!terms_seen.checkOrInsert(val)) {
+                self.II[col_idx].doc_freqs.items[val] += 1;
+                try token_stream.addToken(new_doc.*, term_pos, val, col_idx);
+            }
+        }
+
+        self.II[col_idx].doc_sizes[doc_id] += 1;
+        new_doc.* = false;
+    }
+
+    inline fn addTokenPq(
+        self: *BM25Partition,
+        term: []u8,
+        cntr: *usize,
+        doc_id: u32,
+        term_pos: *u8,
+        col_idx: usize,
+        token_stream: *ParquetTokenStream(file_utils.token_32t),
+        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
+        new_doc: *bool,
+    ) !void {
+        if (cntr.* == 0) {
+            return;
+        }
+
+        try self.addTermPq(
+            term, 
+            cntr.*, 
+            doc_id, 
+            term_pos.*, 
+            col_idx, 
+            token_stream, 
+            terms_seen,
+            new_doc,
+            );
+
+        term_pos.* += @intFromBool(term_pos.* != 255);
+        cntr.* = 0;
+    }
+
     inline fn flushLargeToken(
         self: *BM25Partition,
         term: []u8,
@@ -368,6 +450,32 @@ pub const BM25Partition = struct {
         new_doc: *bool,
     ) !void {
         try self.addTerm(
+            term, 
+            cntr.*, 
+            doc_id, 
+            term_pos.*, 
+            col_idx, 
+            token_stream, 
+            terms_seen,
+            new_doc,
+            );
+
+        term_pos.* += @intFromBool(term_pos.* != 255);
+        cntr.* = 0;
+    }
+
+    inline fn flushLargeTokenPq(
+        self: *BM25Partition,
+        term: []u8,
+        cntr: *usize,
+        doc_id: u32,
+        term_pos: *u8,
+        col_idx: usize,
+        token_stream: *ParquetTokenStream(file_utils.token_32t),
+        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
+        new_doc: *bool,
+    ) !void {
+        try self.addTermPq(
             term, 
             cntr.*, 
             doc_id, 
@@ -586,15 +694,22 @@ pub const BM25Partition = struct {
     pub fn processDocVbyte(
         self: *BM25Partition,
         token_stream: *ParquetTokenStream(file_utils.token_32t),
-        byte_idx: *usize,
         doc_id: u32,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
-        const buffer = token_stream.column_buffer;
-        const field_len = pq.decodeVbyte(buffer, &token_stream.current_idx);
+        const field_len = pq.decodeVbyte(token_stream.column_buffer, &token_stream.current_idx);
+        string_utils.stringToUpper(
+            @ptrCast(token_stream.column_buffer[token_stream.current_idx..][0..field_len]), 
+            field_len,
+            );
+        var buffer = std.mem.bytesAsSlice(
+            u8,
+            token_stream.column_buffer[token_stream.current_idx..][0..field_len],
+        );
+
         defer token_stream.current_idx += field_len;
 
-        var buffer_idx: usize = token_stream.current_idx;
+        var buffer_idx: usize = 0;
         const col_idx = token_stream.current_col_idx;
 
         if (field_len == 0) {
@@ -614,11 +729,11 @@ pub const BM25Partition = struct {
 
         terms_seen.clear();
 
-        while (buffer_idx < token_stream.current_idx + field_len) {
+        while (buffer_idx < field_len) {
             std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
 
             if (cntr > MAX_TERM_LENGTH - 4) {
-                try self.flushLargeToken(
+                try self.flushLargeTokenPq(
                     buffer[buffer_idx - cntr..], 
                     &cntr, 
                     doc_id, 
@@ -642,7 +757,7 @@ pub const BM25Partition = struct {
                     }
 
                     const start_idx = buffer_idx - @min(buffer_idx, cntr);
-                    try self.addToken(
+                    try self.addTokenPq(
                         buffer[start_idx..], 
                         &cntr, 
                         doc_id, 
@@ -664,7 +779,7 @@ pub const BM25Partition = struct {
             std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
 
             const start_idx = buffer_idx - @min(buffer_idx, cntr + 1);
-            try self.addTerm(
+            try self.addTermPq(
                 buffer[start_idx..], 
                 cntr, 
                 doc_id, 
@@ -1068,23 +1183,89 @@ pub const BM25Partition = struct {
         }
     }
 
+    pub fn constructFromTokenStreamPq(
+        self: *BM25Partition,
+        token_stream: *ParquetTokenStream(file_utils.token_32t),
+        ) !void {
+
+        var term_cntr = try self.allocator.alloc(usize, self.II[0].num_terms);
+        defer self.allocator.free(term_cntr);
+        for (0.., self.II) |col_idx, *II| {
+            try II.resizePostings(self.allocator);
+
+            if (II.num_terms > term_cntr.len) {
+                term_cntr = try self.allocator.realloc(term_cntr, @as(usize, @intCast(II.num_terms)));
+            }
+            @memset(term_cntr, 0);
+
+            // Create index.
+            const output_file = &token_stream.output_files[col_idx];
+            try output_file.seekTo(0);
+
+            const tokens = &token_stream.tokens[col_idx];
+
+            var bytes_read: usize = 0;
+
+            var num_tokens: usize = TOKEN_STREAM_CAPACITY;
+            var current_doc_id: usize = 0;
+
+            while (num_tokens == TOKEN_STREAM_CAPACITY) {
+                var _num_tokens: [4]u8 = undefined;
+                _ = try output_file.read(std.mem.asBytes(&_num_tokens));
+                num_tokens = std.mem.readInt(u32, &_num_tokens, ENDIANESS);
+
+                bytes_read = try output_file.read(
+                    std.mem.sliceAsBytes(tokens.*[0..num_tokens])
+                    );
+
+                for (0..num_tokens) |idx| {
+                    if (@as(*u32, @ptrCast(&tokens.*[idx])).* == std.math.maxInt(u32)) {
+                        // Null token.
+                        current_doc_id += 1;
+                        continue;
+                    }
+
+                    const new_doc  = tokens.*[idx].new_doc;
+                    const term_pos = tokens.*[idx].term_pos;
+                    const term_id: usize = @intCast(tokens.*[idx].term_id);
+
+                    current_doc_id += @intCast(new_doc);
+
+                    const postings_offset = II.term_offsets[term_id] + term_cntr[term_id];
+                    std.debug.assert(postings_offset < II.postings.doc_ids.len);
+
+                    std.debug.assert(current_doc_id <= II.num_docs);
+
+                    term_cntr[term_id] += 1;
+
+                    II.postings.doc_ids[postings_offset] = @intCast(current_doc_id);
+                    II.postings.term_positions[postings_offset] = @intCast(term_pos);
+                }
+            }
+            // std.debug.assert(
+                // (current_doc_id == II.num_docs - 1)
+                    // or
+                // (current_doc_id == II.num_docs)
+            // );
+        }
+    }
+
     pub fn fetchRecords(
-        self: *const BM25Partition,
+        self: *BM25Partition,
         result_positions: []TermPos,
         file_handle: *std.fs.File, // TODO: Consider replacing this with union of parquet open reader obj.
-        filename: []const u8,
+        filename: [*:0]const u8,
         query_result: QueryResult,
         record_string: *std.ArrayList(u8),
         file_type: file_utils.FileType,
         reference_dict: *const RadixTrie(u32),
     ) !void {
         if (file_type == .PARQUET) {
-            self.fetchRecordsParquet(
+            try self.fetchRecordsParquet(
                 result_positions,
                 filename,
                 query_result,
                 record_string,
-                reference_dict,
             );
             return;
         }
@@ -1117,18 +1298,19 @@ pub const BM25Partition = struct {
                     reference_dict,
                     );
             },
+            file_utils.FileType.PARQUET => unreachable,
         }
     }
 
     pub fn fetchRecordsParquet(
-        self: *const BM25Partition,
+        self: *BM25Partition,
         result_positions: []TermPos,
-        filename: []const u8,
+        filename: [*:0]const u8,
         query_result: QueryResult,
         record_string: *std.ArrayList(u8),
     ) !void {
         // TODO: Batch together all requests to a particular row group.
-        var row_count_rem = query_result.doc_id;
+        var row_count_rem: usize = @intCast(query_result.doc_id);
 
         var local_row_num: usize = 0;
         var rg_idx: usize = 0;
@@ -1142,13 +1324,12 @@ pub const BM25Partition = struct {
             rg_idx += 1;
         }
 
-        try pq.fetchRowFromRowGroup(
-            self.string_arena.allocator(),
+        pq.fetchRowFromRowGroup(
             filename,
             rg_idx,
             local_row_num,
             record_string.items.ptr,
-            result_positions.ptr,
+            @alignCast(@ptrCast(result_positions.ptr)),
         );
     }
 };
