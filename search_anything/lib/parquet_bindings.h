@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+typedef struct Field Field;
+
 uint8_t *read_parquet_row_group_column_utf8_null_terminated_c(const uint8_t *filename,
                                                               uintptr_t row_group_index,
                                                               uintptr_t column_index,
@@ -24,6 +26,14 @@ uintptr_t get_num_row_groups_c(const uint8_t *filename);
 
 uintptr_t get_num_rows_c(const uint8_t *filename);
 
+uintptr_t get_num_rows_in_row_group_c(const uint8_t *filename, uintptr_t row_group_index);
+
 void get_col_names_c(const uint8_t *filename, uint8_t *col_names);
+
+void fetch_row_from_row_group_c(const uint8_t *filename,
+                                uintptr_t row_group_index,
+                                uintptr_t row_index,
+                                uint8_t *values,
+                                struct Field *result_positions_ptr);
 
 #endif  /* PARQUET_BINDINGS_H */

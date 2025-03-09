@@ -7,6 +7,22 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use std::ffi::CStr;
+use serde_json::Value;
+
+fn stringify_json_value(value: &Value) -> Vec<u8> {
+    match value {
+        Value::String(s) => s.as_bytes().to_vec(),
+        Value::Number(n) => n.to_string().as_bytes().to_vec(),
+        Value::Bool(b) => b.to_string().as_bytes().to_vec(),
+        Value::Null => "null".as_bytes().to_vec(),
+        Value::Array(arr) => {
+            serde_json::to_string(arr).unwrap().as_bytes().to_vec()
+        }
+        Value::Object(obj) => {
+            serde_json::to_string(obj).unwrap().as_bytes().to_vec()
+        }
+    }
+}
 
 #[inline]
 pub fn vbyte_encode(value: u64, buffer: &mut Vec<u8>) {
@@ -16,23 +32,6 @@ pub fn vbyte_encode(value: u64, buffer: &mut Vec<u8>) {
         value >>= 7;
     }
     buffer.push(value as u8);
-}
-
-#[inline]
-pub fn vbyte_decode(buffer: &[u8]) -> (u64, usize) {
-    let mut value: u64 = 0;
-    let mut shift: usize = 0;
-    let mut i: usize = 0;
-    loop {
-        let byte = buffer[i];
-        value |= ((byte & 0x7F) as u64) << shift;
-        if byte < 0x80 {
-            break;
-        }
-        shift += 7;
-        i += 1;
-    }
-    (value, i + 1)
 }
 
 pub fn read_parquet_row_group_column_utf8_null_terminated(
@@ -280,6 +279,29 @@ pub extern "C" fn get_num_rows_c(filename: *const u8) -> usize {
     get_num_rows(&filename_rs)
 }
 
+pub fn get_num_rows_in_row_group(filename: &str, row_group_index: usize) -> usize {
+    let rdr = SerializedFileReader::try_from(filename).unwrap();
+    let metadata = rdr.metadata();
+    metadata.row_group(row_group_index).num_rows() as usize
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_num_rows_in_row_group_c(filename: *const u8, row_group_index: usize) -> usize {
+    if filename.is_null() {
+        eprintln!("Error: Filename pointer is null");
+        return 0; // Or another appropriate error value
+    }
+
+    // Convert C string to Rust string safely
+    let filename_rs = unsafe {
+        CStr::from_ptr(filename as *const i8)
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    get_num_rows_in_row_group(&filename_rs, row_group_index)
+}
+
 pub fn get_col_names(filename: &str) -> Vec<String> {
     let rdr = SerializedFileReader::try_from(filename).unwrap();
     let schema = rdr.metadata().file_metadata().schema_descr();
@@ -314,6 +336,92 @@ pub extern "C" fn get_col_names_c(
             );
     }
 }
+
+#[allow(dead_code)]
+#[repr(packed)]
+#[derive(Clone)]
+pub struct Field {
+    start_position: u32,
+    length: u32,
+}
+
+pub fn fetch_row_from_row_group(
+    filename: &str,
+    row_group_index: usize,
+    row_index: usize,
+    values: &mut Vec<u8>,
+    // field_lengths: *mut usize,
+    // field_start_positions: *mut usize,
+    result_positions_ptr: *mut Field,
+    ) {
+    let rdr = match SerializedFileReader::try_from(filename) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Failed to create reader for file {:?} {:?}", filename, e);
+            return;
+        }
+    };
+    let rg = rdr.get_row_group(row_group_index).expect("Failed to get row group");
+
+    let mut row_iter = rg.get_row_iter(None).expect("Failed to get row iterator");
+
+    let _row = row_iter.nth(row_index).expect("Failed to get row").unwrap();
+
+    let json_row = _row.to_json_value();
+
+    let mut idx: usize = 0;
+    for (_, value) in json_row.as_object().unwrap() {
+        let value_bytes = stringify_json_value(value);
+
+        let field = Field {
+            start_position: values.len() as u32,
+            length: value_bytes.len() as u32,
+        };
+        unsafe {
+            result_positions_ptr.add(idx).write(field);
+        }
+
+        values.extend_from_slice(value_bytes.as_slice());
+
+        idx += 1;
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn fetch_row_from_row_group_c(
+    filename: *const u8,
+    row_group_index: usize,
+    row_index: usize,
+    values: *mut u8,
+    result_positions_ptr: *mut Field,
+    ) {
+    // Convert C string to Rust string
+    let filename_rs = unsafe {
+        CStr::from_ptr(filename as *const i8)
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    let mut values_rs: Vec<u8> = Vec::new();
+
+    fetch_row_from_row_group(
+        &filename_rs,
+        row_group_index,
+        row_index,
+        &mut values_rs,
+        result_positions_ptr,
+        );
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            values_rs.as_ptr(), 
+            values, 
+            values_rs.len(),
+            );
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -458,5 +566,20 @@ mod tests {
 
         let num_rows = get_num_rows_c(c_path.as_ptr() as *const u8);
         println!("{:?}", num_rows);
+
+        let num_rows_in_rg_0 = get_num_rows_in_row_group_c(c_path.as_ptr() as *const u8, 0);
+        println!("{:?}", num_rows_in_rg_0);
+
+        // Alloc with 100 elements
+        let mut values: Vec<u8> = vec![0; 1 << 16];
+        let mut result_positions: Vec<Field> = vec![Field { start_position: 0, length: 0 }; 100];
+
+        fetch_row_from_row_group_c(
+            c_path.as_ptr() as *const u8,
+            0,
+            0,
+            values.as_mut_ptr(),
+            result_positions.as_mut_ptr(),
+            );
     }
 }

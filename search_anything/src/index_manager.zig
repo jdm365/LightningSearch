@@ -734,9 +734,6 @@ pub const IndexManager = struct {
             self.input_filename,
         );
 
-        var line_offsets = std.ArrayList(usize).init(self.gpa.allocator());
-        defer line_offsets.deinit();
-
         const num_partitions = @min(try std.Thread.getCpuCount(), num_row_groups);
 
         self.file_handles     = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
@@ -746,12 +743,26 @@ pub const IndexManager = struct {
         for (0..num_partitions) |idx| {
             self.file_handles[idx]   = try std.fs.cwd().openFile(self.input_filename, .{});
             self.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa.allocator(), MAX_NUM_RESULTS);
-            // TODO: Assign row groups here.
-            //       Calculate num rows per partition. Use this in BM25Partition/InvertedIndexV2 initialization.
+            const min_row_group = idx * @divFloor(num_row_groups, num_partitions);
+            const max_row_group = @min((idx + 1) * @divFloor(num_row_groups, num_partitions), num_row_groups);
+
+            var row_group_sizes = self.string_arena.allocator().alloc(usize, max_row_group - min_row_group);
+
+            var num_rows: usize = 0;
+            for (0.., min_row_group..max_row_group) |i, rg_idx| {
+                row_group_sizes[i] = pq.getNumRowGroupsInRowGroup(
+                    self.scratch_arena.allocator(),
+                    self.input_filename,
+                    rg_idx,
+                );
+                num_rows += row_group_sizes[i];
+            }
+
             self.index_partitions[idx] = try BM25Partition.init(
                 self.gpa.allocator(), 
                 1, 
-                partition_line_offsets
+                row_group_sizes,
+                num_rows,
                 );
         }
     }
@@ -798,7 +809,8 @@ pub const IndexManager = struct {
             self.index_partitions[i] = try BM25Partition.init(
                 self.gpa.allocator(), 
                 1, 
-                partition_line_offsets
+                partition_line_offsets,
+                partition_line_offsets.len,
                 );
         }
         try partition_boundaries.append(file_size);
@@ -1171,6 +1183,7 @@ pub const IndexManager = struct {
             try self.index_partitions[result.partition_idx].fetchRecords(
                 self.result_positions[idx],
                 &self.file_handles[result.partition_idx],
+                self.input_filename,
                 result,
                 &self.result_strings[idx],
                 self.file_type,

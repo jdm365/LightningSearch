@@ -869,6 +869,7 @@ dependencies = [
  "num-bigint",
  "paste",
  "seq-macro",
+ "serde_json",
  "simdutf8",
  "snap",
  "thrift",
@@ -886,6 +887,7 @@ dependencies = [
  "cbindgen",
  "parquet",
  "pathbuf",
+ "serde_json",
 ]
 
 [[package]]

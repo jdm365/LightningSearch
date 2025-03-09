@@ -105,6 +105,39 @@ pub fn getNumRowsParuqet(
     return lp.get_num_rows_c(c_filename);
 }
 
+pub fn getNumRowGroupsInRowGroup(
+    allocator: std.mem.Allocator,
+    filename: []const u8,
+    row_group_idx: usize,
+) !usize {
+    const c_filename = try allocator.dupeZ(u8, filename);
+    defer allocator.free(c_filename);
+    return lp.get_num_rows_in_row_group_c(
+        c_filename,
+        row_group_idx,
+    );
+}
+
+pub fn fetchRowFromRowGroup(
+    allocator: std.mem.Allocator,
+    filename: []const u8,
+    row_group_idx: usize,
+    row_idx: usize,
+    values_ptr: [*]u8,
+    result_positions_ptr: [*]u64,
+) !void {
+    const c_filename = try allocator.dupeZ(u8, filename);
+    defer allocator.free(c_filename);
+    return lp.fetch_row_from_row_group_c(
+        c_filename,
+        row_group_idx,
+        row_idx,
+        values_ptr,
+        result_positions_ptr,
+    );
+}
+
+
 test "read_parquet_col" {
     const filename = "../data/mb.parquet";
 
@@ -143,4 +176,7 @@ test "read_parquet_col" {
         &num_values,
     );
     lp.free_vec(data, num_values);
+
+
+    // TODO: Test row fetch.
 }

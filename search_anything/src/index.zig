@@ -227,6 +227,7 @@ pub const BM25Partition = struct {
         allocator: std.mem.Allocator,
         num_search_cols: usize,
         line_offsets: []usize,
+        num_records: usize,
     ) !BM25Partition {
         var doc_score_map = std.AutoHashMap(u32, ScoringInfo).init(allocator);
         try doc_score_map.ensureTotalCapacity(50_000);
@@ -242,7 +243,8 @@ pub const BM25Partition = struct {
         for (0..num_search_cols) |idx| {
             partition.II[idx] = try InvertedIndexV2.init(
                 allocator, 
-                line_offsets.len - 1,
+                num_records - 1,
+                // line_offsets.len - 1,
                 // line_offsets.len,
                 );
         }
@@ -1069,12 +1071,23 @@ pub const BM25Partition = struct {
     pub fn fetchRecords(
         self: *const BM25Partition,
         result_positions: []TermPos,
-        file_handle: *std.fs.File,
+        file_handle: *std.fs.File, // TODO: Consider replacing this with union of parquet open reader obj.
+        filename: []const u8,
         query_result: QueryResult,
         record_string: *std.ArrayList(u8),
         file_type: file_utils.FileType,
         reference_dict: *const RadixTrie(u32),
     ) !void {
+        if (file_type == .PARQUET) {
+            self.fetchRecordsParquet(
+                result_positions,
+                filename,
+                query_result,
+                record_string,
+                reference_dict,
+            );
+            return;
+        }
         const doc_id: usize = @intCast(query_result.doc_id);
         const byte_offset = self.line_offsets[doc_id];
         const next_byte_offset = self.line_offsets[doc_id + 1];
@@ -1105,5 +1118,37 @@ pub const BM25Partition = struct {
                     );
             },
         }
+    }
+
+    pub fn fetchRecordsParquet(
+        self: *const BM25Partition,
+        result_positions: []TermPos,
+        filename: []const u8,
+        query_result: QueryResult,
+        record_string: *std.ArrayList(u8),
+    ) !void {
+        // TODO: Batch together all requests to a particular row group.
+        var row_count_rem = query_result.doc_id;
+
+        var local_row_num: usize = 0;
+        var rg_idx: usize = 0;
+        while (true) {
+            // Currently when parquet, line_offsets is actually row_group sizes.
+            if (self.line_offsets[rg_idx] <= row_count_rem) {
+                local_row_num = row_count_rem;
+                break;
+            }
+            row_count_rem -= self.line_offsets[rg_idx];
+            rg_idx += 1;
+        }
+
+        try pq.fetchRowFromRowGroup(
+            self.string_arena.allocator(),
+            filename,
+            rg_idx,
+            local_row_num,
+            record_string.items.ptr,
+            result_positions.ptr,
+        );
     }
 };
