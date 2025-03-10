@@ -1,5 +1,7 @@
 use parquet::file::reader::{SerializedFileReader, FileReader};
+use parquet::column::reader::ColumnReader;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use parquet::data_type::{ByteArray, FixedLenByteArray};
 use arrow_array::LargeStringArray;
 use parquet::arrow::ProjectionMask; 
 
@@ -8,6 +10,266 @@ use std::path::PathBuf;
 
 use std::ffi::CStr;
 use serde_json::Value;
+
+use std::ptr;
+use std::sync::Arc;
+
+use rayon::prelude::*;
+
+
+pub fn fetch_row_from_column(
+    handle: *mut ParquetReaderHandle,
+    row_group_index: usize,
+    row_index: usize,
+    col_index: usize,
+    ) -> Result<Vec<u8>, parquet::errors::ParquetError> {
+    let rdr = get_reader_from_handle(handle).expect("Failed to get reader");
+
+    let rg = rdr.get_row_group(row_group_index).expect("Failed to get row group");
+    let mut col_rdr = rg.get_column_reader(col_index).expect("Failed to get column reader");
+
+    let mut values: Vec<u8> = Vec::new();
+
+    match col_rdr {
+        ColumnReader::Int32ColumnReader(ref mut _rdr) => {
+            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
+
+            let def_levels: Option<&mut Vec<i16>> = None;
+            let rep_levels: Option<&mut Vec<i16>> = None;
+
+            let mut value_buffer: Vec<i32> = Vec::with_capacity(1);
+            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
+                1, 
+                def_levels,
+                rep_levels,
+                &mut value_buffer,
+            )?;
+
+            values.extend_from_slice(&value_buffer[0].to_le_bytes());
+
+            Ok(values)
+        },
+        ColumnReader::Int64ColumnReader(ref mut _rdr) => {
+            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
+
+            let def_levels: Option<&mut Vec<i16>> = None;
+            let rep_levels: Option<&mut Vec<i16>> = None;
+
+            let mut value_buffer: Vec<i64> = Vec::with_capacity(1);
+            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
+                1, 
+                def_levels,
+                rep_levels,
+                &mut value_buffer,
+            )?;
+
+            values.extend_from_slice(&value_buffer[0].to_le_bytes());
+
+            Ok(values)
+        },
+        ColumnReader::Int96ColumnReader(ref mut _rdr) => {
+            return Err(parquet::errors::ParquetError::General("Int96 not supported".to_string()));
+        },
+        ColumnReader::FloatColumnReader(ref mut _rdr) => {
+            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
+
+            let def_levels: Option<&mut Vec<i16>> = None;
+            let rep_levels: Option<&mut Vec<i16>> = None;
+
+            let mut value_buffer: Vec<f32> = Vec::with_capacity(1);
+            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
+                1, 
+                def_levels,
+                rep_levels,
+                &mut value_buffer,
+            )?;
+
+            values.extend_from_slice(&value_buffer[0].to_le_bytes());
+
+            Ok(values)
+        },
+        ColumnReader::DoubleColumnReader(ref mut _rdr) => {
+            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
+
+            let def_levels: Option<&mut Vec<i16>> = None;
+            let rep_levels: Option<&mut Vec<i16>> = None;
+
+            let mut value_buffer: Vec<f64> = Vec::with_capacity(1);
+            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
+                1, 
+                def_levels,
+                rep_levels,
+                &mut value_buffer,
+            )?;
+
+            values.extend_from_slice(&value_buffer[0].to_le_bytes());
+
+            Ok(values)
+        },
+        ColumnReader::BoolColumnReader(ref mut _rdr) => {
+            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
+
+            let def_levels: Option<&mut Vec<i16>> = None;
+            let rep_levels: Option<&mut Vec<i16>> = None;
+
+            let mut value_buffer: Vec<bool> = Vec::with_capacity(1);
+            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
+                1, 
+                def_levels,
+                rep_levels,
+                &mut value_buffer,
+            )?;
+
+            values.push(value_buffer[0] as u8);
+
+            Ok(values)
+        },
+        ColumnReader::ByteArrayColumnReader(ref mut _rdr) => {
+            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
+
+            let def_levels: Option<&mut Vec<i16>> = None;
+            let rep_levels: Option<&mut Vec<i16>> = None;
+
+            let mut value_buffer: Vec<ByteArray> = Vec::with_capacity(1);
+            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
+                1, 
+                def_levels,
+                rep_levels,
+                &mut value_buffer,
+            )?;
+
+            for byte in value_buffer[0].data() {
+                values.push(*byte);
+            }
+            Ok(values)
+        },
+        ColumnReader::FixedLenByteArrayColumnReader(ref mut _rdr) => {
+            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
+
+            let def_levels: Option<&mut Vec<i16>> = None;
+            let rep_levels: Option<&mut Vec<i16>> = None;
+
+            let mut value_buffer: Vec<FixedLenByteArray> = Vec::with_capacity(1);
+            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
+                1, 
+                def_levels,
+                rep_levels,
+                &mut value_buffer,
+            )?;
+
+            for byte in value_buffer[0].data() {
+                values.push(*byte);
+            }
+            Ok(values)
+        },
+    }
+}
+
+pub fn fetch_row_parallel(
+    handle: *mut ParquetReaderHandle,
+    row_group_index: usize,
+    row_index: usize,
+    col_indices: &[usize],
+) -> Result<(Vec<u8>, Vec<Field>), parquet::errors::ParquetError> {
+    // Use Rayon to process each column index in parallel.
+    //
+    // Each closure returns a (Vec<u8>, Field) result for that column.
+    // For example, for an Int32 column, your fetch_row_from_column might convert the
+    // i32 value to 4 little-endian bytes and produce a Field with length 4.
+    let results: Result<Vec<(Vec<u8>, Field)>, parquet::errors::ParquetError> = col_indices
+        .par_iter()
+        .map(|&col_index| {
+            // Call the already implemented per‑column row fetcher.
+            fetch_row_from_column(handle, row_group_index, row_index, col_index)
+        })
+        .collect();
+
+    let mut results = results?;
+    // Now combine the results into one contiguous byte vector and adjust each Field’s start_position.
+    let mut final_bytes = Vec::new();
+    let mut fields = Vec::with_capacity(results.len());
+    for (mut col_bytes, mut field) in results.drain(..) {
+        field.start_position = final_bytes.len() as u32;
+        final_bytes.append(&mut col_bytes);
+        fields.push(field);
+    }
+    Ok((final_bytes, fields))
+}
+
+
+// Define an opaque structure to wrap the SerializedFileReader.
+// By using #[repr(C)] we guarantee that it can be passed as an opaque pointer.
+// #[repr(C)]
+pub struct ParquetReaderHandle {
+    // Using Arc to allow shared ownership if needed. If not, you can simply
+    // store a Box<SerializedFileReader<File>>.
+    reader: Arc<SerializedFileReader<File>>,
+}
+
+/// Create a new Parquet reader and return a handle to it.
+///
+/// # Safety
+/// The `filename` must be a valid, null-terminated C string.
+#[unsafe(no_mangle)]
+pub extern "C" fn create_parquet_reader(
+    filename: *const u8,
+) -> *mut ParquetReaderHandle {
+    if filename.is_null() {
+        eprintln!("create_parquet_reader: filename pointer is null.");
+        return ptr::null_mut();
+    }
+
+    // Convert C string to Rust string.
+    let filename_rs = unsafe {
+        CStr::from_ptr(filename as *const i8)
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    // Open the file.
+    let file = match File::open(filename_rs) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("create_parquet_reader: failed to open file: {:?}", e);
+            return ptr::null_mut();
+        }
+    };
+
+    // Create the Parquet reader.
+    let reader = match SerializedFileReader::new(file) {
+        Ok(r) => Arc::new(r),
+        Err(e) => {
+            eprintln!("create_parquet_reader: error initializing reader: {:?}", e);
+            return ptr::null_mut();
+        }
+    };
+
+    // Box the handle and return a raw pointer.
+    let handle = Box::new(ParquetReaderHandle { reader });
+    Box::into_raw(handle)
+}
+
+fn get_reader_from_handle(handle: *mut ParquetReaderHandle) -> Option<Arc<SerializedFileReader<File>>> {
+    if handle.is_null() {
+        None
+    } else {
+        // Safety: we assume the pointer is valid.
+        let h = unsafe { &*handle };
+        Some(Arc::clone(&h.reader))
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn free_parquet_reader(handle: *mut ParquetReaderHandle) {
+    if !handle.is_null() {
+        // Convert the raw pointer back into a Box and drop it.
+        unsafe {
+            _ = Box::from_raw(handle);
+        }
+    }
+}
+
+
 
 fn stringify_json_value(value: &Value) -> Vec<u8> {
     match value {
@@ -346,21 +608,14 @@ pub struct Field {
 }
 
 pub fn fetch_row_from_row_group(
-    filename: &str,
+    // filename: &str,
+    handle: *mut ParquetReaderHandle,
     row_group_index: usize,
     row_index: usize,
     values: &mut Vec<u8>,
-    // field_lengths: *mut usize,
-    // field_start_positions: *mut usize,
     result_positions_ptr: *mut Field,
     ) {
-    let rdr = match SerializedFileReader::try_from(filename) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Failed to create reader for file {:?} {:?}", filename, e);
-            return;
-        }
-    };
+    let rdr = get_reader_from_handle(handle).expect("Failed to get reader");
     let rg = rdr.get_row_group(row_group_index).expect("Failed to get row group");
 
     let mut row_iter = rg.get_row_iter(None).expect("Failed to get row iterator");
@@ -389,23 +644,18 @@ pub fn fetch_row_from_row_group(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn fetch_row_from_row_group_c(
-    filename: *const u8,
+    // filename: *const u8,
+    pr: *mut ParquetReaderHandle,
     row_group_index: usize,
     row_index: usize,
     values: *mut u8,
     result_positions_ptr: *mut Field,
     ) {
-    // Convert C string to Rust string
-    let filename_rs = unsafe {
-        CStr::from_ptr(filename as *const i8)
-            .to_string_lossy()
-            .into_owned()
-    };
-
     let mut values_rs: Vec<u8> = Vec::new();
 
     fetch_row_from_row_group(
-        &filename_rs,
+        // &filename_rs,
+        pr,
         row_group_index,
         row_index,
         &mut values_rs,
@@ -544,7 +794,6 @@ mod tests {
         use std::ffi::CString;
         // Paths to the Parquet files
         let path = "../../data/mb.parquet";
-        // let c_path = path.as_bytes();
         let c_path = CString::new(path).expect("Failed to create CString");
 
         let mut values_len: usize = 0;
@@ -574,12 +823,34 @@ mod tests {
         let mut values: Vec<u8> = vec![0; 1 << 16];
         let mut result_positions: Vec<Field> = vec![Field { start_position: 0, length: 0 }; 100];
 
+        let pr = create_parquet_reader(c_path.as_ptr() as *const u8);
+        println!("{:?}", pr);
+
+        let start = std::time::Instant::now();
+        let _ = fetch_row_parallel(
+            pr,
+            0,
+            0,
+            7,
+            &mut values,
+            result_positions.as_mut_ptr(),
+            );
+        let duration = start.elapsed();
+        println!("Time elapsed in fetch_row_from_column() is: {:?}", duration);
+
+        let start = std::time::Instant::now();
         fetch_row_from_row_group_c(
-            c_path.as_ptr() as *const u8,
+            // c_path.as_ptr() as *const u8,
+            pr,
             0,
             0,
             values.as_mut_ptr(),
             result_positions.as_mut_ptr(),
             );
+        let duration = start.elapsed();
+        println!("Time elapsed in fetch_row_from_row_group_c() is: {:?}", duration);
+
+        println!("{:?}", values[0]);
+        println!("{:?}", values.len());
     }
 }

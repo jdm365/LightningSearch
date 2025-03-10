@@ -100,6 +100,38 @@ pub fn main() !void {
 
     try index_manager.indexFile();
 
+    var query_map = std.StringHashMap([]const u8).init(gpa.allocator());
+    defer query_map.deinit();
+
+    try query_map.put("TITLE", "UNDER MY SKIN");
+    try query_map.put("ARTIST", "FRANK SINATRA");
+    try query_map.put("ALBUM", "LIGHTNING");
+
+    var boost_factors = std.ArrayList(f32).init(gpa.allocator());
+    defer boost_factors.deinit();
+
+    try boost_factors.append(1.0);
+    try boost_factors.append(1.0);
+    try boost_factors.append(1.0);
+
+    const num_queries: usize = 1;
+
+    const start_time = std.time.milliTimestamp();
+    for (0..num_queries) |_| {
+        try index_manager.query(
+            query_map,
+            10,
+            boost_factors,
+            );
+    }
+    const end_time = std.time.milliTimestamp();
+    const execution_time_ms = (end_time - start_time);
+    const qps = @as(f64, @floatFromInt(num_queries)) / @as(f64, @floatFromInt(execution_time_ms)) * 1000;
+
+    std.debug.print("\n\n================================================\n", .{});
+    std.debug.print("QUERIES PER SECOND: {d}\n", .{qps});
+    std.debug.print("================================================\n", .{});
+
     // server.init_allocators();
     // const QH = @as(*server.QueryHandlerLocal, @alignCast(@ptrCast(server.getQueryHandlerLocal())));
     // QH.readHeader(filename);

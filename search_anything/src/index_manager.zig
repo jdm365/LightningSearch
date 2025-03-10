@@ -51,6 +51,8 @@ pub const IndexManager = struct {
     index_partitions: []BM25Partition,
     input_filename: []const u8,
     input_filename_c: [*:0]const u8,
+    pq_file_handle: *anyopaque,
+
     num_row_groups: usize,
     gpa: *std.heap.GeneralPurposeAllocator(.{.thread_safe = true}),
     string_arena: *std.heap.ArenaAllocator,
@@ -72,6 +74,8 @@ pub const IndexManager = struct {
             .index_partitions = undefined,
             .input_filename = undefined,
             .input_filename_c = undefined,
+            .pq_file_handle = undefined,
+
             .num_row_groups = undefined,
             .gpa = try allocator.create(std.heap.GeneralPurposeAllocator(.{.thread_safe = true})),
             .string_arena = try allocator.create(std.heap.ArenaAllocator),
@@ -176,6 +180,8 @@ pub const IndexManager = struct {
                 for (0.., cols.items) |idx, col| {
                     try self.col_map.insert(col, @truncate(idx));
                 }
+
+                self.pq_file_handle = pq.getSerializedReader(self.input_filename_c);
             },
         }
 
@@ -1231,7 +1237,8 @@ pub const IndexManager = struct {
             try self.index_partitions[result.partition_idx].fetchRecords(
                 self.result_positions[idx],
                 &self.file_handles[result.partition_idx],
-                self.input_filename_c,
+                // self.input_filename_c,
+                self.pq_file_handle,
                 result,
                 &self.result_strings[idx],
                 self.file_type,

@@ -11,11 +11,11 @@ arrow-array = "54.2.1"
 bindgen = "0.71.1"
 parquet = { version = "54.2.1", features = ["arrow", "json"] }
 pathbuf = "1.0.0"
+rayon = "1.10.0"
 serde_json = "1.0.140"
 
 [lib]
 crate-type = ["staticlib"]
 
 [profile.release]
-## lto = "thin"
 lto = "fat"

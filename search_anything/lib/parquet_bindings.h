@@ -10,6 +10,18 @@
 
 typedef struct Field Field;
 
+typedef struct ParquetReaderHandle ParquetReaderHandle;
+
+/**
+ * Create a new Parquet reader and return a handle to it.
+ *
+ * # Safety
+ * The `filename` must be a valid, null-terminated C string.
+ */
+struct ParquetReaderHandle *create_parquet_reader(const uint8_t *filename);
+
+void free_parquet_reader(struct ParquetReaderHandle *handle);
+
 uint8_t *read_parquet_row_group_column_utf8_null_terminated_c(const uint8_t *filename,
                                                               uintptr_t row_group_index,
                                                               uintptr_t column_index,
@@ -30,7 +42,7 @@ uintptr_t get_num_rows_in_row_group_c(const uint8_t *filename, uintptr_t row_gro
 
 void get_col_names_c(const uint8_t *filename, uint8_t *col_names);
 
-void fetch_row_from_row_group_c(const uint8_t *filename,
+void fetch_row_from_row_group_c(struct ParquetReaderHandle *pr,
                                 uintptr_t row_group_index,
                                 uintptr_t row_index,
                                 uint8_t *values,

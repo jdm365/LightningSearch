@@ -5,7 +5,9 @@ const lp = @cImport({
 });
 
 
-
+pub fn getSerializedReader(filename_c: [*:0]const u8) *anyopaque {
+    return @ptrCast(lp.create_parquet_reader(filename_c));
+}
 
 pub fn readParquetRowGroupColumnUtf8NullTerminated(
     filename_c: [*:0]const u8,
@@ -100,14 +102,16 @@ pub fn getNumRowGroupsInRowGroup(
 }
 
 pub fn fetchRowFromRowGroup(
-    filename_c: [*:0]const u8,
+    // filename_c: [*:0]const u8,
+    serialized_reader: *anyopaque,
     row_group_idx: usize,
     row_idx: usize,
     values_ptr: [*]u8,
     result_positions_ptr: [*]u64,
 ) void {
     return lp.fetch_row_from_row_group_c(
-        filename_c,
+        // filename_c,
+        @ptrCast(serialized_reader),
         row_group_idx,
         row_idx,
         values_ptr,
@@ -121,16 +125,18 @@ test "read_parquet_col" {
 
     var num_values: usize = 0;
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
     var cols = std.ArrayListUnmanaged([]const u8){};
 
     defer {
-        cols.deinit(gpa.allocator());
-        _ = gpa.deinit();
+        cols.deinit(arena.allocator());
+        // _ = gpa.deinit();
+        arena.deinit();
     }
 
-    try getParquetCols(gpa.allocator(), &cols, filename);
+    try getParquetCols(arena.allocator(), &cols, filename);
     for (0.., cols.items) |idx, col| {
         std.debug.print("Col: {d} - {s}\n", .{idx, col});
     }

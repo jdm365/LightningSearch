@@ -1254,7 +1254,8 @@ pub const BM25Partition = struct {
         self: *BM25Partition,
         result_positions: []TermPos,
         file_handle: *std.fs.File, // TODO: Consider replacing this with union of parquet open reader obj.
-        filename: [*:0]const u8,
+        // filename: [*:0]const u8,
+        pq_file_handle: *anyopaque,
         query_result: QueryResult,
         record_string: *std.ArrayList(u8),
         file_type: file_utils.FileType,
@@ -1263,7 +1264,8 @@ pub const BM25Partition = struct {
         if (file_type == .PARQUET) {
             try self.fetchRecordsParquet(
                 result_positions,
-                filename,
+                // filename,
+                pq_file_handle,
                 query_result,
                 record_string,
             );
@@ -1305,7 +1307,8 @@ pub const BM25Partition = struct {
     pub fn fetchRecordsParquet(
         self: *BM25Partition,
         result_positions: []TermPos,
-        filename: [*:0]const u8,
+        // filename: [*:0]const u8,
+        pq_file_handle: *anyopaque,
         query_result: QueryResult,
         record_string: *std.ArrayList(u8),
     ) !void {
@@ -1316,16 +1319,18 @@ pub const BM25Partition = struct {
         var rg_idx: usize = 0;
         while (true) {
             // Currently when parquet, line_offsets is actually row_group sizes.
-            if (self.line_offsets[rg_idx] <= row_count_rem) {
+            if (row_count_rem <= self.line_offsets[rg_idx]) {
                 local_row_num = row_count_rem;
                 break;
             }
             row_count_rem -= self.line_offsets[rg_idx];
+            local_row_num += self.line_offsets[rg_idx];
             rg_idx += 1;
         }
 
         pq.fetchRowFromRowGroup(
-            filename,
+            // filename,
+            pq_file_handle,
             rg_idx,
             local_row_num,
             record_string.items.ptr,
