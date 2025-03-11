@@ -16,6 +16,64 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 
+pub struct RowGroupHandler {
+    pub column_readers: Vec<ColumnReader>,
+}
+
+// TODO: impl read_row
+impl RowGroupHandler {
+    pub fn read_row(
+        &self, 
+        row_index: usize,
+        col_index: usize,
+        ) -> Vec<u8> {
+        let mut values: Vec<u8> = Vec::new();
+        let col_reader = &self.column_readers[col_index];
+
+        fetch_row_from_column_result(
+            col_reader, 
+            row_index,
+            )
+            .map(|(mut col_bytes, _field)| {
+                values.append(&mut col_bytes);
+            })
+            .expect("Failed to fetch row from column");
+    }
+}
+
+pub struct FileColumnHandler {
+    pub row_groups: Vec<RowGroupHandler>,
+}
+
+impl FileColumnHandler {
+    pub fn new(
+        filename: &str,
+        ) -> Result<Self, parquet::errors::ParquetError> {
+        let rdr = SerializedFileReader::try_from(filename)?;
+        let num_row_groups = rdr.num_row_groups();
+        let mut row_groups = Vec::with_capacity(num_row_groups);
+
+        for rg_idx in 0..num_row_groups {
+            let rg = rdr.get_row_group(rg_idx)?;
+            let num_columns = rg.num_columns();
+            let mut column_readers = Vec::with_capacity(num_columns);
+
+            for col_idx in 0..num_columns {
+                let col_reader = rg.get_column_reader(col_idx)?;
+                column_readers.push(col_reader);
+            }
+
+            row_groups.push(RowGroupHandler {
+                column_readers,
+            });
+        }
+
+
+        Ok(Self {
+            row_groups,
+        })
+    }
+}
 
 pub fn fetch_row_from_column(
     handle: *mut ParquetReaderHandle,
@@ -170,30 +228,50 @@ pub fn fetch_row_parallel(
     row_group_index: usize,
     row_index: usize,
     col_indices: &[usize],
-) -> Result<(Vec<u8>, Vec<Field>), parquet::errors::ParquetError> {
-    // Use Rayon to process each column index in parallel.
-    //
-    // Each closure returns a (Vec<u8>, Field) result for that column.
-    // For example, for an Int32 column, your fetch_row_from_column might convert the
-    // i32 value to 4 little-endian bytes and produce a Field with length 4.
+    data: &mut Vec<u8>,
+    result_positions_ptr: *mut Field,
+) -> Result<(), parquet::errors::ParquetError> {
+
     let results: Result<Vec<(Vec<u8>, Field)>, parquet::errors::ParquetError> = col_indices
         .par_iter()
         .map(|&col_index| {
             // Call the already implemented per‑column row fetcher.
-            fetch_row_from_column(handle, row_group_index, row_index, col_index)
+            fetch_row_from_column_result(handle, row_group_index, row_index, col_index)
         })
         .collect();
-
     let mut results = results?;
-    // Now combine the results into one contiguous byte vector and adjust each Field’s start_position.
-    let mut final_bytes = Vec::new();
-    let mut fields = Vec::with_capacity(results.len());
-    for (mut col_bytes, mut field) in results.drain(..) {
-        field.start_position = final_bytes.len() as u32;
-        final_bytes.append(&mut col_bytes);
-        fields.push(field);
+
+    for (i, (mut col_bytes, mut field)) in results.into_iter().enumerate() {
+        field.start_position = data.len() as u32;
+        data.append(&mut col_bytes);
+
+        // Instead of always writing to add(0), write to the i-th Field.
+        unsafe {
+            result_positions_ptr.add(i).write(field);
+        }
     }
-    Ok((final_bytes, fields))
+
+    Ok(())
+}
+
+pub fn fetch_row_from_column_result(
+    handle: *mut ParquetReaderHandle,
+    row_group_index: usize,
+    row_index: usize,
+    col_index: usize,
+) -> Result<(Vec<u8>, Field), parquet::errors::ParquetError> {
+    let local_values = fetch_row_from_column(
+        handle,
+        row_group_index,
+        row_index,
+        col_index,
+    )?;
+    let field = Field {
+        start_position: 0,
+        length: local_values.len() as u32,
+    };
+
+    Ok((local_values, field))
 }
 
 
@@ -831,7 +909,7 @@ mod tests {
             pr,
             0,
             0,
-            7,
+            vec![0, 7].as_slice(),
             &mut values,
             result_positions.as_mut_ptr(),
             );
