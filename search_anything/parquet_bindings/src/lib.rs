@@ -14,7 +14,10 @@ use serde_json::Value;
 use std::ptr;
 use std::sync::Arc;
 
-use rayon::prelude::*;
+// use rayon::prelude::*;
+
+
+
 
 pub struct RowGroupHandler {
     pub column_readers: Vec<ColumnReader>,
@@ -23,21 +26,153 @@ pub struct RowGroupHandler {
 // TODO: impl read_row
 impl RowGroupHandler {
     pub fn read_row(
-        &self, 
+        &mut self, 
         row_index: usize,
         col_index: usize,
-        ) -> Vec<u8> {
+        ) -> Result<Vec<u8>, parquet::errors::ParquetError> {
         let mut values: Vec<u8> = Vec::new();
-        let col_reader = &self.column_readers[col_index];
+        let col_reader = &mut self.column_readers[col_index];
 
-        fetch_row_from_column_result(
-            col_reader, 
-            row_index,
-            )
-            .map(|(mut col_bytes, _field)| {
-                values.append(&mut col_bytes);
-            })
-            .expect("Failed to fetch row from column");
+        match col_reader {
+            ColumnReader::Int32ColumnReader(rdr) => {
+                let _rows_skipped = rdr.skip_records(row_index).expect("Failed to skip records");
+
+                let mut def_levels = Vec::with_capacity(1);
+                let mut rep_levels = Vec::with_capacity(1);
+
+                let mut value_buffer: Vec<i32> = Vec::with_capacity(1);
+                let (_records_read, _non_null_count, _levels_read) = rdr.read_records(
+                    1, 
+                    Some(&mut def_levels),
+                    Some(&mut rep_levels),
+                    &mut value_buffer,
+                )?;
+
+                values.extend_from_slice(&value_buffer[0].to_le_bytes());
+
+                Ok(values)
+            },
+            ColumnReader::Int64ColumnReader(rdr) => {
+                let _rows_skipped = rdr.skip_records(row_index).expect("Failed to skip records");
+
+                let mut def_levels = Vec::with_capacity(1);
+                let mut rep_levels = Vec::with_capacity(1);
+
+                let mut value_buffer: Vec<i64> = Vec::with_capacity(1);
+                let (_records_read, _non_null_count, _levels_read) = rdr.read_records(
+                    1, 
+                    Some(&mut def_levels),
+                    Some(&mut rep_levels),
+                    &mut value_buffer,
+                )?;
+
+                values.extend_from_slice(&value_buffer[0].to_le_bytes());
+
+                Ok(values)
+            },
+            ColumnReader::Int96ColumnReader(_) => {
+                return Err(parquet::errors::ParquetError::General("Int96 not supported".to_string()));
+            },
+            ColumnReader::FloatColumnReader(rdr) => {
+                let _rows_skipped = rdr.skip_records(row_index).expect("Failed to skip records");
+
+                let mut def_levels = Vec::with_capacity(1);
+                let mut rep_levels = Vec::with_capacity(1);
+
+                let mut value_buffer: Vec<f32> = Vec::with_capacity(1);
+                let (_records_read, _non_null_count, _levels_read) = rdr.read_records(
+                    1, 
+                    Some(&mut def_levels),
+                    Some(&mut rep_levels),
+                    &mut value_buffer,
+                )?;
+
+                values.extend_from_slice(&value_buffer[0].to_le_bytes());
+
+                Ok(values)
+            },
+            ColumnReader::DoubleColumnReader(rdr) => {
+                let _rows_skipped = rdr.skip_records(row_index).expect("Failed to skip records");
+
+                let mut def_levels = Vec::with_capacity(1);
+                let mut rep_levels = Vec::with_capacity(1);
+
+                let mut value_buffer: Vec<f64> = Vec::with_capacity(1);
+                let (_records_read, _non_null_count, _levels_read) = rdr.read_records(
+                    1, 
+                    Some(&mut def_levels),
+                    Some(&mut rep_levels),
+                    &mut value_buffer,
+                )?;
+
+                values.extend_from_slice(&value_buffer[0].to_le_bytes());
+
+                Ok(values)
+            },
+            ColumnReader::BoolColumnReader(rdr) => {
+                let _rows_skipped = rdr.skip_records(row_index).expect("Failed to skip records");
+
+                let mut def_levels = Vec::with_capacity(1);
+                let mut rep_levels = Vec::with_capacity(1);
+
+                let mut value_buffer: Vec<bool> = Vec::with_capacity(1);
+                let (_records_read, _non_null_count, _levels_read) = rdr.read_records(
+                    1, 
+                    Some(&mut def_levels),
+                    Some(&mut rep_levels),
+                    &mut value_buffer,
+                )?;
+
+                values.push(value_buffer[0] as u8);
+
+                Ok(values)
+            },
+            ColumnReader::ByteArrayColumnReader(rdr) => {
+                let start = std::time::Instant::now();
+                let _rows_skipped = rdr.skip_records(row_index).expect("Failed to skip records");
+                let duration = start.elapsed();
+                println!("Time elapsed in skip_records() is: {:?}", duration);
+
+                let mut def_levels = Vec::with_capacity(1);
+                let mut rep_levels = Vec::with_capacity(1);
+
+                let mut value_buffer: Vec<ByteArray> = Vec::with_capacity(1);
+                let start = std::time::Instant::now();
+                let (_records_read, _non_null_count, _levels_read) = rdr.read_records(
+                    1, 
+                    Some(&mut def_levels),
+                    Some(&mut rep_levels),
+                    &mut value_buffer,
+                )?;
+                let duration = start.elapsed();
+                println!("Time elapsed in read_records() is: {:?}", duration);
+
+                for byte in value_buffer[0].data() {
+                    values.push(*byte);
+                }
+                Ok(values)
+            },
+            ColumnReader::FixedLenByteArrayColumnReader(rdr) => {
+                let _rows_skipped = rdr.skip_records(row_index).expect("Failed to skip records");
+
+                let mut def_levels = Vec::with_capacity(1);
+                let mut rep_levels = Vec::with_capacity(1);
+
+                let mut value_buffer: Vec<FixedLenByteArray> = Vec::with_capacity(1);
+                let (_records_read, _non_null_count, _levels_read) = rdr.read_records(
+                    1, 
+                    Some(&mut def_levels),
+                    Some(&mut rep_levels),
+                    &mut value_buffer,
+                )?;
+
+                for byte in value_buffer[0].data() {
+                    values.push(*byte);
+                }
+                Ok(values)
+            },
+        }
+
     }
 }
 
@@ -73,156 +208,18 @@ impl FileColumnHandler {
             row_groups,
         })
     }
-}
 
-pub fn fetch_row_from_column(
-    handle: *mut ParquetReaderHandle,
-    row_group_index: usize,
-    row_index: usize,
-    col_index: usize,
-    ) -> Result<Vec<u8>, parquet::errors::ParquetError> {
-    let rdr = get_reader_from_handle(handle).expect("Failed to get reader");
-
-    let rg = rdr.get_row_group(row_group_index).expect("Failed to get row group");
-    let mut col_rdr = rg.get_column_reader(col_index).expect("Failed to get column reader");
-
-    let mut values: Vec<u8> = Vec::new();
-
-    match col_rdr {
-        ColumnReader::Int32ColumnReader(ref mut _rdr) => {
-            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
-
-            let def_levels: Option<&mut Vec<i16>> = None;
-            let rep_levels: Option<&mut Vec<i16>> = None;
-
-            let mut value_buffer: Vec<i32> = Vec::with_capacity(1);
-            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
-                1, 
-                def_levels,
-                rep_levels,
-                &mut value_buffer,
-            )?;
-
-            values.extend_from_slice(&value_buffer[0].to_le_bytes());
-
-            Ok(values)
-        },
-        ColumnReader::Int64ColumnReader(ref mut _rdr) => {
-            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
-
-            let def_levels: Option<&mut Vec<i16>> = None;
-            let rep_levels: Option<&mut Vec<i16>> = None;
-
-            let mut value_buffer: Vec<i64> = Vec::with_capacity(1);
-            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
-                1, 
-                def_levels,
-                rep_levels,
-                &mut value_buffer,
-            )?;
-
-            values.extend_from_slice(&value_buffer[0].to_le_bytes());
-
-            Ok(values)
-        },
-        ColumnReader::Int96ColumnReader(ref mut _rdr) => {
-            return Err(parquet::errors::ParquetError::General("Int96 not supported".to_string()));
-        },
-        ColumnReader::FloatColumnReader(ref mut _rdr) => {
-            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
-
-            let def_levels: Option<&mut Vec<i16>> = None;
-            let rep_levels: Option<&mut Vec<i16>> = None;
-
-            let mut value_buffer: Vec<f32> = Vec::with_capacity(1);
-            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
-                1, 
-                def_levels,
-                rep_levels,
-                &mut value_buffer,
-            )?;
-
-            values.extend_from_slice(&value_buffer[0].to_le_bytes());
-
-            Ok(values)
-        },
-        ColumnReader::DoubleColumnReader(ref mut _rdr) => {
-            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
-
-            let def_levels: Option<&mut Vec<i16>> = None;
-            let rep_levels: Option<&mut Vec<i16>> = None;
-
-            let mut value_buffer: Vec<f64> = Vec::with_capacity(1);
-            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
-                1, 
-                def_levels,
-                rep_levels,
-                &mut value_buffer,
-            )?;
-
-            values.extend_from_slice(&value_buffer[0].to_le_bytes());
-
-            Ok(values)
-        },
-        ColumnReader::BoolColumnReader(ref mut _rdr) => {
-            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
-
-            let def_levels: Option<&mut Vec<i16>> = None;
-            let rep_levels: Option<&mut Vec<i16>> = None;
-
-            let mut value_buffer: Vec<bool> = Vec::with_capacity(1);
-            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
-                1, 
-                def_levels,
-                rep_levels,
-                &mut value_buffer,
-            )?;
-
-            values.push(value_buffer[0] as u8);
-
-            Ok(values)
-        },
-        ColumnReader::ByteArrayColumnReader(ref mut _rdr) => {
-            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
-
-            let def_levels: Option<&mut Vec<i16>> = None;
-            let rep_levels: Option<&mut Vec<i16>> = None;
-
-            let mut value_buffer: Vec<ByteArray> = Vec::with_capacity(1);
-            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
-                1, 
-                def_levels,
-                rep_levels,
-                &mut value_buffer,
-            )?;
-
-            for byte in value_buffer[0].data() {
-                values.push(*byte);
-            }
-            Ok(values)
-        },
-        ColumnReader::FixedLenByteArrayColumnReader(ref mut _rdr) => {
-            let _rows_skipped = _rdr.skip_records(row_index).expect("Failed to skip records");
-
-            let def_levels: Option<&mut Vec<i16>> = None;
-            let rep_levels: Option<&mut Vec<i16>> = None;
-
-            let mut value_buffer: Vec<FixedLenByteArray> = Vec::with_capacity(1);
-            let (_records_read, _non_null_count, _levels_read) = _rdr.read_records(
-                1, 
-                def_levels,
-                rep_levels,
-                &mut value_buffer,
-            )?;
-
-            for byte in value_buffer[0].data() {
-                values.push(*byte);
-            }
-            Ok(values)
-        },
+    pub fn read_row(
+        &mut self, 
+        row_group_index: usize, 
+        row_index: usize,
+        col_index: usize,
+        ) -> Result<Vec<u8>, parquet::errors::ParquetError> {
+        self.row_groups[row_group_index].read_row(row_index, col_index)
     }
 }
 
+/*
 pub fn fetch_row_parallel(
     handle: *mut ParquetReaderHandle,
     row_group_index: usize,
@@ -273,6 +270,7 @@ pub fn fetch_row_from_column_result(
 
     Ok((local_values, field))
 }
+*/
 
 
 // Define an opaque structure to wrap the SerializedFileReader.
@@ -904,7 +902,11 @@ mod tests {
         let pr = create_parquet_reader(c_path.as_ptr() as *const u8);
         println!("{:?}", pr);
 
+        let mut file_handler = FileColumnHandler::new(path).unwrap();
+
         let start = std::time::Instant::now();
+        file_handler.read_row(20, 100000, 7).expect("Failed to read row");
+        /*
         let _ = fetch_row_parallel(
             pr,
             0,
@@ -913,6 +915,7 @@ mod tests {
             &mut values,
             result_positions.as_mut_ptr(),
             );
+        */
         let duration = start.elapsed();
         println!("Time elapsed in fetch_row_from_column() is: {:?}", duration);
 
