@@ -15,8 +15,38 @@ use std::ptr;
 use std::sync::Arc;
 
 // use rayon::prelude::*;
+use zstd::bulk::{Compressor, Decompressor};
 
 
+#[inline]
+pub fn compress_zstd(
+    compressor: &mut Compressor,
+    input: &[u8],
+    output: &mut [u8],
+    ) -> usize {
+    match compressor.compress_to_buffer(input, output) {
+        Ok(bytes_written) => bytes_written,
+        Err(e) => {
+            eprintln!("Failed to compress: {:?}", e);
+            0
+        }
+    }
+}
+
+#[inline]
+pub fn decompress_zstd(
+    decompressor: &mut Decompressor,
+    input: &[u8],
+    output: &mut [u8],
+    ) -> usize {
+    match decompressor.decompress_to_buffer(input, output) {
+        Ok(bytes_read) => bytes_read,
+        Err(e) => {
+            eprintln!("Failed to decompress: {:?}", e);
+            0
+        }
+    }
+}
 
 
 pub struct RowGroupHandler {
@@ -936,5 +966,31 @@ mod tests {
 
         println!("{:?}", values[0]);
         println!("{:?}", values.len());
+    }
+
+
+    #[test]
+    fn zstd_compress() {
+        let mut test_bytes = vec![0; 125];
+        test_bytes.copy_from_slice(b"2,1733714,2,3,36995712MB-01,16,Lookin' in the Eyes of My Melanie - De allerbeste van The Classics,2.867,Classics,,'04,English");
+
+        let mut compressed = Vec::with_capacity(test_bytes.len());
+        compressed.resize(test_bytes.len() * 2, 0);
+
+        let level = 3;
+        let mut compressor = Compressor::new(level).unwrap();
+
+        let bytes_written = compress_zstd(&mut compressor, test_bytes.as_mut_slice(), &mut compressed);
+
+        println!("Uncompressed size: {:?}", test_bytes.len());
+        println!("Compressed size:   {:?}", bytes_written);
+        println!("Unompressed: {:?}", test_bytes);
+        println!("Compressed:  {:?}", compressed);
+
+        let mut decompressor = Decompressor::new().unwrap();
+        // test_bytes.clear();
+        decompress_zstd(&mut decompressor, &compressed[0..bytes_written], &mut test_bytes[..]);
+
+        println!("Decompressed: {:?}", test_bytes);
     }
 }

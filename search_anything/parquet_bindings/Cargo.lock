@@ -914,6 +914,7 @@ dependencies = [
  "pathbuf",
  "rayon",
  "serde_json",
+ "zstd",
 ]
 
 [[package]]

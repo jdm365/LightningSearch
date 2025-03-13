@@ -3,19 +3,19 @@ name = "parquet_bindings"
 version = "0.1.0"
 edition = "2024"
 
+
 [build-dependencies]
 cbindgen = "0.28.0"
 
 [dependencies]
 arrow-array = "54.2.1"
 bindgen = "0.71.1"
-parquet = { version = "54.2.1", features = ["arrow", "json"] }
 pathbuf = "1.0.0"
 rayon = "1.10.0"
 serde_json = "1.0.140"
+parquet = { version = "54.2.1", features = ["arrow", "json"] }
+zstd = "0.13.3"
 
 [lib]
 crate-type = ["staticlib"]
-
-[profile.release]
 ## lto = "fat"
