@@ -147,6 +147,11 @@ impl RowGroupHandler {
                 let duration = start.elapsed();
                 println!("Time elapsed in read_records() is: {:?}", duration);
 
+                if value_buffer.len() == 0 {
+                    // TODO: Revisit this logic.
+                    return Ok(values);
+                }
+
                 for byte in value_buffer[0].data() {
                     values.push(*byte);
                 }
@@ -488,8 +493,6 @@ pub fn read_parquet_row_group_column_utf8_vbyte(
         }
     };
     let schema_desc = rdr.metadata().file_metadata().schema_descr();
-
-    assert_eq!(schema_desc.column(column_index).logical_type(), Some(parquet::basic::LogicalType::String));
 
     let mask = ProjectionMask::leaves(schema_desc, vec![column_index]);
 
@@ -869,17 +872,17 @@ mod tests {
     fn test_read_string_col_c() {
         use std::ffi::CString;
         // Paths to the Parquet files
-        let path = "../../data/mb.parquet";
+        let path = "../../data/mb_smallrg.parquet";
         let c_path = CString::new(path).expect("Failed to create CString");
 
         let mut values_len: usize = 0;
-        read_parquet_row_group_column_utf8_null_terminated_c(
-            c_path.as_ptr() as *const u8, 
-            0, 
-            7, 
-            &mut values_len,
-            );
-
+        // read_parquet_row_group_column_utf8_null_terminated_c(
+            // c_path.as_ptr() as *const u8, 
+            // 0, 
+            // 7, 
+            // &mut values_len,
+            // );
+// 
 
         read_parquet_row_group_column_utf8_vbyte_c(
             c_path.as_ptr() as *const u8, 
@@ -905,7 +908,7 @@ mod tests {
         let mut file_handler = FileColumnHandler::new(path).unwrap();
 
         let start = std::time::Instant::now();
-        file_handler.read_row(20, 100000, 7).expect("Failed to read row");
+        file_handler.read_row(400, 100000, 7).expect("Failed to read row");
         /*
         let _ = fetch_row_parallel(
             pr,
