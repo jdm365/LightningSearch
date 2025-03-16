@@ -988,8 +988,6 @@ mod tests {
         println!("Compressed:  {:?}", compressed);
 
         let mut decompressor = Decompressor::new().unwrap();
-        // test_bytes.clear();
-        //
         decompress_zstd(&mut decompressor, &compressed[0..bytes_written], &mut test_bytes[..]);
 
         println!("Decompressed: {:?}", test_bytes);
