@@ -952,15 +952,34 @@ mod tests {
         let duration = start.elapsed();
         println!("Time elapsed in fetch_row_from_column() is: {:?}", duration);
 
+        let min_rg = 0;
+        let max_rg = file_handler.row_groups.len();
+
+        let min_row_selection = 0;
+        let max_row_selection = 4096;
+
+        let n = 25;
+
         let start = std::time::Instant::now();
-        fetch_row_from_row_group_c(
-            // c_path.as_ptr() as *const u8,
-            pr,
-            0,
-            0,
-            values.as_mut_ptr(),
-            result_positions.as_mut_ptr(),
-            );
+        // fetch_row_from_row_group_c(
+            // // c_path.as_ptr() as *const u8,
+            // pr,
+            // 0,
+            // 0,
+            // values.as_mut_ptr(),
+            // result_positions.as_mut_ptr(),
+            // );
+        for sample_idx in 0..n {
+            let rg_idx = min_rg + (sample_idx % (max_rg - min_rg));
+            let row_idx = min_row_selection + (sample_idx % (max_row_selection - min_row_selection));
+            let _ = fetch_row_from_row_group_c(
+                pr,
+                rg_idx,
+                row_idx,
+                values.as_mut_ptr(),
+                result_positions.as_mut_ptr(),
+                );
+        }
         let duration = start.elapsed();
         println!("Time elapsed in fetch_row_from_row_group_c() is: {:?}", duration);
 
