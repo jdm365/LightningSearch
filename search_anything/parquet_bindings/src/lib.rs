@@ -958,7 +958,7 @@ mod tests {
         let min_row_selection = 0;
         let max_row_selection = 4096;
 
-        let n = 25;
+        let n = 50;
 
         let start = std::time::Instant::now();
         // fetch_row_from_row_group_c(
