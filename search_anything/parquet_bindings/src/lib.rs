@@ -5,17 +5,22 @@ use parquet::data_type::{ByteArray, FixedLenByteArray};
 use arrow_array::LargeStringArray;
 use parquet::arrow::ProjectionMask; 
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
+use std::io::{Write, Read, Seek};
 
 use std::ffi::CStr;
 use serde_json::Value;
 
 use std::ptr;
 use std::sync::Arc;
+use std::slice;
 
-// use rayon::prelude::*;
+use rayon::prelude::*;
 use zstd::bulk::{Compressor, Decompressor};
+// 
+// use huffman::Tree;
+// use huffman::decode;
 
 
 #[inline]
@@ -781,6 +786,213 @@ pub extern "C" fn fetch_row_from_row_group_c(
 }
 
 
+pub unsafe fn write_row_group_get_line_offsets(
+    input_filename: &str,
+    row_group_index: usize,
+    line_offsets: *mut u32,
+    file: &mut File,
+    ) -> std::io::Result<()> {
+    println!("Writing row group {} to file", row_group_index);
+
+    let rdr = SerializedFileReader::try_from(input_filename).unwrap();
+    let rg = rdr.get_row_group(row_group_index).unwrap();
+    let row_iter = rg.get_row_iter(None).unwrap().enumerate();
+
+    let mut buffer_idx: u32 = 0;
+    let mut offset: usize = 0;
+    unsafe {
+        line_offsets.add(0).write(buffer_idx);
+    }
+
+    let mut compressor = Compressor::new(3).unwrap();
+
+    let mut scratch_buffer: Vec<u8> = Vec::with_capacity(65536);
+
+    const FLUSH_SIZE: usize = 1 << 24;
+    let mut buffer: Vec<u8> = vec![0; 2 * FLUSH_SIZE];
+
+    let num_rows = rg.metadata().num_rows() as usize;
+
+    for (idx, row) in row_iter {
+        scratch_buffer.clear();
+
+        for (_, field) in row.unwrap().get_column_iter() {
+            let str_val = field.to_string();
+            let num_bytes = str_val.as_bytes().len();
+            vbyte_encode(num_bytes as u64, &mut scratch_buffer);
+            scratch_buffer.extend_from_slice(str_val.as_bytes());
+        }
+        let compressed_size = compress_zstd(
+            &mut compressor,
+            scratch_buffer.as_slice(),
+            &mut buffer[buffer_idx as usize..],
+            );
+
+        offset     += compressed_size;
+        buffer_idx += compressed_size as u32;
+
+        unsafe {
+            line_offsets.add(idx).write(offset as u32);
+        }
+
+        if buffer_idx as usize >= FLUSH_SIZE {
+            file.write_all(&buffer[..buffer_idx as usize])?;
+            buffer_idx = 0;
+        }
+    }
+
+    if buffer_idx > 0 {
+        file.write_all(&buffer[..buffer_idx as usize])?;
+    }
+    unsafe {
+        line_offsets.add(num_rows).write(offset as u32);
+    }
+
+    Ok(())
+}
+
+pub struct DocStore<'a> {
+    dir: String,
+    file_handles: Vec<File>,
+    decompressor: Decompressor<'a>,
+    scratch_buffer: [u8; 1 << 16],
+}
+
+impl<'a> DocStore<'a> {
+    pub fn create(dir: &str) -> Self {
+        Self {
+            dir: dir.to_string(),
+            file_handles: Vec::new(),
+            decompressor: Decompressor::new().unwrap(),
+            scratch_buffer: [0; 1 << 16],
+        }
+    }
+
+    pub unsafe fn write_all_row_groups(
+        &mut self,
+        input_filename: &str,
+    ) -> Result<*mut *mut u32, std::io::Error> {
+        let rdr = SerializedFileReader::try_from(input_filename)?;
+        let num_row_groups = rdr.num_row_groups();
+
+        if std::fs::metadata(&self.dir).is_err() {
+            std::fs::create_dir(&self.dir)?;
+        }
+
+        for i in 0..num_row_groups {
+            self.file_handles.push(
+                OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .open(format!("{}/rg{}", self.dir, i))
+                    .expect("Failed to create file"),
+            );
+        }
+
+        // Create a vector of line_offsets (one Vec<u32> per row group)
+        let mut line_offsets: Vec<Vec<u32>> =
+            (0..num_row_groups).map(|_| Vec::new()).collect();
+
+        for idx in 0..num_row_groups {
+            let num_rows = rdr.metadata().row_group(idx).num_rows();
+            line_offsets[idx].resize(num_rows as usize + 1, 0);
+        }
+
+
+        let input_filename_arc = Arc::new(input_filename.to_string());
+        self.file_handles
+            .par_iter_mut()
+            .zip(line_offsets.par_iter_mut())
+            .enumerate()
+            .try_for_each(|(i, (file, _line_offsets))| -> Result<(), std::io::Error> {
+                let local_filename = Arc::clone(&input_filename_arc);
+
+                unsafe {
+                    write_row_group_get_line_offsets(
+                        &local_filename,
+                        i,
+                        _line_offsets.as_mut_ptr(),
+                        file,
+                    )?;
+                }
+                Ok(())
+            })?;
+
+        let mut line_offsets_ptrs: Vec<*mut u32> =
+            line_offsets.iter_mut().map(|v| v.as_mut_ptr()).collect();
+
+        std::mem::forget(line_offsets);
+
+        Ok(line_offsets_ptrs.as_mut_ptr())
+    }
+
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn write_row_group_get_line_offsets_c(
+        &mut self,
+        input_filename: *const u8,
+        row_group_index: usize,
+        line_offsets: *mut u32,
+        ) {
+        unsafe {
+            let _ = write_row_group_get_line_offsets(
+                &CStr::from_ptr(input_filename as *const i8).to_string_lossy(),
+                row_group_index, 
+                line_offsets,
+                self.file_handles.get_mut(row_group_index).unwrap(),
+                );
+        }
+    }
+
+
+    pub unsafe fn fetch_row(
+        &mut self,
+        row_group_index: usize,
+        offset: u32,
+        bytes_to_read: u32,
+        str_bytes: *mut u8,
+        str_bytes_capacity: usize,
+        ) -> std::io::Result<()> {
+        self.file_handles[row_group_index].seek(std::io::SeekFrom::Start(offset as u64)).expect("Failed to seek");
+
+        let bytes_read = self.file_handles[row_group_index].read(&mut self.scratch_buffer[..bytes_to_read as usize])?;
+
+        if str_bytes.is_null() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Null pointer",
+                ));
+        }
+
+        let out_buffer: &mut [u8] = unsafe {
+            slice::from_raw_parts_mut(str_bytes, str_bytes_capacity)
+        };
+
+        _ = decompress_zstd(
+            &mut self.decompressor,
+            &self.scratch_buffer[..bytes_read],
+            out_buffer,
+            );
+
+        Ok(())
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn fetch_row_c(
+        &mut self,
+        row_group_index: usize,
+        offset: u32,
+        bytes_to_read: u32,
+        str_bytes: *mut u8,
+        str_bytes_capacity: usize,
+        ) {
+        unsafe {
+            let _ = self.fetch_row(row_group_index, offset, bytes_to_read, str_bytes, str_bytes_capacity);
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -923,10 +1135,10 @@ mod tests {
         free_vec(std::ptr::null_mut(), values_len);
 
         let num_rows = get_num_rows_c(c_path.as_ptr() as *const u8);
-        println!("{:?}", num_rows);
+        println!("Num rows in file: {:?}", num_rows);
 
         let num_rows_in_rg_0 = get_num_rows_in_row_group_c(c_path.as_ptr() as *const u8, 0);
-        println!("{:?}", num_rows_in_rg_0);
+        println!("Num rows in row group 0: {:?}", num_rows_in_rg_0);
 
         // Alloc with 100 elements
         let mut values: Vec<u8> = vec![0; 1 << 16];
@@ -1010,5 +1222,32 @@ mod tests {
         decompress_zstd(&mut decompressor, &compressed[0..bytes_written], &mut test_bytes[..]);
 
         println!("Decompressed: {:?}", test_bytes);
+    }
+
+    #[test]
+    fn doc_store() {
+        let mut doc_store = DocStore::create("test");
+        // let path = "../../data/mb_smallrg.parquet";
+        let path = "../../data/mb.parquet";
+        // let path = "../../data/mb_duckdb.parquet";
+        let num_rows = 309380;
+
+        unsafe {
+            let start = std::time::Instant::now();
+            let _line_offsets = doc_store.write_all_row_groups(path).unwrap();
+            let duration = start.elapsed();
+
+            println!("Time elapsed in write_row_group_get_line_offsets() is: {:?}", duration);
+            println!("Rows per second: {:?}", num_rows as f64 / duration.as_secs_f64());
+
+            let mut str_bytes: Vec<u8> = vec![0; 1 << 16];
+
+            let start = std::time::Instant::now();
+            doc_store.fetch_row(0, 0, 100, str_bytes.as_mut_ptr(), str_bytes.len()).unwrap();
+            let duration = start.elapsed();
+            println!("Fetch time: {:?}", duration);
+
+            println!("{:?}", str_bytes[..100].iter().map(|&b| b as char).collect::<String>());
+        }
     }
 }
