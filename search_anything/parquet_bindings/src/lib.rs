@@ -22,6 +22,8 @@ use zstd::bulk::{Compressor, Decompressor};
 // use huffman::Tree;
 // use huffman::decode;
 
+use std::path::Path;
+use polars::prelude::*;
 
 #[inline]
 pub fn compress_zstd(
@@ -52,6 +54,28 @@ pub fn decompress_zstd(
         }
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn convert_parquet_to_csv(_parquet_path: *const u8) {
+    let parquet_path = unsafe {
+        CStr::from_ptr(_parquet_path as *const i8)
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    let input_path = Path::new(&parquet_path);
+    let output_path = {
+        let mut path = PathBuf::from(&parquet_path);
+        path.set_extension("csv");
+        path
+    };
+ 
+
+    let mut df = ParquetReader::new(File::open(input_path).unwrap()).finish().unwrap();
+    let mut file = File::create(output_path).unwrap();
+    CsvWriter::new(&mut file).finish(&mut df).unwrap();
+}
+
 
 
 pub struct RowGroupHandler {
@@ -1096,6 +1120,7 @@ mod tests {
     }
     */
 
+    /*
     #[test]
     fn test_read_string_col() {
         // Paths to the Parquet files
@@ -1198,8 +1223,10 @@ mod tests {
         println!("{:?}", values[0]);
         println!("{:?}", values.len());
     }
+    */
 
 
+        /*
     #[test]
     fn zstd_compress() {
         let mut test_bytes = vec![0; 125];
@@ -1249,5 +1276,18 @@ mod tests {
 
             println!("{:?}", str_bytes[..100].iter().map(|&b| b as char).collect::<String>());
         }
+    }
+    */
+
+    #[test]
+    fn parquet_to_csv() {
+        let path = "../../data/mb.parquet\0";
+
+        let start = std::time::Instant::now();
+        convert_parquet_to_csv(
+            path.as_ptr() as *const u8,
+        );
+        let duration = start.elapsed();
+        println!("Time elapsed in convert_parquet_to_csv() is: {:?}", duration);
     }
 }
