@@ -22,6 +22,112 @@ pub const MAX_LINE_LENGTH = 1_048_576;
 
 pub const ENDIANESS = builtin.cpu.arch.endian();
 
+
+pub const CategoricalColumn = struct {
+pub fn CategoricalColumn(T: type) type {
+    return struct {
+        const Self = @This();
+
+        // name: []const u8,
+        is_literal_type: bool,
+        col_idx: u32,
+        total_count = u64,
+
+        value_map_u8: std.AutoArrayHashMapUnmanaged(T, u8),
+        values_literal: std.ArrayListUnmanaged(u8),
+
+        value_idx_map: std.AutoHashMapUnmanaged(T, std.ArrayListUnmanaged(u8)),
+
+
+        pub fn init(
+            allocator: std.mem.Allocator,
+            col_idx: u32,
+            ) !Self {
+            return Self{
+                // .name = name,
+                .is_literal_type = true,
+                .col_idx = col_idx,
+                .total_count = 0,
+
+                .value_map_u8 = std.AutoArrayHashMapUnmanaged(T, u8),
+                .values_literal = std.ArrayListUnmanaged(u8),
+
+                .value_idx_map = std.AutoHashMapUnmanaged(
+                    T, 
+                    std.ArrayListUnmanaged(u8),
+                    ),
+
+            };
+        }
+
+        pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+            if (self.is_literal_type) {
+                self.value_map_u8.deinit(allocator);
+                self.value_idx_map.deinit(allocator);
+            } else {
+                while (self.value_idx_map.iterator()) |item| {
+                    item.value_ptr.*.deinit(allocator);
+                }
+                self.value_idx_map.deinit(allocator);
+            }
+        }
+
+        pub inline fn add(
+            self: *Self, 
+            allocator: std.mem.Allocator, 
+            value: T,
+            ) !void {
+            if (self.is_literal_type) {
+                const gop = try self.value_map_u8.getOrPut(value);
+                if (!gop.found_existing) {
+                    gop.key_ptr.*   = value;
+                    gop.value_ptr.* = @truncate(self.value_map_u8.count());
+                }
+                try self.values_literal.append(allocator, gop.value_ptr.*);
+
+                if (self.value_map_u8.count() == 255) {
+                    self.is_literal_type = false;
+                    self.total_count = self.values_literal.items.len;
+
+                    // Transfer to value_idx_map.
+                    for (0.., try self.value_map_u8.iterator()) |idx, T_val| {
+                        try self.value_idx_map.put(
+                            T_val,
+                            std.ArrayListUnmanaged(u32),
+                        );
+                        for (0.., self.values_literal) |jdx, map_val| {
+                            if (map_val == @truncate(idx)) {
+                                try self.value_idx_map.get(
+                                    T_val,
+                                ).?.append(allocator, jdx);
+                            }
+                        }
+                    }
+                    const gop = try self.value_idx_map.getOrPut(
+                        self.value_map_u8.items[val].key,
+                        );
+                    if (!gop.found_existing) {
+                        gop.key_ptr.* = self.value_map_u8.items[val].key;
+                        try gop.value_ptr.*.append(allocator, @truncate(i));
+                    }
+
+                    self.values_literal.deinit(allocator);
+                    self.value_map_u8.deinit(allocator);
+                }
+            } else {
+                try self.value_idx_map.get(
+                    value,
+                ).append(allocator, self.total_count);
+                self.total_count += 1;
+            }
+        }
+    };  
+}
+
+pub const HashNGram = extern struct {
+    hashes: [8]u16,
+};
+
 pub const ScoringInfo = packed struct {
     score: f32,
     term_pos: u8,
@@ -106,6 +212,7 @@ pub const InvertedIndexV2 = struct {
     // vocab: std.hash_map.HashMap([]const u8, u32, SHM, 80),
     // prt_vocab: PruningRadixTrie(u32),
     prt_vocab: RadixTrie(u32),
+    // hashed_ngrams: []HashNGram,
     term_offsets: []usize,
     doc_freqs: std.ArrayList(u32),
     doc_sizes: []u16,
