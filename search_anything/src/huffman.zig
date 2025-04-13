@@ -53,7 +53,7 @@ const HuffmanNode = struct {
     }
 };
 
-inline fn lessThan(_: void, a: *HuffmanNode, b: *HuffmanNode) std.math.Order {
+fn lessThan(_: void, a: *HuffmanNode, b: *HuffmanNode) std.math.Order {
     return std.math.order(a.freq, b.freq);
 }
 
@@ -398,16 +398,11 @@ fn huffmanCompressLe(
 }
 
 fn huffmanDecompress(
-    root: *?*HuffmanNode,
-    stream: *BitStream,
+    root: *HuffmanNode,
+    input_buffer: []u8,
+    output_buffer: []u8,
     allocator: std.mem.Allocator,
 ) !bool {
-    try deserializeHuffmanTree(root, stream, allocator);
-    const compressed_size = try CompressedSize.readFromFile(&stream.input_file);
-    const done = (compressed_size.last_block == 1);
-    _ = try stream.readChunk(@intCast(compressed_size.value));
-
-    stream.compression_buffer_idx = 0;
     var byte_idx: usize = 0;
     var bit_idx:  usize = 0;
 
@@ -445,185 +440,19 @@ fn huffmanDecompress(
     return done;
 }
 
-const BitStream = struct {
-    input_file: std.fs.File,
-    output_file: std.fs.File,
-    input_buffer: []u8,
-    input_buffer_size: usize,
-    compression_buffer: []u8,
-    input_file_size: usize,
-    compressed_file_size: usize,
-    input_buffer_idx: usize,
-    compression_buffer_idx: usize,
-    compression_buffer_bit_idx: usize,
-
-    pub fn init(
-        input_filename: []const u8,
-        allocator: std.mem.Allocator,
-        _decompress: bool,
-    ) !BitStream {
-        var input_file: std.fs.File = undefined;
-        var output_file: std.fs.File = undefined;
-
-        if (_decompress) {
-            if (!std.mem.eql(u8, input_filename[input_filename.len-4..input_filename.len], ".fse")) {
-                @panic("File doesn't have `.fse` extension");
-            }
-            input_file  = try std.fs.cwd().openFile(input_filename, .{});
-            output_file = try std.fs.cwd().createFile(
-                // input_filename[0..input_filename.len-4], 
-                input_filename[0..input_filename.len-3], 
-                .{ .read = true },
-                );
-        } else {
-            @memcpy(SCRATCH_BUFFER[0..input_filename.len], input_filename);
-            @memcpy(SCRATCH_BUFFER[input_filename.len..input_filename.len+4], ".fse");
-            input_file  = try std.fs.cwd().openFile(input_filename, .{});
-            output_file = try std.fs.cwd().createFile(
-                SCRATCH_BUFFER[0..input_filename.len+4], 
-                .{ .read = true },
-                );
-        }
-        const input_file_size = try input_file.getEndPos();
-
-        const input_buffer = try allocator.alloc(u8, BUFFER_SIZE);
-        var compression_buffer = try allocator.alloc(u8, BUFFER_SIZE);
-        @memset(compression_buffer[0..], 0);
-
-        return BitStream{
-            .input_file = input_file,
-            .output_file = output_file,
-            .input_buffer = input_buffer,
-            .input_buffer_size = 0,
-            .compression_buffer = compression_buffer,
-            .input_file_size = input_file_size,
-            .compressed_file_size = 0,
-            .input_buffer_idx = 0,
-            .compression_buffer_idx = 0,
-            .compression_buffer_bit_idx = 0,
-        };
-    }
-
-    pub fn deinit(self: *BitStream) void {
-        self.input_file.close();
-        self.output_file.close();
-    }
-
-    pub fn flushChunk(self: *BitStream, comptime write_int: bool) !void {
-        if (write_int) {
-            const size = CompressedSize{
-                .last_block = @intFromBool(self.input_buffer_size < BUFFER_SIZE),
-                .value = @truncate(self.compression_buffer_idx),
-            };
-            _ = try self.output_file.write(std.mem.asBytes(&size));
-        }
-
-        _ = try self.output_file.write(
-            self.compression_buffer[0..self.compression_buffer_idx]
-            );
-        self.compressed_file_size += self.compression_buffer_idx;
-        @memset(self.compression_buffer[0..self.compression_buffer_idx], 0);
-
-        self.compression_buffer_idx     = 0;
-        self.compression_buffer_bit_idx = 0;
-    }
-
-    pub fn readChunk(self: *BitStream, num_bytes: usize) !bool {
-        const bytes_read = try self.input_file.read(
-            self.input_buffer[0..num_bytes]
-            );
-        self.input_buffer_size = bytes_read;
-
-        return (bytes_read < num_bytes);
-    }
-
-    pub fn compress(self: *BitStream, allocator: std.mem.Allocator) !void {
-        const start = std.time.microTimestamp();
-
-        var done = false;
-        while (!done) {
-            done = try self.readChunk(BUFFER_SIZE);
-            var root: ?*HuffmanNode = null;
-            try huffmanCompress(&root, self, allocator);
-        }
-
-        const time_taken_us = std.time.microTimestamp() - start;
-        const mb_s: f32 = @as(f32, @floatFromInt(self.input_file_size / 1_048_576)) / (@as(f32, @floatFromInt(time_taken_us)) / 1_000_000);
-
-        std.debug.print(
-            "Compressed file from {d} to {d} bytes in {d}ms\n", 
-            .{self.input_file_size, self.compressed_file_size, @divFloor(time_taken_us, 1000)}
-        );
-        std.debug.print("{d}MB/s\n", .{mb_s});
-    }
-
-    pub fn decompress(self: *BitStream, allocator: std.mem.Allocator) !void {
-        const start = std.time.microTimestamp();
-
-        var done = false;
-        while (!done) {
-            var root: ?*HuffmanNode = null;
-            done = try huffmanDecompress(&root, self, allocator);
-        }
-
-        const time_taken_us = std.time.microTimestamp() - start;
-        const mb_s: f32 = @as(f32, @floatFromInt(self.input_file_size / 1_048_576)) / (@as(f32, @floatFromInt(time_taken_us)) / 1_000_000);
-
-        std.debug.print(
-            "Compressed file from {d} to {d} bytes in {d}ms\n", 
-            .{self.input_file_size, self.compressed_file_size, @divFloor(time_taken_us, 1000)}
-        );
-        std.debug.print("{d}MB/s\n", .{mb_s});
-    }
-};
-
 
 test "compression" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    var _decompress = false;
-    var filename: []const u8 = undefined;
-
-    var args = try std.process.argsWithAllocator(arena.allocator());
-    defer args.deinit();
-    var idx: usize = 0;
-    while (args.next()) |arg| {
-        if (idx == 0) {
-            // Skip binary name.
-        } else if (idx == 1) {
-            std.debug.print("ARG: {s}\n", .{arg});
-            if (std.mem.eql(u8, arg, "-d")) {
-                _decompress = true;
-            } else {
-                filename = arg;
-            }
-        } else if (idx == 2) {
-            if (!_decompress) {
-                @panic("Too many arguments");
-            }
-            filename = arg;
-        } else {
-            @panic("Too many arguments.");
-        }
-        idx += 1;
-    }
-    if (idx == 1) {
-        filename = "../../data/enwik8";
-        // filename = "../../data/declaration_of_independence.txt";
-    }
+    var filename: []const u8 = "../../data/enwik8";
 
     // TMP
     // _decompress = true;
     // filename = "../../data/declaration_of_independence.txt.fse";
 
-    std.debug.print("Decompress: {}\n", .{_decompress});
     var stream = try BitStream.init(filename, arena.allocator(), _decompress);
     defer stream.deinit();
 
-    if (_decompress) {
-        try stream.decompress(arena.allocator());
-    } else {
-        try stream.compress(arena.allocator());
-    }
+    try stream.compress(arena.allocator());
 }
