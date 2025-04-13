@@ -1,6 +1,5 @@
 .{
-    // .name = .search_anything,
-    .name = "search-anything",
+    .name = .search_anything,
     .version = "0.0.0",
     .fingerprint = 0x3fe64d611939a1e,
     .paths = .{
