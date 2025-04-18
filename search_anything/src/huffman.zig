@@ -279,8 +279,15 @@ test "compression" {
 
     const output_buffer = try arena.allocator().alloc(u8, file_size);
 
+    const init = std.time.microTimestamp();
     const compressed_size = try compressor.huffmanCompress(input_buffer, output_buffer);
+    const final = std.time.microTimestamp();
+    const elapsed = @as(u64, @intCast(final - init));
+    std.debug.print("Elapsed time: {d} microseconds\n", .{elapsed});
+
+    const mb_s = file_size / elapsed;
 
     std.debug.print("Original size:   {d}\n", .{file_size});
     std.debug.print("Compressed size: {d}\n", .{compressed_size});
+    std.debug.print("MB/s:            {d}\n", .{mb_s});
 }
