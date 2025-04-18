@@ -89,7 +89,8 @@ fn lessThan(_: void, a: HuffmanNode, b: HuffmanNode) std.math.Order {
 }
 
 inline fn writeBits(
-    output_buffer: []u8,
+    // output_buffer: []u8,
+    output_buffer: [*]u32,
     bit_offset: usize,
     code: u32,
     code_length: u8,
@@ -97,20 +98,22 @@ inline fn writeBits(
     const bytes_required = try std.math.divCeil(usize, @as(usize, @intCast(code_length)) + bit_offset, 8);
     const shifted_code_0 = code >> @as(u5, @truncate(bit_offset));
 
-    const output_buffer_u32 = @as(
-        [*]u32,
-        @ptrCast(@alignCast(output_buffer.ptr)),
-    );
-    output_buffer_u32[0] |= shifted_code_0;
+    // const output_buffer_u32 = @as(
+        // [*]u32,
+        // @ptrCast(@alignCast(output_buffer.ptr)),
+    // );
+    // output_buffer_u32[0] |= shifted_code_0;
+    output_buffer[0] |= shifted_code_0;
 
     if (bytes_required >= 4) {
         @branchHint(.unlikely);
 
-        const shift_val: u5 = @as(u5, @truncate((32 - bit_offset) % 32));
+        const shift_val: u5 = @truncate((32 - bit_offset) % 32);
         const shifted_code_1: u32 = @truncate((
             @as(u64, @intCast(code)) << shift_val
         ) & 0x00000000FFFFFFFF);
-        output_buffer_u32[1] |= shifted_code_1;
+        // output_buffer_u32[1] |= shifted_code_1;
+        output_buffer[1] |= shifted_code_1;
     }
 }
 
@@ -160,8 +163,8 @@ pub const HuffmanCompressor = struct {
             const parent = HuffmanNode{
                 .value = 0,
                 .freq = left.freq + right.freq,
-                .left_idx = @truncate(num_nodes - 1),
-                .right_idx = @truncate(num_nodes),
+                .left_idx = @truncate(num_nodes - 2),
+                .right_idx = @truncate(num_nodes - 1),
             };
 
             try pq.add(parent);
@@ -185,16 +188,6 @@ pub const HuffmanCompressor = struct {
             const left_null  = (node.left_idx == 0);
             const right_null = (node.right_idx == 0);
 
-            std.debug.print(
-                "Node: {d} left: {d} right: {d} code: {b} len: {d}\n",
-                .{
-                    current_node_idx,
-                    node.left_idx,
-                    node.right_idx,
-                    current_code,
-                    current_code_length,
-                },
-            );
 
             if (left_null and right_null) {
                 const value = @as(usize, @intCast(node.value));
@@ -202,6 +195,8 @@ pub const HuffmanCompressor = struct {
                 const shift_val: u5 = @as(u5, @truncate((32 - current_code_length) % 32));
                 self.codes[value] = current_code << shift_val;
                 self.code_lengths[value] = current_code_length;
+
+                std.debug.assert(self.code_lengths[value] <= 32);
                 return;
             }
 
@@ -230,32 +225,32 @@ pub const HuffmanCompressor = struct {
         input_buffer: []u8,
         output_buffer: []u8,
     ) !usize {
-        var input_buffer_bit_idx: usize = 0;
+        var output_buffer_bit_idx: usize = 0;
 
-        std.debug.print("Codes:        {any}\n", .{self.codes});
-        std.debug.print("Code lengths: {any}\n", .{self.code_lengths});
-        @breakpoint();
+        const output_buffer_u32 = @as(
+            [*]u32,
+            @ptrCast(@alignCast(output_buffer.ptr)),
+        );
 
-        // TODO: Try doing 4 elements at a time. Maybe go from u32 -> u64 or larger.
-        var ubyte: usize = 0;
         for (input_buffer) |byte| {
-            ubyte = @intCast(byte);
-            const nbits = self.code_lengths[ubyte];
+            const nbits = self.code_lengths[byte];
 
-            const bit_idx = input_buffer_bit_idx;
-            const code = self.codes[ubyte] >> @intCast(bit_idx);
+            const bit_idx = output_buffer_bit_idx;
+            const code = self.codes[byte] >> @truncate(bit_idx);
 
             try writeBits(
-                output_buffer,
-                input_buffer_bit_idx,
+                // output_buffer[@divFloor(output_buffer_bit_idx, 8)..],
+                // output_buffer_bit_idx % 8,
+                output_buffer_u32[@divFloor(output_buffer_bit_idx, 32)..],
+                output_buffer_bit_idx % 32,
                 code,
                 nbits,
             );
 
-            input_buffer_bit_idx += nbits;
+            output_buffer_bit_idx += nbits;
         }
 
-        return try std.math.divCeil(usize, input_buffer_bit_idx, 8);
+        return try std.math.divCeil(usize, output_buffer_bit_idx, 8);
     }
 
 };
