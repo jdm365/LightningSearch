@@ -114,7 +114,19 @@ pub const HuffmanCompressor = struct {
     lookup_table: [4096]u8,
     lookup_table_lengths: [4096]u8,
 
-    pub fn buildHuffmanTree(
+    pub fn init() HuffmanCompressor {
+        return HuffmanCompressor{
+            .huffman_nodes = undefined,
+            .codes = [_]u32{0} ** 256,
+            .code_lengths = [_]u8{0} ** 256,
+            .root_node_idx = 0,
+
+            .lookup_table = [_]u8{0} ** 4096,
+            .lookup_table_lengths = [_]u8{0} ** 4096,
+        };
+    }
+
+    fn buildHuffmanTree(
         self: *HuffmanCompressor,
         allocator: std.mem.Allocator,
         buffer: []u8,
@@ -406,15 +418,7 @@ test "compression" {
 
     _ = try input_file.readAll(input_buffer);
 
-    var compressor = HuffmanCompressor{
-        .huffman_nodes = undefined,
-        .codes = [_]u32{0} ** 256,
-        .code_lengths = [_]u8{0} ** 256,
-        .root_node_idx = 0,
-
-        .lookup_table = [_]u8{0} ** 4096,
-        .lookup_table_lengths = [_]u8{0} ** 4096,
-    };
+    var compressor = HuffmanCompressor.init();
     try compressor.buildHuffmanTree(arena.allocator(), input_buffer);
 
     const output_buffer = try arena.allocator().alloc(u8, file_size);
