@@ -178,6 +178,51 @@ pub const HuffmanCompressor = struct {
         self.buildLookupTable();
     }
 
+    fn buildHuffmanTreeGivenFreqs(
+        self: *HuffmanCompressor,
+        allocator: std.mem.Allocator,
+        freqs: [256]usize,
+    ) !void {
+        var pq = std.PriorityQueue(HuffmanNode, void, lessThan).init(allocator, {});
+        defer pq.deinit();
+
+        var node_idx: usize = 1;
+
+        for (0.., freqs[0..256]) |i, freq| {
+            if (freq > 0) {
+                const new_node = HuffmanNode{
+                    .freq = @truncate(freq),
+                    .value = @truncate(i),
+                    .left_idx = 0,
+                    .right_idx = 0,
+                };
+                try pq.add(new_node);
+            }
+        }
+
+        while (pq.count() > 1) {
+            const left  = pq.remove();
+            const right = pq.remove();
+
+            self.huffman_nodes[node_idx] = left; node_idx += 1;
+            self.huffman_nodes[node_idx] = right; node_idx += 1;
+
+            const parent = HuffmanNode{
+                .value = 0,
+                .freq = left.freq + right.freq,
+                .left_idx = @truncate(node_idx - 2),
+                .right_idx = @truncate(node_idx - 1),
+            };
+
+            try pq.add(parent);
+        }
+
+        self.huffman_nodes[node_idx] = pq.remove(); node_idx += 1;
+        self.root_node_idx = @truncate(node_idx - 1);
+        self.gatherCodes(self.root_node_idx, 0, 0);
+        self.buildLookupTable();
+    }
+
 
     fn gatherCodes(
         self: *HuffmanCompressor,
@@ -249,6 +294,11 @@ pub const HuffmanCompressor = struct {
         input_buffer: []u8,
         output_buffer: []u8,
     ) !usize {
+        if (self.root_node_idx == 0) {
+            @branchHint(.cold);
+            return error.HuffmanTreeNotBuilt;
+        }
+
         @memset(output_buffer, 0);
 
         var output_buffer_bit_idx: usize = 0;
@@ -286,6 +336,11 @@ pub const HuffmanCompressor = struct {
         compressed_buffer: []u8,
         decompressed_buffer: []u8,
     ) !usize {
+        if (self.root_node_idx == 0) {
+            @branchHint(.cold);
+            return error.HuffmanTreeNotBuilt;
+        }
+
         var decompressed_buffer_idx:   usize = 0;
         var compressed_buffer_bit_idx: usize = 0;
 
@@ -345,6 +400,11 @@ pub const HuffmanCompressor = struct {
         compressed_buffer: []u8,
         decompressed_buffer: []u8,
     ) !usize {
+        if (self.root_node_idx == 0) {
+            @branchHint(.cold);
+            return error.HuffmanTreeNotBuilt;
+        }
+
         var decompressed_buffer_idx:   usize = 0;
         var compressed_buffer_bit_idx: usize = 0;
 

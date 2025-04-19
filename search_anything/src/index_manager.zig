@@ -735,7 +735,8 @@ pub const IndexManager = struct {
 
         const end_time = std.time.microTimestamp();
         const execution_time_us = end_time - start_time;
-        const mb_s: usize = @as(usize, @intFromFloat(0.000_001 * @as(f64, @floatFromInt(file_size)) / @as(f64, @floatFromInt(execution_time_us))));
+        const mb_s: usize = @intFromFloat(0.000_001 * @as(f64, @floatFromInt(file_size)) 
+                            / @as(f64, @floatFromInt(execution_time_us)));
 
         std.debug.print("Read {d} lines in {d}ms\n", .{line_offsets.items.len - 1, @divFloor(execution_time_us, 1000)});
         std.debug.print("{d}MB/s\n", .{mb_s});

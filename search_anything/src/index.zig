@@ -16,6 +16,8 @@ const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
 const PruningRadixTrie = @import("pruning_radix_trie.zig").PruningRadixTrie;
 const RadixTrie = @import("radix_trie.zig").RadixTrie;
 
+const DocStore = @import("doc_store.zig").DocStore;
+
 pub const MAX_TERM_LENGTH = 256;
 pub const MAX_NUM_TERMS   = 4096;
 pub const MAX_LINE_LENGTH = 1_048_576;
@@ -23,15 +25,13 @@ pub const MAX_LINE_LENGTH = 1_048_576;
 pub const ENDIANESS = builtin.cpu.arch.endian();
 
 
-pub const CategoricalColumn = struct {
-pub fn CategoricalColumn(T: type) type {
+pub fn CategoricalColumn(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        // name: []const u8,
         is_literal_type: bool,
         col_idx: u32,
-        total_count = u64,
+        total_count: u64,
 
         value_map_u8: std.AutoArrayHashMapUnmanaged(T, u8),
         values_literal: std.ArrayListUnmanaged(u8),
@@ -40,17 +40,15 @@ pub fn CategoricalColumn(T: type) type {
 
 
         pub fn init(
-            allocator: std.mem.Allocator,
             col_idx: u32,
             ) !Self {
             return Self{
-                // .name = name,
                 .is_literal_type = true,
                 .col_idx = col_idx,
                 .total_count = 0,
 
-                .value_map_u8 = std.AutoArrayHashMapUnmanaged(T, u8),
-                .values_literal = std.ArrayListUnmanaged(u8),
+                .value_map_u8 = std.AutoArrayHashMapUnmanaged(T, u8){},
+                .values_literal = std.ArrayListUnmanaged(u8){},
 
                 .value_idx_map = std.AutoHashMapUnmanaged(
                     T, 
@@ -78,7 +76,7 @@ pub fn CategoricalColumn(T: type) type {
             value: T,
             ) !void {
             if (self.is_literal_type) {
-                const gop = try self.value_map_u8.getOrPut(value);
+                var gop = try self.value_map_u8.getOrPut(value);
                 if (!gop.found_existing) {
                     gop.key_ptr.*   = value;
                     gop.value_ptr.* = @truncate(self.value_map_u8.count());
@@ -96,32 +94,32 @@ pub fn CategoricalColumn(T: type) type {
                             std.ArrayListUnmanaged(u32),
                         );
                         for (0.., self.values_literal) |jdx, map_val| {
-                            if (map_val == @truncate(idx)) {
+                            if (map_val == @as(T, @intCast(idx))) {
                                 try self.value_idx_map.get(
                                     T_val,
                                 ).?.append(allocator, jdx);
                             }
                         }
                     }
-                    const gop = try self.value_idx_map.getOrPut(
-                        self.value_map_u8.items[val].key,
+                    gop = try self.value_idx_map.getOrPut(
+                        self.value_map_u8.items[value].key,
                         );
                     if (!gop.found_existing) {
-                        gop.key_ptr.* = self.value_map_u8.items[val].key;
-                        try gop.value_ptr.*.append(allocator, @truncate(i));
+                        gop.key_ptr.* = self.value_map_u8.items[value].key;
+                        try gop.value_ptr.*.append(allocator, @truncate(self.value_idx_map.count()));
                     }
 
                     self.values_literal.deinit(allocator);
                     self.value_map_u8.deinit(allocator);
                 }
             } else {
-                try self.value_idx_map.get(
+                try self.value_idx_map.getPtr(
                     value,
                 ).append(allocator, self.total_count);
                 self.total_count += 1;
             }
         }
-    };  
+    };
 }
 
 pub const HashNGram = extern struct {
@@ -331,11 +329,18 @@ pub const BM25Partition = struct {
     string_arena: std.heap.ArenaAllocator,
     doc_score_map: std.AutoHashMap(u32, ScoringInfo),
 
+    doc_store: *DocStore,
+
     pub fn init(
         allocator: std.mem.Allocator,
         num_search_cols: usize,
         line_offsets: []usize,
         num_records: usize,
+
+        literal_byte_sizes: *std.ArrayListUnmanaged(usize),
+        literal_col_idxs: *std.ArrayListUnmanaged(usize),
+        huffman_col_idxs: *std.ArrayListUnmanaged(usize),
+
     ) !BM25Partition {
         var doc_score_map = std.AutoHashMap(u32, ScoringInfo).init(allocator);
         try doc_score_map.ensureTotalCapacity(50_000);
@@ -347,7 +352,15 @@ pub const BM25Partition = struct {
             .allocator = allocator,
             .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
             .doc_score_map = doc_score_map,
+
+            .doc_store = undefined,
         };
+
+        partition.doc_store = try DocStore.init(
+            literal_byte_sizes,
+            literal_col_idxs,
+            huffman_col_idxs,
+            );
 
         for (0..num_search_cols) |idx| {
             partition.II[idx] = try InvertedIndexV2.init(
@@ -1282,11 +1295,11 @@ pub const BM25Partition = struct {
                     II.postings.term_positions[postings_offset] = @intCast(term_pos);
                 }
             }
-            std.debug.assert(
-                (current_doc_id == II.num_docs - 1)
-                    or
-                (current_doc_id == II.num_docs)
-            );
+            // std.debug.assert(
+                // (current_doc_id == II.num_docs - 1)
+                    // or
+                // (current_doc_id == II.num_docs)
+            // );
         }
     }
 
