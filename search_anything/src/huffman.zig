@@ -111,6 +111,9 @@ pub const HuffmanCompressor = struct {
     code_lengths: [256]u8,
     root_node_idx: u12,
 
+    lookup_table: [4096]u8,
+    lookup_table_lengths: [4096]u8,
+
     pub fn buildHuffmanTree(
         self: *HuffmanCompressor,
         allocator: std.mem.Allocator,
@@ -160,6 +163,7 @@ pub const HuffmanCompressor = struct {
         self.huffman_nodes[node_idx] = pq.remove(); node_idx += 1;
         self.root_node_idx = @truncate(node_idx - 1);
         self.gatherCodes(self.root_node_idx, 0, 0);
+        self.buildLookupTable();
     }
 
 
@@ -208,6 +212,26 @@ pub const HuffmanCompressor = struct {
         }
     }
 
+    fn buildLookupTable(self: *HuffmanCompressor) void {
+        @memset(self.lookup_table[0..], 0);
+        @memset(self.lookup_table_lengths[0..], 0);
+
+        for (0.., self.codes) |idx, code| {
+            if (self.code_lengths[idx] == 0) continue;
+            if (self.code_lengths[idx] > 12) continue;
+
+            const mask = (@as(u64, 1) << @truncate(@as(u8, 12) - self.code_lengths[idx])) - 1;
+
+            const min_code = code >> 20;
+            const max_code = min_code | mask;
+
+            for (min_code..max_code + 1) |_code| {
+                self.lookup_table[_code] = @truncate(idx);
+                self.lookup_table_lengths[_code] = self.code_lengths[idx];
+            }
+        }
+    }
+
     fn compress(
         self: *HuffmanCompressor,
         input_buffer: []u8,
@@ -245,7 +269,7 @@ pub const HuffmanCompressor = struct {
         return compressed_size;
     }
 
-    fn decompress(
+    fn decompressBase(
         self: *HuffmanCompressor,
         compressed_buffer: []u8,
         decompressed_buffer: []u8,
@@ -255,7 +279,7 @@ pub const HuffmanCompressor = struct {
 
         var current_node_idx = self.root_node_idx;
 
-        while (compressed_buffer_bit_idx < compressed_buffer.len * 8) {
+        while (decompressed_buffer_idx < decompressed_buffer.len) {
             const node = self.huffman_nodes[current_node_idx];
 
             if (node.left_idx == 0 and node.right_idx == 0) {
@@ -304,6 +328,67 @@ pub const HuffmanCompressor = struct {
         return decompressed_buffer_idx;
     }
 
+    fn decompress(
+        self: *HuffmanCompressor,
+        compressed_buffer: []u8,
+        decompressed_buffer: []u8,
+    ) !usize {
+        var decompressed_buffer_idx:   usize = 0;
+        var compressed_buffer_bit_idx: usize = 0;
+
+        while (decompressed_buffer_idx < decompressed_buffer.len) {
+            const byte_idx = @divFloor(compressed_buffer_bit_idx, 8);
+            const bit_idx  = compressed_buffer_bit_idx % 8;
+
+            const slice = compressed_buffer[byte_idx..@min(byte_idx + 4, compressed_buffer.len)];
+            var current_word = std.mem.readInt(u32, slice[0..4], big_endian);
+            current_word = (current_word >> @truncate(20 - bit_idx)) & 0xFFF;
+
+            const length = self.lookup_table_lengths[current_word];
+            const symbol = self.lookup_table[current_word];
+
+            if (length > 0) {
+                @branchHint(.likely);
+
+                decompressed_buffer[decompressed_buffer_idx] = symbol;
+                decompressed_buffer_idx += 1;
+
+                compressed_buffer_bit_idx += length;
+                continue;
+            }
+            std.debug.assert(length == 0);
+
+            var current_node_idx = self.root_node_idx;
+
+            while (true) {
+                const node = self.huffman_nodes[current_node_idx];
+
+                if ((node.left_idx == 0) and (node.right_idx == 0)) {
+                    decompressed_buffer[decompressed_buffer_idx] = node.value;
+                    decompressed_buffer_idx += 1;
+                    break;
+                }
+
+                const _byte_idx = @divFloor(compressed_buffer_bit_idx, 8);
+                const _bit_idx  = compressed_buffer_bit_idx % 8;
+
+                const byte = compressed_buffer[_byte_idx];
+                const bit = (byte >> @truncate(7 - _bit_idx)) & 1;
+
+                compressed_buffer_bit_idx += 1;
+
+                if (bit == 0) {
+                    current_node_idx = node.left_idx;
+                    if (current_node_idx == 0) return error.InvalidHuffmanCode;
+                } else {
+                    current_node_idx = node.right_idx;
+                    if (current_node_idx == 0) return error.InvalidHuffmanCode;
+                }
+            }
+        }
+        return decompressed_buffer_idx;
+    }
+
 };
 
 
@@ -326,6 +411,9 @@ test "compression" {
         .codes = [_]u32{0} ** 256,
         .code_lengths = [_]u8{0} ** 256,
         .root_node_idx = 0,
+
+        .lookup_table = [_]u8{0} ** 4096,
+        .lookup_table_lengths = [_]u8{0} ** 4096,
     };
     try compressor.buildHuffmanTree(arena.allocator(), input_buffer);
 
@@ -344,6 +432,7 @@ test "compression" {
     const decompressed_buffer = try arena.allocator().alloc(u8, file_size);
 
     const init2 = std.time.microTimestamp();
+    // const decompressed_size = try compressor.decompressBase(
     const decompressed_size = try compressor.decompress(
         output_buffer, 
         decompressed_buffer,
@@ -352,12 +441,18 @@ test "compression" {
     const elapsed2 = @as(u64, @intCast(final2 - init2));
     const mb_s2 = file_size / elapsed2;
 
-    std.debug.print("MB/s:            {d}\n", .{mb_s2});
     std.debug.assert(decompressed_size == file_size);
+
+    std.debug.print("MB/s:            {d}\n", .{mb_s2});
+    std.debug.print("Decompressed size: {d}\n", .{decompressed_size});
 
     for (0..file_size) |i| {
         if (input_buffer[i] != decompressed_buffer[i]) {
             std.debug.print("Mismatch at index {d}\n", .{i});
+            std.debug.print("{c} != {c}\n", .{input_buffer[i], decompressed_buffer[i]});
+
+            std.debug.print("INPUT:        {s}", .{input_buffer[0..i]}); std.debug.print(" | {s}\n", .{input_buffer[i..i+64]});
+            std.debug.print("DECOMPRESSED: {s}", .{decompressed_buffer[0..i]}); std.debug.print(" | {s}\n", .{decompressed_buffer[i..i+64]});
             return error.InvalidHuffmanCode;
         }
     }
