@@ -213,6 +213,8 @@ pub const HuffmanCompressor = struct {
         input_buffer: []u8,
         output_buffer: []u8,
     ) !usize {
+        @memset(output_buffer, 0);
+
         var output_buffer_bit_idx: usize = 0;
 
         const output_buffer_u32 = @as(
@@ -233,7 +235,14 @@ pub const HuffmanCompressor = struct {
             output_buffer_bit_idx += nbits;
         }
 
-        return try std.math.divCeil(usize, output_buffer_bit_idx, 8);
+        const compressed_size = try std.math.divCeil(usize, output_buffer_bit_idx, 8);
+        const last_word_idx   = try std.math.divCeil(usize, output_buffer_bit_idx, 32);
+
+        for (0.., output_buffer_u32[0..last_word_idx]) |idx, word| {
+            output_buffer_u32[idx] = @byteSwap(word);
+        }
+
+        return compressed_size;
     }
 
     fn decompress(
@@ -245,11 +254,6 @@ pub const HuffmanCompressor = struct {
         var compressed_buffer_bit_idx: usize = 0;
 
         var current_node_idx = self.root_node_idx;
-
-        const decompressed_buffer_u32 = @as(
-            [*]u32,
-            @ptrCast(@alignCast(decompressed_buffer.ptr)),
-        );
 
         while (compressed_buffer_bit_idx < compressed_buffer.len * 8) {
             const node = self.huffman_nodes[current_node_idx];
@@ -272,7 +276,7 @@ pub const HuffmanCompressor = struct {
             }
 
             const byte = compressed_buffer[byte_idx];
-            const bit = (byte >> @truncate(bit_in_byte)) & 1;
+            const bit = (byte >> @truncate(7 - bit_in_byte)) & 1;
 
             compressed_buffer_bit_idx += 1;
 
@@ -338,7 +342,6 @@ test "compression" {
     std.debug.print("MB/s:            {d}\n", .{mb_s});
 
     const decompressed_buffer = try arena.allocator().alloc(u8, file_size);
-    @memset(decompressed_buffer, 0);
 
     const init2 = std.time.microTimestamp();
     const decompressed_size = try compressor.decompress(
