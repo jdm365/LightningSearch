@@ -203,7 +203,7 @@ pub export fn getQueryHandlerLocal() *anyopaque {
 }
 
 pub export fn scanFile(query_handler: *QueryHandlerLocal) void {
-    std.debug.assert(query_handler.index_manager.col_map.num_keys > 0);
+    std.debug.assert(query_handler.index_manager.columns.num_keys > 0);
 
     query_handler.index_manager.scanFile() catch {
         @panic("Error scanning file.\n");
@@ -211,7 +211,7 @@ pub export fn scanFile(query_handler: *QueryHandlerLocal) void {
 }
 
 pub export fn indexFile(query_handler: *QueryHandlerLocal) void {
-    std.debug.assert(query_handler.index_manager.search_cols.count() > 0);
+    std.debug.assert(query_handler.index_manager.search_col_idxs.items.len > 0);
 
     query_handler.index_manager.indexFile() catch {
         @panic("Error indexing file.\n");
@@ -222,7 +222,7 @@ pub export fn addSearchCol(
     query_handler: *QueryHandlerLocal,
     col_name: [*:0]const u8,
 ) void {
-    const upper_col = query_handler.index_manager.string_arena.allocator().dupe(
+    const upper_col = query_handler.index_manager.stringArena().dupe(
         u8,
         std.mem.span(col_name)
     ) catch @panic("Failed to copy input string.\n");
@@ -254,19 +254,19 @@ export fn search(
 
     const m = &query_handler.index_manager;
 
-    std.debug.assert(m.*.results_arrays[0].count < MAX_NUM_RESULTS);
-    result_count.* = @intCast(m.*.results_arrays[0].count);
+    std.debug.assert(m.*.query_state.results_arrays[0].count < MAX_NUM_RESULTS);
+    result_count.* = @intCast(m.*.query_state.results_arrays[0].count);
 
     for (0..result_count.*) |doc_idx| {
-        const num_cols = m.*.col_map.num_keys;
+        const num_cols = m.*.columns.num_keys;
         const start_idx = doc_idx * num_cols;
         const end_idx   = start_idx + num_cols;
 
         for (0.., start_idx..end_idx) |col_idx, i| {
-            start_positions[i] = m.*.result_positions[doc_idx][col_idx].start_pos;
-            lengths[i] = m.*.result_positions[doc_idx][col_idx].field_len;
+            start_positions[i] = m.*.query_state.result_positions[doc_idx][col_idx].start_pos;
+            lengths[i]         = m.*.query_state.result_positions[doc_idx][col_idx].field_len;
         }
-        result_buffers[doc_idx] = m.*.result_strings[doc_idx].items.ptr;
+        result_buffers[doc_idx] = m.*.query_state.result_strings[doc_idx].items.ptr;
     }
 }
 
@@ -275,10 +275,10 @@ pub export fn getColumnNames(
     column_names: [*][*:0]u8,
     num_columns: *u32,
     ) void {
-    const num_cols = query_handler.index_manager.col_map.num_keys;
+    const num_cols = query_handler.index_manager.columns.num_keys;
     num_columns.* = @truncate(num_cols);
 
-    var iterator = query_handler.index_manager.col_map.iterator() catch {
+    var iterator = query_handler.index_manager.columns.iterator() catch {
         @panic("Error reading column keys.\n");
     };
     defer iterator.deinit();
@@ -294,16 +294,15 @@ pub export fn getSearchColumns(
     query_handler: *const QueryHandlerLocal, 
     col_mask: [*]u8,
     ) void {
-    var iterator = query_handler.index_manager.search_cols.iterator();
-    while (iterator.next()) |item| {
-        col_mask[item.key_ptr.*] = 1;
+    for (query_handler.index_manager.search_col_idxs.items) |idx| {
+        col_mask[idx] = 1;
     }
 }
 
 pub export fn getIndexingProgress(
     query_handler: *const QueryHandlerLocal, 
     ) u64 {
-    return @intCast(query_handler.index_manager.last_progress);
+    return @intCast(query_handler.index_manager.indexing_state.last_progress);
 }
 
 pub export fn getNumDocs(

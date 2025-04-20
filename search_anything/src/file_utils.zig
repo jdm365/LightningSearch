@@ -439,7 +439,7 @@ pub fn ParquetTokenStream(comptime token_t: type) type {
         column_buffer: [*]u8,
         current_idx: usize,
 
-        search_col_idxs: []usize,
+        search_col_idxs: []u32,
         min_row_group: usize,
         max_row_group: usize,
         current_row_group: usize,
@@ -451,7 +451,7 @@ pub fn ParquetTokenStream(comptime token_t: type) type {
             output_filename: []const u8,
             allocator: std.mem.Allocator,
 
-            search_col_idxs: []usize,
+            search_col_idxs: []u32,
             min_row_group: usize,
             max_row_group: usize,
         ) !Self {

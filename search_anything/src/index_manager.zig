@@ -35,6 +35,23 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_NUM_RESULTS = 1000;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
+
+pub inline fn findSorted(
+    comptime T: type,
+    sorted_arr: []T,
+    key: T,
+) !usize {
+    var val: T = sorted_arr[0];
+    var idx: usize = 0;
+    while (val <= key) {
+        if (val == key) return idx;
+        idx += 1;
+        val = sorted_arr[idx];
+    }
+
+    return error.KeyNotFound;
+}
+
 const Column = struct {
     csv_idx: usize,
     II_idx: usize,
@@ -49,93 +66,135 @@ const ColTokenPair = struct {
 
 pub const IndexManager = struct {
     index_partitions: []BM25Partition,
-    input_filename: []const u8,
-    input_filename_c: [*:0]const u8,
-    pq_file_handle: *anyopaque,
+    allocators: Allocators,
+    file_data: FileData,
+    query_state: QueryState,
+    indexing_state: IndexingState,
 
-    num_row_groups: usize,
-    gpa: *std.heap.GeneralPurposeAllocator(.{.thread_safe = true}),
-    string_arena: *std.heap.ArenaAllocator,
-    scratch_arena: *std.heap.ArenaAllocator,
-    search_cols: std.AutoHashMap(u32, u32),
-    col_map: RadixTrie(u32),
-    file_handles: []std.fs.File,
-    tmp_dir: []const u8,
-    result_positions: [MAX_NUM_RESULTS][]TermPos,
-    result_strings: [MAX_NUM_RESULTS]std.ArrayList(u8),
-    results_arrays: []SortedScoreMultiArray(QueryResult),
-    // thread_pool: std.Thread.Pool,
-    header_bytes: usize,
-    last_progress: usize,
-    file_type: FileType,
+    columns: RadixTrie(u32),
+    search_col_idxs: std.ArrayListUnmanaged(u32),
+
+    const Allocators = struct {
+        gpa: *std.heap.GeneralPurposeAllocator(.{.thread_safe = true}),
+        string_arena: *std.heap.ArenaAllocator,
+        scratch_arena: *std.heap.ArenaAllocator,
+    };
+
+    const PQData = struct {
+        pq_file_handle: *anyopaque,
+        num_row_groups: usize,
+    };
+
+    const FileData = struct {
+        input_filename_c: [*:0]const u8,
+        tmp_dir: []const u8,
+        file_handles: []std.fs.File,
+        file_type: FileType,
+        pq_data: ?PQData = null,
+        header_bytes: ?usize = null,
+
+        inline fn inputFilename(self: *FileData) []const u8 {
+            return std.mem.span(self.input_filename_c);
+        }
+    };
+
+    const QueryState = struct {
+        result_positions: [MAX_NUM_RESULTS][]TermPos,
+        result_strings: [MAX_NUM_RESULTS]std.ArrayListUnmanaged(u8),
+        results_arrays: []SortedScoreMultiArray(QueryResult),
+        // thread_pool: std.Thread.Pool,
+    };
+
+    const IndexingState = struct {
+        last_progress: usize,
+    };
 
     pub fn init(allocator: std.mem.Allocator) !IndexManager {
         var manager = IndexManager{
             .index_partitions = undefined,
-            .input_filename = undefined,
-            .input_filename_c = undefined,
-            .pq_file_handle = undefined,
 
-            .num_row_groups = undefined,
-            .gpa = try allocator.create(std.heap.GeneralPurposeAllocator(.{.thread_safe = true})),
-            .string_arena = try allocator.create(std.heap.ArenaAllocator),
-            .scratch_arena = try allocator.create(std.heap.ArenaAllocator),
-            .search_cols = undefined,
-            .col_map = undefined,
-            .tmp_dir = undefined,
-            .file_handles = undefined,
-            .result_positions = undefined,
-            .result_strings = undefined,
-            .results_arrays = undefined,
-            .header_bytes = undefined,
-            .last_progress = 0,
-            .file_type = undefined,
+            .allocators = Allocators{
+                .gpa           = try allocator.create(std.heap.GeneralPurposeAllocator(.{.thread_safe = true})),
+                .string_arena  = try allocator.create(std.heap.ArenaAllocator),
+                .scratch_arena = try allocator.create(std.heap.ArenaAllocator),
+            },
+
+            .file_data = FileData{
+                .input_filename_c = undefined,
+                .tmp_dir          = undefined,
+                .file_handles     = undefined,
+                .file_type        = undefined,
+            },
+
+            .query_state = QueryState{
+                .result_positions = undefined,
+                .result_strings   = undefined,
+                .results_arrays   = undefined,
+            },
+
+            .indexing_state = IndexingState{
+                .last_progress = 0,
+            },
+
+            .columns         = undefined,
+            .search_col_idxs = std.ArrayListUnmanaged(u32){},
         };
-        manager.gpa.* = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){};
-        manager.string_arena.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        manager.scratch_arena.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        manager.allocators.gpa.*           = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){};
+        manager.allocators.string_arena.*  = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        manager.allocators.scratch_arena.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
-        manager.search_cols = std.AutoHashMap(u32, u32).init(manager.gpa.allocator());
-        try manager.search_cols.ensureTotalCapacity(50);
-
-        manager.col_map = try RadixTrie(u32).initCapacity(
-            manager.gpa.allocator(),
-            // std.heap.c_allocator,
-            16384,
+        try manager.search_col_idxs.ensureTotalCapacity(
+            manager.allocators.gpa.allocator(), 
+            4,
+            );
+        manager.columns = try RadixTrie(u32).initCapacity(
+            manager.allocators.gpa.allocator(),
+            32,
             );
 
         return manager;
     }
+
+    pub inline fn gpa(self: *IndexManager) std.mem.Allocator {
+        return self.allocators.gpa.allocator();
+    }
+
+    pub inline fn scratchArena(self: *IndexManager) std.mem.Allocator {
+        return self.allocators.scratch_arena.allocator();
+    }
+
+    pub inline fn stringArena(self: *IndexManager) std.mem.Allocator {
+        return self.allocators.string_arena.allocator();
+    }
     
     pub fn deinit(self: *IndexManager, allocator: std.mem.Allocator) !void {
         for (0..self.index_partitions.len) |idx| {
-            self.results_arrays[idx].deinit();
+            self.query_state.results_arrays[idx].deinit(self.gpa());
             self.index_partitions[idx].deinit();
-            self.file_handles[idx].close();
+            self.file_data.file_handles[idx].close();
         }
-        self.gpa.allocator().free(self.file_handles);
-        self.gpa.allocator().free(self.index_partitions);
-        self.gpa.allocator().free(self.results_arrays);
+        self.gpa().free(self.file_handles);
+        self.gpa().free(self.index_partitions);
+        self.gpa().free(self.results_arrays);
 
         try std.fs.cwd().deleteTree(self.tmp_dir);
 
         for (0..MAX_NUM_RESULTS) |idx| {
             if (self.result_positions[idx].len > 0) {
-                self.gpa.allocator().free(self.result_positions[idx]);
+                self.gpa().free(self.result_positions[idx]);
             }
-            self.result_strings[idx].deinit();
         }
 
-        self.search_cols.deinit();
-        self.col_map.deinit();
+        self.search_col_idxs.deinit(self.gpa());
+        self.columns.deinit();
 
-        self.string_arena.deinit();
-        self.scratch_arena.deinit();
-        _ = self.gpa.deinit();
+        self.allocator.string_arena.deinit();
+        self.allocator.scratch_arena.deinit();
+        _ = self.allocators.gpa.deinit();
 
-        allocator.destroy(self.gpa);
-        allocator.destroy(self.string_arena);
-        allocator.destroy(self.scratch_arena);
+        allocator.destroy(self.allocators.gpa);
+        allocator.destroy(self.allocator.string_arena);
+        allocator.destroy(self.allocator.scratch_arena);
     }
 
 
@@ -144,26 +203,25 @@ pub const IndexManager = struct {
         filename: []const u8,
         filetype: FileType,
         ) !void {
-        self.input_filename = try self.string_arena.allocator().dupe(u8, filename);
-        self.input_filename_c = try self.string_arena.allocator().dupeZ(u8, filename);
-        self.file_type = filetype;
+        self.file_data.input_filename_c = try self.stringArena().dupeZ(u8, filename);
+        self.file_data.file_type = filetype;
 
         const file_hash = blk: {
             var hash: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
-            std.crypto.hash.sha2.Sha256.hash(self.input_filename, &hash, .{});
+            std.crypto.hash.sha2.Sha256.hash(self.file_data.inputFilename(), &hash, .{});
             break :blk hash;
         };
-        self.tmp_dir = try std.fmt.allocPrint(
-            self.string_arena.allocator(),
+        self.file_data.tmp_dir = try std.fmt.allocPrint(
+            self.stringArena(),
             ".{x:0>32}", .{std.fmt.fmtSliceHexLower(file_hash[0..16])}
             );
 
-        std.fs.cwd().makeDir(self.tmp_dir) catch {
-            try std.fs.cwd().deleteTree(self.tmp_dir);
-            try std.fs.cwd().makeDir(self.tmp_dir);
+        std.fs.cwd().makeDir(self.file_data.tmp_dir) catch {
+            try std.fs.cwd().deleteTree(self.file_data.tmp_dir);
+            try std.fs.cwd().makeDir(self.file_data.tmp_dir);
         };
 
-        switch (self.file_type) {
+        switch (self.file_data.file_type) {
             FileType.CSV => {
                 try self.readCSVHeader();
            },
@@ -173,30 +231,27 @@ pub const IndexManager = struct {
             FileType.PARQUET => {
                 var cols = std.ArrayListUnmanaged([]const u8){};
                 try pq.getParquetCols(
-                    self.string_arena.allocator(),
+                    self.stringArena(),
                     &cols,
-                    self.input_filename_c,
+                    self.file_data.input_filename_c,
                     );
                 for (0.., cols.items) |idx, col| {
-                    try self.col_map.insert(col, @truncate(idx));
+                    try self.columns.insert(col, @truncate(idx));
                 }
 
-                self.pq_file_handle = pq.getSerializedReader(self.input_filename_c);
+                self.file_data.pq_data.?.pq_file_handle = pq.getSerializedReader(self.file_data.input_filename_c);
             },
         }
 
-        std.debug.assert(self.col_map.num_keys > 0);
+        std.debug.assert(self.columns.num_keys > 0);
 
         for (0..MAX_NUM_RESULTS) |idx| {
-            self.result_positions[idx] = try self.gpa.allocator().alloc(
+            self.query_state.result_positions[idx] = try self.gpa().alloc(
                 TermPos, 
-                self.col_map.num_keys,
+                self.columns.num_keys,
                 );
-            self.result_strings[idx] = try std.ArrayList(u8).initCapacity(
-                self.gpa.allocator(), 
-                4096,
-                );
-            try self.result_strings[idx].resize(4096);
+            self.query_state.result_strings[idx] = std.ArrayListUnmanaged(u8){};
+            try self.query_state.result_strings[idx].resize(self.gpa(), 4096);
         }
     }
 
@@ -204,22 +259,19 @@ pub const IndexManager = struct {
         self: *IndexManager,
         col_name: []const u8,
     ) !void {
-        const col_name_upper = try self.string_arena.allocator().dupe(u8, col_name);
+        const col_name_upper = try self.stringArena().dupe(u8, col_name);
 
         string_utils.stringToUpper(
             col_name_upper.ptr,
             col_name_upper.len,
         );
 
-        switch (self.file_type) {
+        switch (self.file_data.file_type) {
             FileType.CSV, FileType.JSON, FileType.PARQUET => {
-                const matched_col_idx = self.col_map.find(col_name_upper) catch {
+                const matched_col_idx = self.columns.find(col_name_upper) catch {
                     return error.ColumnNotFound;
                 };
-                try self.search_cols.put(
-                    @truncate(matched_col_idx),
-                    @truncate(self.search_cols.count()),
-                );
+                try self.search_col_idxs.append(self.stringArena(), @truncate(matched_col_idx));
             },
         }
     }
@@ -266,13 +318,8 @@ pub const IndexManager = struct {
 
     fn readCSVHeader(self: *IndexManager) !void {
         // TODO: Add `has_header` option.
-        defer {
-            _ = self.scratch_arena.reset(.retain_capacity);
-        }
 
-        var col_idx: usize = 0;
-
-        const file = try std.fs.cwd().openFile(self.input_filename, .{});
+        const file = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
         defer file.close();
 
         const file_size = try file.getEndPos();
@@ -288,102 +335,46 @@ pub const IndexManager = struct {
         defer std.posix.munmap(f_data);
 
         var term: [MAX_TERM_LENGTH]u8 = undefined;
-        var cntr: usize = 0;
 
         var byte_idx: usize = 0;
-        line: while (true) {
-            const is_quoted = f_data[byte_idx] == '"';
-            byte_idx += @intFromBool(is_quoted);
+        while (true) {
+            const prev_byte_idx = byte_idx;
+            csv._iterFieldCSV(f_data, &byte_idx);
+            const field_len = byte_idx - 1 - prev_byte_idx;
 
-            while (true) {
-                std.debug.assert(cntr < MAX_TERM_LENGTH);
+            @memcpy(term[0..field_len], f_data[prev_byte_idx..byte_idx-1]);
+            std.debug.assert(field_len < MAX_TERM_LENGTH);
 
-                if (is_quoted) {
+            string_utils.stringToUpper(term[0..], field_len);
+            try self.columns.insert(
+                term[0..field_len],
+                @truncate(self.columns.num_keys),
+                );
 
-                    if (f_data[byte_idx] == '"') {
-                        std.debug.assert(cntr < MAX_TERM_LENGTH);
-                        byte_idx += 2;
-                        if (f_data[byte_idx - 1] != '"') {
-                            try self.col_map.insert(
-                                term[0..cntr],
-                                @truncate(self.col_map.num_keys),
-                                );
-
-                            cntr = 0;
-                            byte_idx += 1;
-                            col_idx += 1;
-                            continue :line;
-                        }
-                    } else {
-                        // Add char.
-                        term[cntr] = std.ascii.toUpper(f_data[byte_idx]);
-                        cntr += 1;
-                        byte_idx += 1;
-                    }
-
-                } else {
-
-                    switch (f_data[byte_idx]) {
-                        ',', '\n' => {
-                            // ADD TERM.
-                            if (cntr > 0) {
-                                try self.col_map.insert(
-                                    term[0..cntr],
-                                    @truncate(self.col_map.num_keys),
-                                    );
-                            } else {
-                                const col_name = try std.fmt.allocPrint(
-                                    self.scratch_arena.allocator(), 
-                                    "col_{d}", 
-                                    .{col_idx}
-                                    );
-                                try self.col_map.insert(
-                                    col_name,
-                                    @truncate(self.col_map.num_keys),
-                                    );
-                            }
-
-                            if (f_data[byte_idx] == '\n') {
-                                std.debug.assert(cntr > 0);
-                                self.header_bytes = byte_idx + 1;
-                                return;
-                            }
-
-                            cntr = 0;
-                            byte_idx += 1;
-                            col_idx += 1;
-                            continue :line;
-                        },
-                        else => {
-                            // Add char
-                            term[cntr] = std.ascii.toUpper(f_data[byte_idx]);
-                            cntr += 1;
-                            byte_idx += 1;
-                        }
-                    }
-                }
-            }
-
-            col_idx += 1;
+            if (f_data[byte_idx - 1] == '\n') break;
         }
-
-        self.header_bytes = byte_idx;
+        self.file_data.header_bytes = byte_idx;
     }
 
 
     fn getUniqueJSONKeys(self: *IndexManager, max_docs_scan: usize) !void {
-        const file = try std.fs.cwd().openFile(self.input_filename, .{});
+        defer {
+            _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        }
+
+        const file = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
         defer file.close();
 
         const file_size = try file.getEndPos();
 
         var buffered_reader = try DoubleBufferedReader.init(
-            self.gpa.allocator(),
+            // self.gpa(),
+            self.scratchArena(),
             file,
             '{',
             false,
         );
-        defer buffered_reader.deinit(self.gpa.allocator());
+        // defer buffered_reader.deinit(self.gpa.allocator());
 
         var doc_id:   usize = 0;
         var file_pos: usize = 0;
@@ -397,7 +388,7 @@ pub const IndexManager = struct {
             try json.iterLineJSONGetUniqueKeys(
                 buffer,
                 &index,
-                &self.col_map,
+                &self.columns,
                 true,
                 );
             file_pos += index;
@@ -409,21 +400,26 @@ pub const IndexManager = struct {
 
 
     fn scanJSONFile(self: *IndexManager) !void {
-        const file = try std.fs.cwd().openFile(self.input_filename, .{});
+        defer {
+            _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        }
+
+        const file = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
         defer file.close();
 
         const file_size = try file.getEndPos();
 
         var buffered_reader = try DoubleBufferedReader.init(
-            self.gpa.allocator(),
+            // self.gpa(),
+            self.scratchArena(),
             file,
             '{',
             false,
         );
-        defer buffered_reader.deinit(self.gpa.allocator());
+        // defer buffered_reader.deinit(self.gpa.allocator());
 
-        var line_offsets = std.ArrayList(usize).init(self.gpa.allocator());
-        defer line_offsets.deinit();
+        var line_offsets = std.ArrayList(usize).init(self.scratchArena());
+        // defer line_offsets.deinit();
 
         try line_offsets.ensureTotalCapacity(16384);
 
@@ -451,7 +447,9 @@ pub const IndexManager = struct {
 
         const end_time = std.time.milliTimestamp();
         const execution_time_ms = end_time - start_time;
-        const mb_s: usize = @as(usize, @intFromFloat(0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(execution_time_ms))));
+        const mb_s: usize = @intFromFloat(
+            0.001 * @as(f32, @floatFromInt(file_size)) / @as(f32, @floatFromInt(execution_time_ms))
+            );
 
         std.debug.print("Read {d} lines in {d}ms\n", .{line_offsets.items.len - 1, execution_time_ms});
         std.debug.print("{d}MB/s\n", .{mb_s});
@@ -467,12 +465,11 @@ pub const IndexManager = struct {
         final_chunk_size: usize,
         num_partitions: usize,
         num_search_cols: usize,
-        search_col_idxs: []usize,
         total_docs_read: *AtomicCounter,
         progress_bar: *progress.ProgressBar,
     ) !void {
         defer {
-            _ = self.scratch_arena.reset(.retain_capacity);
+            _ = self.allocators.scratch_arena.reset(.retain_capacity);
         }
 
         var timer = try std.time.Timer.start();
@@ -487,12 +484,12 @@ pub const IndexManager = struct {
         const end_doc   = start_doc + current_chunk_size;
 
         const output_filename = try std.fmt.allocPrint(
-            self.scratch_arena.allocator(), 
+            self.scratchArena(), 
             "{s}/output_{d}", 
-            .{self.tmp_dir, partition_idx}
+            .{self.file_data.tmp_dir, partition_idx}
             );
 
-        const end_token: u8 = switch (self.file_type) {
+        const end_token: u8 = switch (self.file_data.file_type) {
             FileType.CSV => '\n',
             FileType.JSON => '{',
             FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
@@ -500,24 +497,16 @@ pub const IndexManager = struct {
 
         const start_byte = self.index_partitions[partition_idx].line_offsets[0];
         var token_stream = try TokenStream(file_utils.token_32t).init(
-            self.input_filename,
+            self.file_data.inputFilename(),
             output_filename,
-            self.gpa.allocator(),
-            search_col_idxs.len,
+            self.gpa(),
+            self.search_col_idxs.items.len,
             start_byte,
             end_token,
         );
         defer token_stream.deinit();
 
         var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
-
-        // Sort search_col_idxs
-        std.sort.insertion(
-            usize, 
-            search_col_idxs, 
-            {}, 
-            comptime std.sort.asc(usize),
-            );
 
         var byte_idx: usize = 0;
 
@@ -532,21 +521,21 @@ pub const IndexManager = struct {
                 prev_doc_id = doc_id;
                 timer.reset();
 
-                self.last_progress = current_docs_read;
+                self.indexing_state.last_progress = current_docs_read;
 
                 if (partition_idx == 0) {
                     progress_bar.update(current_docs_read);
-                    self.last_progress = current_docs_read;
+                    self.indexing_state.last_progress = current_docs_read;
                 }
             }
 
-            switch (self.file_type) {
+            switch (self.file_data.file_type) {
                 FileType.CSV => {
                     var search_col_idx: usize = 0;
                     var prev_col:       usize = 0;
 
                     while (search_col_idx < num_search_cols) {
-                        for (prev_col..search_col_idxs[search_col_idx]) |_| {
+                        for (prev_col..self.search_col_idxs.items[search_col_idx]) |_| {
                             try token_stream.iterFieldCSV(&byte_idx);
                         }
 
@@ -559,11 +548,11 @@ pub const IndexManager = struct {
                             );
 
                         // Add one because we just iterated over the last field.
-                        prev_col = search_col_idxs[search_col_idx] + 1;
+                        prev_col = self.search_col_idxs.items[search_col_idx] + 1;
                         search_col_idx += 1;
                     }
 
-                    for (prev_col..self.col_map.num_keys) |_| {
+                    for (prev_col..self.columns.num_keys) |_| {
                         try token_stream.iterFieldCSV(&byte_idx);
                     }
                 },
@@ -577,8 +566,8 @@ pub const IndexManager = struct {
                     while (true) {
                         self.index_partitions[partition_idx].processDocRfc8259(
                             &token_stream,
-                            &self.col_map,
-                            &self.search_cols,
+                            &self.columns,
+                            &self.search_col_idxs,
                             &byte_idx,
                             @intCast(doc_id), 
                             &terms_seen_bitset,
@@ -604,30 +593,29 @@ pub const IndexManager = struct {
         partition_idx: usize,
         min_row_group: usize,
         max_row_group: usize,
-        search_col_idxs: []usize,
         total_docs_read: *AtomicCounter,
         progress_bar: *progress.ProgressBar,
     ) !void {
-        std.debug.assert(self.file_type == .PARQUET);
+        std.debug.assert(self.file_data.file_type == .PARQUET);
 
         defer {
-            _ = self.scratch_arena.reset(.retain_capacity);
+            _ = self.allocators.scratch_arena.reset(.retain_capacity);
         }
 
         var timer = try std.time.Timer.start();
         const interval_ns: u64 = 1_000_000_000 / 30;
 
         const output_filename = try std.fmt.allocPrint(
-            self.scratch_arena.allocator(), 
+            self.scratchArena(), 
             "{s}/output_{d}", 
-            .{self.tmp_dir, partition_idx}
+            .{self.file_data.tmp_dir, partition_idx}
             );
 
         var token_stream = try ParquetTokenStream(file_utils.token_32t).init(
-            self.input_filename_c,
+            self.file_data.input_filename_c,
             output_filename,
-            self.gpa.allocator(),
-            search_col_idxs,
+            self.gpa(),
+            self.search_col_idxs.items,
             min_row_group,
             max_row_group,
         );
@@ -651,11 +639,11 @@ pub const IndexManager = struct {
                     docs_read = 0;
                     timer.reset();
 
-                    self.last_progress = current_docs_read;
+                    self.indexing_state.last_progress = current_docs_read;
 
                     if (partition_idx == 0) {
                         progress_bar.update(current_docs_read);
-                        self.last_progress = current_docs_read;
+                        self.indexing_state.last_progress = current_docs_read;
                     }
                 }
 
@@ -683,7 +671,7 @@ pub const IndexManager = struct {
     }
 
     pub fn scanFile(self: *IndexManager) !void {
-        switch (self.file_type) {
+        switch (self.file_data.file_type) {
             FileType.CSV => try self.scanCSVFile(),
             FileType.JSON => try self.scanJSONFile(),
             FileType.PARQUET => try self.scanParquetFile(),
@@ -691,23 +679,23 @@ pub const IndexManager = struct {
     }
 
     pub fn scanCSVFile(self: *IndexManager) !void {
-        const file = try std.fs.cwd().openFile(self.input_filename, .{});
+        const file = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
         defer file.close();
 
         const file_size = try file.getEndPos();
 
         var buffered_reader = try DoubleBufferedReader.init(
-            self.gpa.allocator(),
+            self.gpa(),
             file,
             '\n',
             false,
         );
-        defer buffered_reader.deinit(self.gpa.allocator());
+        defer buffered_reader.deinit(self.gpa());
 
-        var line_offsets = std.ArrayList(usize).init(self.gpa.allocator());
+        var line_offsets = std.ArrayList(usize).init(self.gpa());
         defer line_offsets.deinit();
 
-        var file_pos: usize = self.header_bytes;
+        var file_pos: usize = self.file_data.header_bytes.?;
 
         // Time read.
         const start_time = std.time.microTimestamp();
@@ -725,10 +713,7 @@ pub const IndexManager = struct {
             }
 
             var index: usize = 0;
-            try csv.iterLineCSV(
-                buffer,
-                &index,
-                );
+            try csv.iterLineCSV(buffer, &index);
             file_pos += index;
         }
         try line_offsets.append(file_size);
@@ -745,30 +730,31 @@ pub const IndexManager = struct {
     }
 
     pub fn scanParquetFile(self: *IndexManager) !void {
-        self.num_row_groups = pq.getNumRowGroupsParquet(
-            self.input_filename_c,
+        self.file_data.pq_data.?.num_row_groups = pq.getNumRowGroupsParquet(
+            self.file_data.input_filename_c,
         );
+        const num_rg = self.file_data.pq_data.?.num_row_groups;
 
         const num_partitions = @min(
             try std.Thread.getCpuCount(), 
-            self.num_row_groups,
+            num_rg,
             );
         // const num_partitions = 1;
 
-        self.file_handles     = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
-        self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
-        self.results_arrays   = try self.gpa.allocator().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
+        self.file_data.file_handles     = try self.gpa().alloc(std.fs.File, num_partitions);
+        self.index_partitions           = try self.gpa().alloc(BM25Partition, num_partitions);
+        self.query_state.results_arrays = try self.gpa().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
 
         for (0..num_partitions) |idx| {
-            self.file_handles[idx]   = try std.fs.cwd().openFile(self.input_filename, .{});
-            self.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa.allocator(), MAX_NUM_RESULTS);
-            const min_row_group = @divFloor(idx * self.num_row_groups, num_partitions);
+            self.file_data.file_handles[idx]     = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
+            self.query_state.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa(), MAX_NUM_RESULTS);
+            const min_row_group = @divFloor(idx * num_rg, num_partitions);
             const max_row_group = @min(
-                @divFloor((idx + 1) * self.num_row_groups, num_partitions), 
-                self.num_row_groups,
+                @divFloor((idx + 1) * num_rg, num_partitions), 
+                num_rg,
                 );
 
-            var row_group_sizes = try self.string_arena.allocator().alloc(
+            var row_group_sizes = try self.stringArena().alloc(
                 usize, 
                 max_row_group - min_row_group,
                 );
@@ -776,14 +762,14 @@ pub const IndexManager = struct {
             var num_rows: usize = 0;
             for (0.., min_row_group..max_row_group) |i, rg_idx| {
                 row_group_sizes[i] = pq.getNumRowGroupsInRowGroup(
-                    self.input_filename_c,
+                    self.file_data.input_filename_c,
                     rg_idx,
                 );
                 num_rows += row_group_sizes[i];
             }
 
             self.index_partitions[idx] = try BM25Partition.init(
-                self.gpa.allocator(), 
+                self.gpa(), 
                 1, 
                 row_group_sizes,
                 num_rows,
@@ -796,25 +782,27 @@ pub const IndexManager = struct {
         line_offsets: *const std.ArrayList(usize),
         file_size: usize,
         ) !void {
+        defer {
+            _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        }
 
         const num_lines = line_offsets.items.len - 1;
 
         const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
         // const num_partitions = 1;
 
-        self.file_handles     = try self.gpa.allocator().alloc(std.fs.File, num_partitions);
-        self.index_partitions = try self.gpa.allocator().alloc(BM25Partition, num_partitions);
-        self.results_arrays   = try self.gpa.allocator().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
+        self.file_data.file_handles     = try self.gpa().alloc(std.fs.File, num_partitions);
+        self.index_partitions           = try self.gpa().alloc(BM25Partition, num_partitions);
+        self.query_state.results_arrays = try self.gpa().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
         for (0..num_partitions) |idx| {
-            self.file_handles[idx]   = try std.fs.cwd().openFile(self.input_filename, .{});
-            self.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa.allocator(), MAX_NUM_RESULTS);
+            self.file_data.file_handles[idx]     = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
+            self.query_state.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa(), MAX_NUM_RESULTS);
         }
 
-        const chunk_size: usize = num_lines / num_partitions;
+        const chunk_size:       usize = num_lines / num_partitions;
         const final_chunk_size: usize = chunk_size + (num_lines % num_partitions);
 
-        var partition_boundaries = std.ArrayList(usize).init(self.gpa.allocator());
-        defer partition_boundaries.deinit();
+        var partition_boundaries = std.ArrayList(usize).init(self.scratchArena());
 
         for (0..num_partitions) |i| {
             try partition_boundaries.append(line_offsets.items[i * chunk_size]);
@@ -827,11 +815,11 @@ pub const IndexManager = struct {
             const start = i * chunk_size;
             const end   = start + current_chunk_size + 1;
 
-            const partition_line_offsets = try self.gpa.allocator().alloc(usize, current_chunk_size + 1);
+            const partition_line_offsets = try self.gpa().alloc(usize, current_chunk_size + 1);
             @memcpy(partition_line_offsets, line_offsets.items[start..end]);
 
             self.index_partitions[i] = try BM25Partition.init(
-                self.gpa.allocator(), 
+                self.gpa(), 
                 1, 
                 partition_line_offsets,
                 partition_line_offsets.len,
@@ -844,11 +832,17 @@ pub const IndexManager = struct {
 
 
     pub fn indexFile(self: *IndexManager) !void {
+        defer {
+            _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        }
+
         const num_partitions = self.index_partitions.len;
         std.debug.print("Indexing {d} partitions\n", .{num_partitions});
 
         var num_lines: usize = 0;
-        if (self.file_type == .PARQUET) {
+        var num_rg:    usize = 0;
+        if (self.file_data.file_type == .PARQUET) {
+            num_rg = self.file_data.pq_data.?.num_row_groups;
             for (self.index_partitions) |*p| {
                 for (p.line_offsets) |size| {
                     num_lines += size;
@@ -862,36 +856,23 @@ pub const IndexManager = struct {
 
         const time_start = std.time.milliTimestamp();
 
-        var threads = try self.gpa.allocator().alloc(std.Thread, num_partitions);
-        defer self.gpa.allocator().free(threads);
+        var threads = try self.scratchArena().alloc(std.Thread, num_partitions);
 
         var total_docs_read = AtomicCounter.init(0);
         var progress_bar = progress.ProgressBar.init(num_lines);
 
-        const num_search_cols = self.search_cols.count();
-        const search_col_idxs = try self.gpa.allocator().alloc(
-            usize, 
-            num_search_cols
-            );
-        defer self.gpa.allocator().free(search_col_idxs);
+        const num_search_cols = self.search_col_idxs.items.len;
         
-        var map_it = self.search_cols.iterator();
-        var idx: usize = 0;
-        while (map_it.next()) |*item| {
-            search_col_idxs[idx] = item.key_ptr.*;
-            idx += 1;
-        }
-
         for (0..num_partitions) |partition_idx| {
             try self.index_partitions[partition_idx].resizeNumSearchCols(
                 num_search_cols
                 );
 
-            if (self.file_type == .PARQUET) {
-                const min_row_group = @divFloor(partition_idx * self.num_row_groups, num_partitions);
+            if (self.file_data.file_type == .PARQUET) {
+                const min_row_group = @divFloor(partition_idx * num_rg, num_partitions);
                 const max_row_group = @min(
-                    @divFloor((partition_idx + 1) * self.num_row_groups, num_partitions), 
-                    self.num_row_groups,
+                    @divFloor((partition_idx + 1) * num_rg, num_partitions), 
+                    num_rg,
                     );
 
                 threads[partition_idx] = try std.Thread.spawn(
@@ -902,7 +883,6 @@ pub const IndexManager = struct {
                         partition_idx,
                         min_row_group,
                         max_row_group,
-                        search_col_idxs,
                         &total_docs_read,
                         &progress_bar,
                         },
@@ -918,7 +898,6 @@ pub const IndexManager = struct {
                         self.index_partitions[num_partitions - 1].line_offsets.len - 1,
                         num_partitions,
                         num_search_cols,
-                        search_col_idxs,
                         &total_docs_read,
                         &progress_bar,
                         },
@@ -947,12 +926,15 @@ pub const IndexManager = struct {
         partition_idx: usize,
         query_results: *SortedScoreMultiArray(QueryResult),
     ) !void {
-        const num_search_cols = self.search_cols.count();
+        defer {
+            _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        }
+
+        const num_search_cols = self.search_col_idxs.items.len;
         std.debug.assert(num_search_cols > 0);
 
         // Tokenize query.
-        var tokens = std.ArrayList(ColTokenPair).init(self.gpa.allocator());
-        defer tokens.deinit();
+        var tokens = std.ArrayList(ColTokenPair).init(self.scratchArena());
 
         var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
 
@@ -960,11 +942,15 @@ pub const IndexManager = struct {
 
         var query_it = queries.iterator();
         while (query_it.next()) |entry| {
-            const col_idx = self.col_map.find(entry.key_ptr.*) catch {
+            const col_idx = self.columns.find(entry.key_ptr.*) catch {
                 std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
                 continue;
             };
-            const II_idx = self.search_cols.get(col_idx).?;
+            const II_idx = try findSorted(
+                u32,
+                self.search_col_idxs.items,
+                col_idx,
+            );
 
             var term_len: usize = 0;
 
@@ -1067,14 +1053,13 @@ pub const IndexManager = struct {
         doc_scores.clearRetainingCapacity();
 
         var sorted_scores = try SortedScoreMultiArray(void).init(
-            self.gpa.allocator(), 
+            self.scratchArena(), 
             query_results.capacity,
             );
-        defer sorted_scores.deinit();
+        // defer sorted_scores.deinit();
 
 
-        var token_scores = try self.gpa.allocator().alloc(f32, tokens.items.len);
-        defer self.gpa.allocator().free(token_scores);
+        var token_scores = try self.scratchArena().alloc(f32, tokens.items.len);
 
         var idf_remaining: f32 = 0.0;
         for (0.., tokens.items) |idx, _token| {
@@ -1133,7 +1118,10 @@ pub const IndexManager = struct {
 
                     // Phrase boost.
                     const last_term_pos = result.*.term_pos;
-                    result.*.score += @as(f32, @floatFromInt(@intFromBool((term_pos == last_term_pos + 1) and (II_idx == last_II_idx) and (doc_id == prev_doc_id)))) * score * 0.75;
+                    const do_phrase_boost = (term_pos == last_term_pos + 1) and 
+                                            (II_idx == last_II_idx) and 
+                                            (doc_id == prev_doc_id);
+                    result.*.score += @as(f32, @floatFromInt(@intFromBool(do_phrase_boost))) * score * 0.75;
 
                     // Does tf scoring effectively.
                     result.*.score += score;
@@ -1191,6 +1179,10 @@ pub const IndexManager = struct {
         k: usize,
         boost_factors: std.ArrayList(f32),
     ) !void {
+        defer {
+            _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        }
+
         if (k > MAX_NUM_RESULTS) {
             std.debug.print("k must be less than or equal to {d}\n", .{MAX_NUM_RESULTS});
             return error.InvalidArgument;
@@ -1198,12 +1190,12 @@ pub const IndexManager = struct {
 
         // Init num_partitions threads.
         const num_partitions = self.index_partitions.len;
-        var threads = try self.gpa.allocator().alloc(std.Thread, num_partitions);
-        defer self.gpa.allocator().free(threads);
+        var threads = try self.gpa().alloc(std.Thread, num_partitions);
+        defer self.gpa().free(threads);
 
         for (0..num_partitions) |partition_idx| {
-            self.results_arrays[partition_idx].clear();
-            self.results_arrays[partition_idx].resize(k);
+            self.query_state.results_arrays[partition_idx].clear();
+            self.query_state.results_arrays[partition_idx].resize(k);
             threads[partition_idx] = try std.Thread.spawn(
                 .{},
                 queryPartitionOrdered,
@@ -1212,7 +1204,7 @@ pub const IndexManager = struct {
                     queries,
                     boost_factors,
                     partition_idx,
-                    &self.results_arrays[partition_idx],
+                    &self.query_state.results_arrays[partition_idx],
                 },
             );
         }
@@ -1222,30 +1214,36 @@ pub const IndexManager = struct {
         }
 
         if (self.index_partitions.len > 1) {
-            for (self.results_arrays[1..]) |*tr| {
+            for (self.query_state.results_arrays[1..]) |*tr| {
                 for (0.., tr.items[0..tr.count]) |idx, r| {
-                    self.results_arrays[0].insert(r, tr.scores[idx]);
+                    self.query_state.results_arrays[0].insert(r, tr.scores[idx]);
                 }
             }
         }
-        std.debug.print("FOUND {d} results\n", .{self.results_arrays[0].count});
-        if (self.results_arrays[0].count == 0) return;
+        std.debug.print("FOUND {d} results\n", .{self.query_state.results_arrays[0].count});
+        if (self.query_state.results_arrays[0].count == 0) return;
 
-        for (0..self.results_arrays[0].count) |idx| {
-            const result = self.results_arrays[0].items[idx];
+        for (0..self.query_state.results_arrays[0].count) |idx| {
+            const result = self.query_state.results_arrays[0].items[idx];
 
-            std.debug.assert(self.result_strings[idx].capacity > 0);
+            std.debug.assert(self.query_state.result_strings[idx].capacity > 0);
             try self.index_partitions[result.partition_idx].fetchRecords(
-                self.result_positions[idx],
-                &self.file_handles[result.partition_idx],
-                // self.input_filename_c,
-                self.pq_file_handle,
+                self.query_state.result_positions[idx],
+                &self.file_data.file_handles[result.partition_idx],
+                self.file_data.pq_data.?.pq_file_handle,
                 result,
-                &self.result_strings[idx],
-                self.file_type,
-                &self.col_map,
+                &self.query_state.result_strings[idx],
+                self.file_data.file_type,
+                &self.columns,
             );
-            std.debug.print("Score {d}: {d} - Doc id: {d}\n", .{idx, self.results_arrays[0].scores[idx], self.results_arrays[0].items[idx].doc_id});
+            std.debug.print(
+                "Score {d}: {d} - Doc id: {d}\n", 
+                .{
+                    idx, 
+                    self.query_state.results_arrays[0].scores[idx], 
+                    self.query_state.results_arrays[0].items[idx].doc_id,
+                }
+                );
         }
         std.debug.print("\n", .{});
     }

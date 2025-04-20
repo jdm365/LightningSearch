@@ -10,6 +10,7 @@ const json = @import("json.zig");
 const pq   = @import("parquet.zig");
 const string_utils = @import("string_utils.zig");
 const file_utils = @import("file_utils.zig");
+const findSorted = @import("index_manager.zig").findSorted;
 
 const TermPos = @import("server.zig").TermPos;
 const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
@@ -924,7 +925,7 @@ pub const BM25Partition = struct {
         self: *BM25Partition,
         token_stream: *TokenStream(file_utils.token_32t),
         trie: *const RadixTrie(u32),
-        search_col_mapping: *const std.AutoHashMap(u32, u32),
+        search_col_idxs: *const std.ArrayListUnmanaged(u32),
         byte_idx: *usize,
         doc_id: u32,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
@@ -951,7 +952,11 @@ pub const BM25Partition = struct {
             byte_idx.* += buffer_idx;
             return;
         }
-        const II_idx = search_col_mapping.get(matched_col_idx) orelse {
+        const II_idx = findSorted(
+            u32,
+            search_col_idxs.items,
+            matched_col_idx,
+        ) catch {
             try json.iterValueJSON(buffer, &buffer_idx);
             if (buffer[buffer_idx] == '}') {
                 buffer_idx += 1;
@@ -1371,11 +1376,11 @@ pub const BM25Partition = struct {
     pub fn fetchRecords(
         self: *BM25Partition,
         result_positions: []TermPos,
-        file_handle: *std.fs.File, // TODO: Consider replacing this with union of parquet open reader obj.
+        file_handle: *std.fs.File,
         // filename: [*:0]const u8,
         pq_file_handle: *anyopaque,
         query_result: QueryResult,
-        record_string: *std.ArrayList(u8),
+        record_string: *std.ArrayListUnmanaged(u8),
         file_type: file_utils.FileType,
         reference_dict: *const RadixTrie(u32),
     ) !void {
@@ -1398,7 +1403,7 @@ pub const BM25Partition = struct {
 
         try file_handle.seekTo(byte_offset);
         if (bytes_to_read > record_string.capacity) {
-            try record_string.resize(bytes_to_read);
+            try record_string.resize(self.allocator, bytes_to_read);
         }
         _ = try file_handle.read(record_string.items[0..bytes_to_read]);
 
@@ -1428,7 +1433,7 @@ pub const BM25Partition = struct {
         // filename: [*:0]const u8,
         pq_file_handle: *anyopaque,
         query_result: QueryResult,
-        record_string: *std.ArrayList(u8),
+        record_string: *std.ArrayListUnmanaged(u8),
     ) !void {
         // TODO: Batch together all requests to a particular row group.
         var row_count_rem: usize = @intCast(query_result.doc_id);

@@ -1035,6 +1035,65 @@ pub fn RadixTrie(comptime T: type) type {
             return error.ValueNotFound;
         }
 
+        pub fn findPtr(self: *const Self, key: []const u8) !*T {
+            var node = self.nodes.items[0];
+            var key_idx: usize = 0;
+
+            while (key_idx < key.len) {
+                if (node.edge_data.num_edges == 0) {
+                    return error.ValueNotFound;
+                }
+
+                const shift_len:  usize = @intCast(self.char_freq_table[key[key_idx]]);
+                const access_idx: usize = @popCount(
+                    node.getMaskU64() & FULL_MASKS[shift_len]
+                    );
+
+                if (shift_len > 0) {
+                    std.debug.assert(access_idx < node.edge_data.num_edges);
+
+                    const current_edge   = node.edges[access_idx];
+                    const current_prefix = current_edge.str[0..current_edge.len];
+
+                    if (std.mem.startsWith(u8, key[key_idx..], current_prefix)) {
+                        node     = self.nodes.items[current_edge.child_idx];
+                        key_idx += current_prefix.len;
+
+                        if ((key_idx == key.len) and (node.getMaskU64() & BITMASKS[0] == 1)) {
+                            return &node.value;
+                        }
+                    } else {
+                        return error.ValueNotFound;
+                    }
+                } else {
+                    var matched = false;
+                    for (access_idx..node.edge_data.num_edges) |edge_idx| {
+                        const current_edge   = node.edges[edge_idx];
+                        const current_prefix = current_edge.str[0..current_edge.len];
+
+                        if (std.mem.startsWith(u8, key[key_idx..], current_prefix)) {
+                            matched = true;
+                            node     = self.nodes.items[node.edges[edge_idx].child_idx];
+                            key_idx += current_prefix.len;
+
+                            if ((key_idx == key.len) and (node.getMaskU64() & BITMASKS[0] == 1)) {
+                                return &node.value;
+                            }
+                            break;
+                        }
+                    }
+                    if (!matched) {
+                        return error.ValueNotFound;
+                    }
+                }
+
+            }
+            if (node.getMaskU64() & BITMASKS[0] == 1) {
+                return &node.value;
+            }
+            return error.ValueNotFound;
+        }
+
         fn gatherChildrenBFS(
             self: *Self, 
             starting_node: *const NodeType, 
