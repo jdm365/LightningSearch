@@ -12,6 +12,8 @@ typedef struct Field Field;
 
 typedef struct ParquetReaderHandle ParquetReaderHandle;
 
+void convert_parquet_to_csv(const uint8_t *_parquet_path);
+
 /**
  * Create a new Parquet reader and return a handle to it.
  *

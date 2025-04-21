@@ -15,7 +15,9 @@ pub fn build(b: *std.Build) void {
     });
     shared_lib.linkLibC();
     shared_lib.linkSystemLibrary("unwind");
+    shared_lib.addIncludePath(b.path("lib"));
     shared_lib.addObjectFile(b.path("lib/libparquet_bindings.a"));
+    shared_lib.installHeader(b.path("lib/parquet_bindings.h"), "parquet_bindings.h");
 
     const shared_install = b.addInstallArtifact(shared_lib, .{});
     b.installArtifact(shared_lib);
@@ -28,7 +30,9 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibC();
     exe.linkSystemLibrary("unwind");
+    exe.addIncludePath(b.path("lib"));
     exe.addObjectFile(b.path("lib/libparquet_bindings.a"));
+    exe.installHeader(b.path("lib/parquet_bindings.h"), "parquet_bindings.h");
 
     b.installArtifact(exe);
 
