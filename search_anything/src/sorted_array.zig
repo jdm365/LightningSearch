@@ -207,7 +207,7 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
 
         allocator: std.mem.Allocator,
         items: []T,
-        scores: []f32,
+        scores: []align(32)f32,
         count: usize,
         capacity: usize,
 
@@ -224,7 +224,11 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
 
             const alloc_size: usize = std.mem.alignForward(usize, capacity + 1, 8);
 
-            const scores = try allocator.alloc(f32, alloc_size);
+            const scores = try allocator.alignedAlloc(
+                f32, 
+                .@"32",
+                alloc_size,
+                );
             @memset(scores, std.math.floatMin(f32));
 
             return Self{
@@ -283,7 +287,10 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
 
         inline fn linearSearchSIMD(self: *Self, score: f32) usize {
             const new_score     = @as(@Vector(8, f32), @splat(score));
-            var existing_scores = @as(*const @Vector(8, f32), @ptrCast(@alignCast(self.scores.ptr)));
+            var existing_scores = @as(
+                *const @Vector(8, f32), 
+                @ptrCast(self.scores.ptr),
+                );
 
             const simd_limit: usize = @divFloor(self.count, 8) + 
                                       8 * @as(usize, @intFromBool(self.count % 8 != 0));

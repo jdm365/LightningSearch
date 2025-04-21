@@ -926,15 +926,11 @@ pub const IndexManager = struct {
         partition_idx: usize,
         query_results: *SortedScoreMultiArray(QueryResult),
     ) !void {
-        defer {
-            _ = self.allocators.scratch_arena.reset(.retain_capacity);
-        }
-
         const num_search_cols = self.search_col_idxs.items.len;
         std.debug.assert(num_search_cols > 0);
 
         // Tokenize query.
-        var tokens = std.ArrayList(ColTokenPair).init(self.scratchArena());
+        var tokens = std.ArrayListUnmanaged(ColTokenPair){};
 
         var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
 
@@ -951,6 +947,7 @@ pub const IndexManager = struct {
                 self.search_col_idxs.items,
                 col_idx,
             );
+            std.debug.assert(II_idx <= self.index_partitions.len);
 
             var term_len: usize = 0;
 
@@ -965,10 +962,12 @@ pub const IndexManager = struct {
                             self.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
                             );
                         if (token != null) {
-                            try tokens.append(ColTokenPair{
-                                .col_idx = @intCast(II_idx),
-                                .term_pos = term_pos,
-                                .token = token.?,
+                            try tokens.append(
+                                self.gpa(),
+                                ColTokenPair{
+                                .col_idx       = @intCast(II_idx),
+                                .term_pos      = term_pos,
+                                .token         = token.?,
                                 .shallow_query = false,
                             });
                             term_pos += 1;
@@ -987,10 +986,12 @@ pub const IndexManager = struct {
                                 self.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
                                 );
                             if (token != null) {
-                                try tokens.append(ColTokenPair{
-                                    .col_idx = @intCast(II_idx),
-                                    .term_pos = term_pos,
-                                    .token = token.?,
+                                try tokens.append(
+                                    self.gpa(),
+                                    ColTokenPair{
+                                    .col_idx       = @intCast(II_idx),
+                                    .term_pos      = term_pos,
+                                    .token         = token.?,
                                     .shallow_query = false,
                                 });
                                 term_pos += 1;
@@ -1008,7 +1009,9 @@ pub const IndexManager = struct {
                     self.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
                     );
                 if (token != null) {
-                    try tokens.append(ColTokenPair{
+                    try tokens.append(
+                        self.gpa(),
+                        ColTokenPair{
                         .col_idx = @intCast(II_idx),
                         .term_pos = term_pos,
                         .token = token.?,
@@ -1053,18 +1056,19 @@ pub const IndexManager = struct {
         doc_scores.clearRetainingCapacity();
 
         var sorted_scores = try SortedScoreMultiArray(void).init(
-            self.scratchArena(), 
+            self.gpa(), 
             query_results.capacity,
             );
-        // defer sorted_scores.deinit();
+        defer sorted_scores.deinit();
 
 
-        var token_scores = try self.scratchArena().alloc(f32, tokens.items.len);
+        var token_scores = try self.gpa().alloc(f32, tokens.items.len);
 
         var idf_remaining: f32 = 0.0;
         for (0.., tokens.items) |idx, _token| {
             const II_idx: usize = @intCast(_token.col_idx);
-            const token:   usize = @intCast(_token.token);
+            const token:  usize = @intCast(_token.token);
+            std.debug.assert(II_idx <= self.index_partitions.len);
 
             const II = &self.index_partitions[partition_idx].II[II_idx];
 
@@ -1086,11 +1090,13 @@ pub const IndexManager = struct {
 
         var last_II_idx: usize = 0;
         for (0..tokens.items.len) |idx| {
-            const score = token_scores[idx];
+            const score          = token_scores[idx];
             const col_score_pair = tokens.items[idx];
 
             const II_idx = @as(usize, @intCast(col_score_pair.col_idx));
-            const token   = @as(usize, @intCast(col_score_pair.token));
+            const token  = @as(usize, @intCast(col_score_pair.token));
+
+            std.debug.assert(II_idx <= self.index_partitions.len);
 
             const II = &self.index_partitions[partition_idx].II[II_idx];
 
@@ -1102,13 +1108,10 @@ pub const IndexManager = struct {
                 );
 
             var prev_doc_id: u32 = std.math.maxInt(u32);
-            // for (II.postings[offset..last_offset]) |doc_token| {
             for (
                 II.postings.doc_ids[offset..last_offset],
                 II.postings.term_positions[offset..last_offset],
                 ) |doc_id, term_pos| {
-                // const doc_id:   u32 = @intCast(doc_token.doc_id);
-                // const term_pos: u8  = @intCast(doc_token.term_pos);
 
                 prev_doc_id = doc_id;
 
@@ -1227,15 +1230,23 @@ pub const IndexManager = struct {
             const result = self.query_state.results_arrays[0].items[idx];
 
             std.debug.assert(self.query_state.result_strings[idx].capacity > 0);
-            try self.index_partitions[result.partition_idx].fetchRecords(
-                self.query_state.result_positions[idx],
-                &self.file_data.file_handles[result.partition_idx],
-                self.file_data.pq_data.?.pq_file_handle,
-                result,
-                &self.query_state.result_strings[idx],
-                self.file_data.file_type,
-                &self.columns,
-            );
+            if (self.file_data.file_type == .PARQUET) {
+                try self.index_partitions[result.partition_idx].fetchRecordsParquet(
+                    self.query_state.result_positions[idx],
+                    self.file_data.pq_data.?.pq_file_handle,
+                    result,
+                    &self.query_state.result_strings[idx],
+                );
+            } else {
+                try self.index_partitions[result.partition_idx].fetchRecords(
+                    self.query_state.result_positions[idx],
+                    &self.file_data.file_handles[result.partition_idx],
+                    result,
+                    &self.query_state.result_strings[idx],
+                    self.file_data.file_type,
+                    &self.columns,
+                );
+            }
             std.debug.print(
                 "Score {d}: {d} - Doc id: {d}\n", 
                 .{

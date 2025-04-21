@@ -1377,27 +1377,15 @@ pub const BM25Partition = struct {
         self: *BM25Partition,
         result_positions: []TermPos,
         file_handle: *std.fs.File,
-        // filename: [*:0]const u8,
-        pq_file_handle: *anyopaque,
         query_result: QueryResult,
         record_string: *std.ArrayListUnmanaged(u8),
         file_type: file_utils.FileType,
         reference_dict: *const RadixTrie(u32),
     ) !void {
-        if (file_type == .PARQUET) {
-            try self.fetchRecordsParquet(
-                result_positions,
-                // filename,
-                pq_file_handle,
-                query_result,
-                record_string,
-            );
-            return;
-        }
-        const doc_id: usize = @intCast(query_result.doc_id);
-        const byte_offset = self.line_offsets[doc_id];
+        const doc_id:    usize = @intCast(query_result.doc_id);
+        const byte_offset      = self.line_offsets[doc_id];
         const next_byte_offset = self.line_offsets[doc_id + 1];
-        const bytes_to_read = next_byte_offset - byte_offset;
+        const bytes_to_read    = next_byte_offset - byte_offset;
 
         std.debug.assert(bytes_to_read < MAX_LINE_LENGTH);
 
@@ -1430,7 +1418,6 @@ pub const BM25Partition = struct {
     pub fn fetchRecordsParquet(
         self: *BM25Partition,
         result_positions: []TermPos,
-        // filename: [*:0]const u8,
         pq_file_handle: *anyopaque,
         query_result: QueryResult,
         record_string: *std.ArrayListUnmanaged(u8),
