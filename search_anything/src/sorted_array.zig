@@ -206,7 +206,7 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
         const Self = @This();
 
         allocator: std.mem.Allocator,
-        items: []T,
+        items: []align(32)T,
         scores: []align(32)f32,
         count: usize,
         capacity: usize,
@@ -223,6 +223,7 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
             }
 
             const alloc_size: usize = std.mem.alignForward(usize, capacity + 1, 8);
+            // const alloc_size: usize = std.mem.alignForward(usize, capacity + 1, 32);
 
             const scores = try allocator.alignedAlloc(
                 f32, 
@@ -233,7 +234,7 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
 
             return Self{
                 .allocator = allocator,
-                .items = try allocator.alloc(T, alloc_size),
+                .items = try allocator.alignedAlloc(T, .@"32", alloc_size),
                 .scores = scores,
                 .count = 0,
                 .capacity = capacity,
@@ -322,14 +323,19 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
 
             self.count = @min(self.count + 1, self.capacity);
 
-            var idx: usize = self.count;
-            while (idx > insert_idx) {
-                self.items[idx] = self.items[idx - 1];
-                self.scores[idx] = self.scores[idx - 1];
-                idx -= 1;
-            }
+            std.mem.copyBackwards(
+                T,
+                self.items[insert_idx..self.count],
+                self.items[insert_idx + 1..self.count + 1],
+                );
+            std.mem.copyBackwards(
+                f32,
+                self.scores[insert_idx..self.count],
+                self.scores[insert_idx + 1..self.count + 1],
+                );
 
-            self.items[insert_idx] = value;
+
+            self.items[insert_idx]  = value;
             self.scores[insert_idx] = score;
         }
 
