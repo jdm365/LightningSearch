@@ -102,7 +102,7 @@ pub const IndexManager = struct {
         result_positions: [MAX_NUM_RESULTS][]TermPos,
         result_strings: [MAX_NUM_RESULTS]std.ArrayListUnmanaged(u8),
         results_arrays: []SortedScoreMultiArray(QueryResult),
-        // thread_pool: std.Thread.Pool,
+        thread_pool: std.Thread.Pool,
     };
 
     const IndexingState = struct {
@@ -130,6 +130,7 @@ pub const IndexManager = struct {
                 .result_positions = undefined,
                 .result_strings   = undefined,
                 .results_arrays   = undefined,
+                .thread_pool      = undefined,
             },
 
             .indexing_state = IndexingState{
@@ -187,6 +188,7 @@ pub const IndexManager = struct {
 
         self.search_col_idxs.deinit(self.gpa());
         self.columns.deinit();
+        self.query_state.thread_pool.deinit();
 
         self.allocator.string_arena.deinit();
         self.allocator.scratch_arena.deinit();
@@ -368,13 +370,11 @@ pub const IndexManager = struct {
         const file_size = try file.getEndPos();
 
         var buffered_reader = try DoubleBufferedReader.init(
-            // self.gpa(),
             self.scratchArena(),
             file,
             '{',
             false,
         );
-        // defer buffered_reader.deinit(self.gpa.allocator());
 
         var doc_id:   usize = 0;
         var file_pos: usize = 0;
@@ -410,16 +410,13 @@ pub const IndexManager = struct {
         const file_size = try file.getEndPos();
 
         var buffered_reader = try DoubleBufferedReader.init(
-            // self.gpa(),
             self.scratchArena(),
             file,
             '{',
             false,
         );
-        // defer buffered_reader.deinit(self.gpa.allocator());
 
         var line_offsets = std.ArrayList(usize).init(self.scratchArena());
-        // defer line_offsets.deinit();
 
         try line_offsets.ensureTotalCapacity(16384);
 
@@ -917,6 +914,14 @@ pub const IndexManager = struct {
         const time_end = std.time.milliTimestamp();
         const time_diff = time_end - time_start;
         std.debug.print("Processed {d} documents in {d}ms\n", .{_total_docs_read, time_diff});
+
+        // Init thread pool.
+        try self.query_state.thread_pool.init(
+            .{
+                .allocator = self.gpa(),
+                .n_jobs = self.index_partitions.len,
+            },
+        );
     }
 
     pub fn queryPartitionOrdered(
@@ -925,7 +930,8 @@ pub const IndexManager = struct {
         boost_factors: std.ArrayList(f32),
         partition_idx: usize,
         query_results: *SortedScoreMultiArray(QueryResult),
-    ) !void {
+    // ) !void {
+    ) void {
         const num_search_cols = self.search_col_idxs.items.len;
         std.debug.assert(num_search_cols > 0);
 
@@ -942,11 +948,15 @@ pub const IndexManager = struct {
                 std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
                 continue;
             };
-            const II_idx = try findSorted(
+            const II_idx = findSorted(
                 u32,
                 self.search_col_idxs.items,
                 col_idx,
-            );
+            ) catch {
+                std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
+                @panic("Column not found. Check findSorted function and self.columns map.");
+            };
+
             std.debug.assert(II_idx <= self.index_partitions.len);
 
             var term_len: usize = 0;
@@ -962,14 +972,16 @@ pub const IndexManager = struct {
                             self.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
                             );
                         if (token != null) {
-                            try tokens.append(
+                            tokens.append(
                                 self.gpa(),
                                 ColTokenPair{
                                 .col_idx       = @intCast(II_idx),
                                 .term_pos      = term_pos,
                                 .token         = token.?,
                                 .shallow_query = false,
-                            });
+                            }) catch {
+                                @panic("Failed to append token");
+                            };
                             term_pos += 1;
                             empty_query = false;
                         }
@@ -986,14 +998,16 @@ pub const IndexManager = struct {
                                 self.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
                                 );
                             if (token != null) {
-                                try tokens.append(
+                                tokens.append(
                                     self.gpa(),
                                     ColTokenPair{
                                     .col_idx       = @intCast(II_idx),
                                     .term_pos      = term_pos,
                                     .token         = token.?,
                                     .shallow_query = false,
-                                });
+                                }) catch {
+                                    @panic("Failed to append token");
+                                };
                                 term_pos += 1;
                                 empty_query = false;
                             }
@@ -1009,7 +1023,7 @@ pub const IndexManager = struct {
                     self.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
                     );
                 if (token != null) {
-                    try tokens.append(
+                    tokens.append(
                         self.gpa(),
                         ColTokenPair{
                         .col_idx = @intCast(II_idx),
@@ -1017,7 +1031,9 @@ pub const IndexManager = struct {
                         .token = token.?,
                         .shallow_query = false,
                         // .shallow_query = tokens.items.len > 0,
-                    });
+                    }) catch {
+                        @panic("Failed to append token");
+                    };
 
                     // Add prefix matches.
                     // var trie = self.index_partitions[partition_idx].II[II_idx].prt_vocab;
@@ -1055,14 +1071,18 @@ pub const IndexManager = struct {
         var doc_scores: *std.AutoHashMap(u32, ScoringInfo) = &self.index_partitions[partition_idx].doc_score_map;
         doc_scores.clearRetainingCapacity();
 
-        var sorted_scores = try SortedScoreMultiArray(void).init(
+        var sorted_scores = SortedScoreMultiArray(void).init(
             self.gpa(), 
             query_results.capacity,
-            );
+            ) catch {
+                @panic("Failed to init sorted scores");
+            };
         defer sorted_scores.deinit();
 
 
-        var token_scores = try self.gpa().alloc(f32, tokens.items.len);
+        var token_scores = self.gpa().alloc(f32, tokens.items.len) catch {
+            @panic("Failed to alloc token scores");
+        };
 
         var idf_remaining: f32 = 0.0;
         for (0.., tokens.items) |idx, _token| {
@@ -1145,13 +1165,15 @@ pub const IndexManager = struct {
                             }
                         }
 
-                        try doc_scores.put(
+                        doc_scores.put(
                             doc_id,
                             ScoringInfo{
                                 .score = score,
                                 .term_pos = term_pos,
                             }
-                        );
+                        ) catch {
+                            @panic("Failed to put doc score");
+                        };
                         sorted_scores.insert({}, score);
                     }
                 }
@@ -1193,14 +1215,14 @@ pub const IndexManager = struct {
 
         // Init num_partitions threads.
         const num_partitions = self.index_partitions.len;
-        var threads = try self.gpa().alloc(std.Thread, num_partitions);
-        defer self.gpa().free(threads);
+
+        var wg: std.Thread.WaitGroup = .{};
 
         for (0..num_partitions) |partition_idx| {
             self.query_state.results_arrays[partition_idx].clear();
             self.query_state.results_arrays[partition_idx].resize(k);
-            threads[partition_idx] = try std.Thread.spawn(
-                .{},
+            self.query_state.thread_pool.spawnWg(
+                &wg,
                 queryPartitionOrdered,
                 .{
                     self,
@@ -1212,9 +1234,7 @@ pub const IndexManager = struct {
             );
         }
 
-        for (threads) |thread| {
-            thread.join();
-        }
+        wg.wait();
 
         if (self.index_partitions.len > 1) {
             for (self.query_state.results_arrays[1..]) |*tr| {
