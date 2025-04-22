@@ -16,7 +16,7 @@ pub const TermPos = struct {
 
 pub fn csvLineToJson(
     allocator: std.mem.Allocator,
-    csv_line: []const u8,
+    csv_line: std.ArrayListUnmanaged(u8),
     term_positions: []TermPos,
     columns: std.ArrayList([]const u8),
 ) !std.json.Value {
@@ -24,7 +24,9 @@ pub fn csvLineToJson(
     errdefer json_object.deinit();
 
     for (0.., term_positions) |idx, entry| {
-        const field_value = csv_line[entry.start_pos..entry.start_pos + entry.field_len];
+        const field_value = csv_line.items[
+            entry.start_pos..entry.start_pos + entry.field_len
+        ];
         const column_name = columns.items[idx];
 
         try json_object.put(
@@ -42,7 +44,7 @@ pub fn csvLineToJson(
 
 pub fn csvLineToJsonScore(
     allocator: std.mem.Allocator,
-    csv_line: []const u8,
+    csv_line: std.ArrayListUnmanaged(u8),
     term_positions: []TermPos,
     columns: std.ArrayList([]const u8),
     score: f32,
@@ -54,7 +56,9 @@ pub fn csvLineToJsonScore(
     for (0.., term_positions) |i, entry| {
         const column_name = columns.items[i];
         if (std.mem.eql(u8, "SCORE", column_name)) continue;
-        const field_value = csv_line[entry.start_pos..entry.start_pos + entry.field_len];
+        const field_value = csv_line.items[
+            entry.start_pos..entry.start_pos + entry.field_len
+        ];
 
         try json_object.put(
             column_name,
@@ -317,7 +321,8 @@ pub export fn getNumDocs(
 
 
 test "csv_parse" {
-    const csv_line = "26859,13859,1,1,WoM27813813,006,Under My Skin (You Go To My Head (Set One)),02:44,David McAlmont,You_Go_To_My_Head_(Set_One),2005,,";
+    const _csv_line = "26859,13859,1,1,WoM27813813,006,Under My Skin (You Go To My Head (Set One)),02:44,David McAlmont,You_Go_To_My_Head_(Set_One),2005,,";
+    const csv_line = std.ArrayListUnmanaged(u8).fromOwnedSlice(_csv_line);
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -326,7 +331,7 @@ test "csv_parse" {
     const result_positions = try allocator.alloc(TermPos, 12);
     defer allocator.free(result_positions);
 
-    try csv.parseRecordCSV(csv_line, result_positions);
+    try csv.parseRecordCSV(_csv_line, result_positions);
 
     var columns = std.ArrayList([]const u8).init(allocator);
     defer columns.deinit();

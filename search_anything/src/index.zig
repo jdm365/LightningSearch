@@ -1298,11 +1298,11 @@ pub const BM25Partition = struct {
                     II.postings.term_positions[postings_offset] = @intCast(term_pos);
                 }
             }
-            // std.debug.assert(
-                // (current_doc_id == II.num_docs - 1)
-                    // or
-                // (current_doc_id == II.num_docs)
-            // );
+            std.debug.assert(
+                (current_doc_id == II.num_docs - 1)
+                    or
+                (current_doc_id == II.num_docs)
+            );
         }
     }
 

@@ -133,6 +133,29 @@ pub fn main() !void {
     std.debug.print("QUERIES PER SECOND: {d}\n", .{qps});
     std.debug.print("================================================\n", .{});
 
+    std.debug.print("Query:         {any}\n", .{query_map});
+    std.debug.print("Boost factors: {any}\n", .{boost_factors});
+
+    var column_names = std.ArrayList([]const u8).init(index_manager.stringArena());
+    try column_names.resize(index_manager.columns.num_keys);
+
+    var it = try index_manager.columns.iterator();
+    while (try it.next()) |val| {
+        column_names.items[val.value] = val.key;
+    }
+
+    for (0..10) |idx| {
+        const line = try server.csvLineToJson(
+            index_manager.scratchArena(),
+            index_manager.query_state.result_strings[idx],
+            index_manager.query_state.result_positions[idx],
+            column_names,
+        );
+
+        std.debug.print("Result {d}\n", .{idx});
+        line.dump();
+    }
+
     // server.init_allocators();
     // const QH = @as(*server.QueryHandlerLocal, @alignCast(@ptrCast(server.getQueryHandlerLocal())));
     // QH.readHeader(filename);
