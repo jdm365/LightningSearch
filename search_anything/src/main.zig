@@ -133,8 +133,10 @@ pub fn main() !void {
     std.debug.print("QUERIES PER SECOND: {d}\n", .{qps});
     std.debug.print("================================================\n", .{});
 
-    std.debug.print("Query:         {any}\n", .{query_map});
-    std.debug.print("Boost factors: {any}\n", .{boost_factors});
+    var query_it = query_map.iterator();
+    while (query_it.next()) |val| {
+        std.debug.print("Query - {s}: {s}\n", .{val.key_ptr.*, val.value_ptr.*});
+    }
 
     var column_names = std.ArrayList([]const u8).init(index_manager.stringArena());
     try column_names.resize(index_manager.columns.num_keys);

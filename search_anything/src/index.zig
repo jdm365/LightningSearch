@@ -773,7 +773,7 @@ pub const BM25Partition = struct {
                             );
                     },
                     else => {
-                        cntr += 1;
+                        cntr       += 1;
                         buffer_idx += 1;
                     },
                 }
@@ -1267,7 +1267,9 @@ pub const BM25Partition = struct {
 
             while (num_tokens == TOKEN_STREAM_CAPACITY) {
                 var _num_tokens: [4]u8 = undefined;
-                _ = try output_file.read(std.mem.asBytes(&_num_tokens));
+                bytes_read = try output_file.read(std.mem.asBytes(&_num_tokens));
+                std.debug.assert(bytes_read == 4);
+
                 num_tokens = std.mem.readInt(u32, &_num_tokens, ENDIANESS);
 
                 bytes_read = try output_file.read(
@@ -1294,7 +1296,7 @@ pub const BM25Partition = struct {
 
                     term_cntr[term_id] += 1;
 
-                    II.postings.doc_ids[postings_offset] = @intCast(current_doc_id);
+                    II.postings.doc_ids[postings_offset]        = @truncate(current_doc_id);
                     II.postings.term_positions[postings_offset] = @intCast(term_pos);
                 }
             }

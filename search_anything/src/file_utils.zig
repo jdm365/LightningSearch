@@ -362,9 +362,9 @@ pub fn TokenStream(comptime token_t: type) type {
             comptime std.debug.assert(token_t == token_32t);
 
             self.tokens[search_col_idx][self.num_terms[search_col_idx]] = token_t{
-                .new_doc = @intFromBool(new_doc),
+                .new_doc  = @intFromBool(new_doc),
                 .term_pos = @truncate(term_pos),
-                .term_id = @truncate(term_id),
+                .term_id  = @truncate(term_id),
             };
             self.num_terms[search_col_idx] += 1;
 
@@ -378,6 +378,8 @@ pub fn TokenStream(comptime token_t: type) type {
             term_pos: u64,
             term_id: u32,
         ) !void {
+            comptime std.debug.assert(token_t == token_64t);
+
             self.tokens[0][self.num_terms[0]] = token_t{
                 .term_pos = @truncate(term_pos),
                 .term_id = @truncate(term_id),
@@ -391,15 +393,16 @@ pub fn TokenStream(comptime token_t: type) type {
 
         pub inline fn flushTokenStream(self: *Self, search_col_idx: usize) !void {
             const bytes_to_write = @sizeOf(token_t) * self.num_terms[search_col_idx];
-            _ = try self.output_files[search_col_idx].write(
+            var bytes_written = try self.output_files[search_col_idx].write(
                 std.mem.asBytes(&self.num_terms[search_col_idx]),
                 );
-            const bytes_written = try self.output_files[search_col_idx].write(
+            std.debug.assert(bytes_written == 4);
+
+            bytes_written = try self.output_files[search_col_idx].write(
                 std.mem.sliceAsBytes(
                     self.tokens[search_col_idx][0..self.num_terms[search_col_idx]]
                     )
                 );
-            
             std.debug.assert(bytes_written == bytes_to_write);
 
             self.num_terms[search_col_idx] = 0;

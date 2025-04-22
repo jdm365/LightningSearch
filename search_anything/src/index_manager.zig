@@ -35,6 +35,9 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_NUM_RESULTS = 1000;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
+// const MAX_NUM_THREADS: usize = 1;
+const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+
 
 pub inline fn findSorted(
     comptime T: type,
@@ -732,8 +735,13 @@ pub const IndexManager = struct {
         );
         const num_rg = self.file_data.pq_data.?.num_row_groups;
 
+        // const num_partitions = @min(
+            // try std.Thread.getCpuCount(), 
+            // num_rg,
+            // );
         const num_partitions = @min(
             try std.Thread.getCpuCount(), 
+            MAX_NUM_THREADS,
             num_rg,
             );
         // const num_partitions = 1;
@@ -777,7 +785,7 @@ pub const IndexManager = struct {
     fn initPartitions(
         self: *IndexManager, 
         line_offsets: *const std.ArrayList(usize),
-        file_size: usize,
+        _: usize,
         ) !void {
         defer {
             _ = self.allocators.scratch_arena.reset(.retain_capacity);
@@ -785,8 +793,7 @@ pub const IndexManager = struct {
 
         const num_lines = line_offsets.items.len - 1;
 
-        const num_partitions = if (num_lines > 50_000) try std.Thread.getCpuCount() else 1;
-        // const num_partitions = 1;
+        const num_partitions = if (num_lines > 50_000) @min(try std.Thread.getCpuCount(), MAX_NUM_THREADS) else 1;
 
         self.file_data.file_handles     = try self.gpa().alloc(std.fs.File, num_partitions);
         self.index_partitions           = try self.gpa().alloc(BM25Partition, num_partitions);
@@ -799,11 +806,7 @@ pub const IndexManager = struct {
         const chunk_size:       usize = num_lines / num_partitions;
         const final_chunk_size: usize = chunk_size + (num_lines % num_partitions);
 
-        var partition_boundaries = std.ArrayList(usize).init(self.scratchArena());
-
         for (0..num_partitions) |i| {
-            try partition_boundaries.append(line_offsets.items[i * chunk_size]);
-
             const current_chunk_size = switch (i != num_partitions - 1) {
                 true => chunk_size,
                 false => final_chunk_size,
@@ -819,12 +822,9 @@ pub const IndexManager = struct {
                 self.gpa(), 
                 1, 
                 partition_line_offsets,
-                partition_line_offsets.len,
+                partition_line_offsets.len - 1,
                 );
         }
-        try partition_boundaries.append(file_size);
-
-        std.debug.assert(partition_boundaries.items.len == num_partitions + 1);
     }
 
 
@@ -930,7 +930,6 @@ pub const IndexManager = struct {
         boost_factors: std.ArrayList(f32),
         partition_idx: usize,
         query_results: *SortedScoreMultiArray(QueryResult),
-    // ) !void {
     ) void {
         const num_search_cols = self.search_col_idxs.items.len;
         std.debug.assert(num_search_cols > 0);
@@ -957,7 +956,7 @@ pub const IndexManager = struct {
                 @panic("Column not found. Check findSorted function and self.columns map.");
             };
 
-            std.debug.assert(II_idx <= self.index_partitions.len);
+            std.debug.assert(II_idx <= self.search_col_idxs.items.len);
 
             var term_len: usize = 0;
 
@@ -1088,7 +1087,7 @@ pub const IndexManager = struct {
         for (0.., tokens.items) |idx, _token| {
             const II_idx: usize = @intCast(_token.col_idx);
             const token:  usize = @intCast(_token.token);
-            std.debug.assert(II_idx <= self.index_partitions.len);
+            std.debug.assert(II_idx <= self.search_col_idxs.items.len);
 
             const II = &self.index_partitions[partition_idx].II[II_idx];
 
@@ -1116,7 +1115,7 @@ pub const IndexManager = struct {
             const II_idx = @as(usize, @intCast(col_score_pair.col_idx));
             const token  = @as(usize, @intCast(col_score_pair.token));
 
-            std.debug.assert(II_idx <= self.index_partitions.len);
+            std.debug.assert(II_idx <= self.search_col_idxs.items.len);
 
             const II = &self.index_partitions[partition_idx].II[II_idx];
 
