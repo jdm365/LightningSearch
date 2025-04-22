@@ -40,9 +40,7 @@ pub fn CategoricalColumn(comptime T: type) type {
         value_idx_map: std.AutoHashMapUnmanaged(T, std.ArrayListUnmanaged(u8)),
 
 
-        pub fn init(
-            col_idx: u32,
-            ) !Self {
+        pub fn init(col_idx: u32) !Self {
             return Self{
                 .is_literal_type = true,
                 .col_idx = col_idx,
@@ -1367,11 +1365,11 @@ pub const BM25Partition = struct {
                     II.postings.term_positions[postings_offset] = @intCast(term_pos);
                 }
             }
-            // std.debug.assert(
-                // (current_doc_id == II.num_docs - 1)
-                    // or
-                // (current_doc_id == II.num_docs)
-            // );
+            std.debug.assert(
+                (current_doc_id == II.num_docs - 1)
+                    or
+                (current_doc_id == II.num_docs)
+            );
         }
     }
 
@@ -1441,7 +1439,6 @@ pub const BM25Partition = struct {
         }
 
         pq.fetchRowFromRowGroup(
-            // filename,
             pq_file_handle,
             rg_idx,
             local_row_num,
