@@ -76,8 +76,8 @@ fn bench(testing: bool) !void {
 }
 
 fn serveHTML() !void {
-    // const filename: []const u8 = "../tests/mb_small.csv";
-    const filename: []const u8 = "../tests/mb.csv";
+    const filename: []const u8 = "../data/mb_small.csv";
+    // const filename: []const u8 = "../data/mb.csv";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -85,8 +85,8 @@ fn serveHTML() !void {
     var index_manager = try IndexManager.init(allocator);
 
     defer {
-        index_manager.deinit(gpa.allocator()) catch {};
-        _ = gpa.deinit();
+        // index_manager.deinit(gpa.allocator()) catch {};
+        // _ = gpa.deinit();
     }
 
     try index_manager.readHeader(filename, FileType.CSV);
@@ -105,13 +105,13 @@ fn serveHTML() !void {
     try boost_factors.append(1.0);
     try boost_factors.append(1.0);
 
-    const server_handler = try server.QueryHandlerZap.init(
+    var server_handler = try server.QueryHandlerZap.init(
         &index_manager,
         boost_factors,
         );
     defer server_handler.deinit();
 
-    server_handler.serve();
+    try server_handler.serve();
 }
 
 pub fn main() !void {

@@ -14,6 +14,17 @@ var columns = [];
 
 PORT = 5000;
 
+
+function moveSearchColumnsToFront(columns, search_columns) {
+    const searchCols = search_columns
+        .map(searchColId => columns.find(col => col.id === searchColId))
+        .filter(Boolean);
+
+    const otherCols = columns.filter(col => !search_columns.includes(col.id));
+
+    return [...searchCols, ...otherCols];
+}
+
 async function get_columns() {
 	try {
 		const response = await fetch(`http://localhost:${PORT}/get_columns`);
@@ -67,8 +78,10 @@ function setupHeaderRow() {
     headerCells.forEach((cell, i) => {
 		// Only continue if column is in search_columns
 		if (!search_columns.includes(columns[i].id)) {
+			console.log(`Skipping column ${columns[i].id} as it is not in search_columns`);
 			return;
 		}
+		console.log(`Creating input for column ${columns[i].id}`);
 
         var column = columns[i];
         var input = document.createElement('input');
@@ -117,14 +130,17 @@ async function waitForPort(port, retryInterval = 10000, maxRetries = 60) {
 document.addEventListener("DOMContentLoaded", function() {
 	(async function() {
 		await waitForPort(PORT);
+		columns 	   = await get_columns();
 		search_columns = await get_search_columns();
-		columns = await get_columns();
+		columns = moveSearchColumnsToFront(columns, search_columns);
 
 		grid = new Slick.Grid("#myGrid", data, columns, options);
 
+		console.log("Columns: ", columns);
+		console.log("Search columns: ", search_columns);
+
 		setupHeaderRow();
 		search();
-
 
 		// Create search boxes
 		const inputData = [];
@@ -146,6 +162,7 @@ const escapeMap = {
 };
 
 function escapeHtml(text) {
+    if (typeof text !== 'string') return '';
     return text.replace(/[&<>"']/g, m => escapeMap[m]);
 }
 

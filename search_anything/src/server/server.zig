@@ -71,7 +71,7 @@ pub fn csvLineToJsonScore(
     allocator: std.mem.Allocator,
     csv_line: std.ArrayListUnmanaged(u8),
     term_positions: []TermPos,
-    columns: std.ArrayList([]const u8),
+    columns: std.ArrayListUnmanaged([]const u8),
     score: f32,
     idx: usize,
 ) !std.json.Value {
@@ -111,6 +111,7 @@ pub const QueryHandlerZap = struct {
     query_map: std.StringHashMap([]const u8),
     json_objects: std.ArrayListUnmanaged(std.json.Value),
     output_buffer: std.ArrayListUnmanaged(u8),
+    column_names: std.ArrayListUnmanaged([]const u8),
 
     zap_router: zap.Router,
     zap_listener: zap.HttpListener,
@@ -122,43 +123,20 @@ pub const QueryHandlerZap = struct {
 
         writeHTMLFiles(index_manager);
 
-        var handler = QueryHandlerZap{
+        return QueryHandlerZap{
             .index_manager = index_manager,
             .boost_factors = boost_factors,
             .query_map     = std.StringHashMap([]const u8).init(
-                // index_manager.stringArena(),
-                index_manager.scratchArena(),
+                index_manager.stringArena(),
+                // index_manager.scratchArena(),
                 ),
             .json_objects  = std.ArrayListUnmanaged(std.json.Value){},
             .output_buffer = std.ArrayListUnmanaged(u8){},
+            .column_names   = std.ArrayListUnmanaged([]const u8){},
 
-            .zap_router   = zap.Router.init(index_manager.gpa(), .{}),
+            .zap_router   = undefined,
             .zap_listener = undefined,
         };
-
-
-        try handler.zap_router.handle_func(
-            "/search", 
-            &handler, 
-            &QueryHandlerZap.on_request,
-            );
-        try handler.zap_router.handle_func(
-            "/get_columns", 
-            &handler, 
-            &QueryHandlerZap.getColumns,
-            );
-        try handler.zap_router.handle_func(
-            "/get_search_columns", 
-            &handler, 
-            &QueryHandlerZap.getSearchColumns,
-            );
-        try handler.zap_router.handle_func(
-            "/healthcheck", 
-            &handler, 
-            &QueryHandlerZap.healthcheck,
-            );
-
-        return handler;
     }
 
     pub fn deinit(self: *QueryHandlerZap) void {
@@ -167,35 +145,59 @@ pub const QueryHandlerZap = struct {
         }
     }
 
-    pub fn serve(self: *QueryHandlerZap) void {
-        self.zap_listener.serve() catch {
-            @panic("Failed to serve.\n");
-        };
-        self.zap_listener.init(.{
+    pub fn initRouter(self: *QueryHandlerZap) !void {
+        self.zap_router = zap.Router.init(self.index_manager.gpa(), .{});
+        try self.zap_router.handle_func(
+            "/search", 
+            self, 
+            &QueryHandlerZap.on_request,
+            );
+        try self.zap_router.handle_func(
+            "/get_columns", 
+            self, 
+            &QueryHandlerZap.getColumns,
+            );
+        try self.zap_router.handle_func(
+            "/get_search_columns", 
+            self, 
+            &QueryHandlerZap.getSearchColumns,
+            );
+        try self.zap_router.handle_func(
+            "/healthcheck", 
+            self, 
+            &QueryHandlerZap.healthcheck,
+            );
+    }
+
+    pub fn serve(self: *QueryHandlerZap) !void {
+        try self.initRouter();
+
+        self.zap_listener = zap.HttpListener.init(.{
             .port = 5000,
             .on_request = self.zap_router.on_request_handler(),
             .log = true,
         });
-        self.zap_listener.listen();
+        try self.zap_listener.listen();
 
+        self.openIndexHTML();
 
-        self.openIndexHTML(self.index_manager) catch {
-            @panic("Failed to open index.html.\n");
-        };
-
+        zap.start(.{
+            .threads = 1,
+            .workers = 1,
+        });
     }
 
     pub fn openIndexHTML(self: *QueryHandlerZap) void {
         const full_path = std.mem.concat(
             self.index_manager.scratchArena(),
             u8, 
-            &[_][]const u8{self.index_manager.tmp_dir, "/index.html"}
+            &[_][]const u8{self.index_manager.file_data.tmp_dir, "/index.html"}
             ) catch {
             @panic("Failed to concatenate path.\n");
         };
 
         var cmd = std.process.Child.init(
-            &[_][]const u8{"open", full_path}, 
+            &[_][]const u8{"xdg-open", full_path}, 
             self.index_manager.scratchArena(),
             );
         cmd.spawn() catch @panic("Failed to spawn process.\n");
@@ -205,12 +207,12 @@ pub const QueryHandlerZap = struct {
     pub fn writeHTMLFiles(index_manager: *IndexManager) void {
         const index_html = @embedFile("../web/index.html");
         const style_css  = @embedFile("../web/style.css");
-        const table_js   = @embedFile("../web/table.js");
+        const app_js     = @embedFile("../web/app.js");
 
         var output_filename = std.fmt.allocPrint(
             index_manager.scratchArena(),
             "{s}/index.html", 
-            .{index_manager.tmp_dir}
+            .{index_manager.file_data.tmp_dir}
             ) catch {
             @panic("String concatenation failed.\n");
         };
@@ -227,7 +229,7 @@ pub const QueryHandlerZap = struct {
         output_filename = std.fmt.allocPrint(
             index_manager.scratchArena(),
             "{s}/style.css",
-            .{index_manager.tmp_dir}
+            .{index_manager.file_data.tmp_dir}
             ) catch {
             @panic("String concatenation failed.\n");
         };
@@ -243,8 +245,8 @@ pub const QueryHandlerZap = struct {
 
         output_filename = std.fmt.allocPrint(
             index_manager.scratchArena(),
-            "{s}/table.js",
-            .{index_manager.tmp_dir}
+            "{s}/app.js",
+            .{index_manager.file_data.tmp_dir}
             ) catch {
             @panic("String concatenation failed.\n");
         };
@@ -255,16 +257,16 @@ pub const QueryHandlerZap = struct {
             @panic("Failed to create file.\n");
         };
 
-        _ = output_file.write(table_js) catch {
+        _ = output_file.write(app_js) catch {
             @panic("Failed to write file.\n");
         };
 
     }
 
-    pub fn on_request(self: *QueryHandlerZap, r: zap.Request) void {
+    pub fn on_request(self: *QueryHandlerZap, r: zap.Request) !void {
         _ = self.index_manager.allocators.scratch_arena.reset(.retain_capacity);
 
-        r.setHeader("Access-Control-Allow-Origin", "*") catch {};
+        try r.setHeader("Access-Control-Allow-Origin", "*");
 
         self.output_buffer.clearRetainingCapacity();
         self.json_objects.clearRetainingCapacity();
@@ -275,60 +277,67 @@ pub const QueryHandlerZap = struct {
             parseKeys(
                 query,
                 self.query_map,
-                self.index_manager.scratchArena(),
+                // self.index_manager.scratchArena(),
+                self.index_manager.stringArena(),
             );
 
             // Do search.
-            self.index_manager.query(
+            try self.index_manager.query(
                 self.query_map,
-                10,
+                25,
                 self.boost_factors,
-                ) catch return;
+                );
+            std.debug.print("Count: {d}\n", .{self.index_manager.query_state.results_arrays[0].count});
 
             for (0..self.index_manager.query_state.results_arrays[0].count) |idx| {
-                self.json_objects.append(
-                    self.index_manager.scratchArena(),
-                    csvLineToJsonScore(
-                        self.index_manager.scratchArena(),
-                        self.index_manager.query_state.result_strings[idx].items,
+                try self.json_objects.append(
+                    // self.index_manager.scratchArena(),
+                    self.index_manager.stringArena(),
+                    try csvLineToJsonScore(
+                        // self.index_manager.scratchArena(),
+                        self.index_manager.stringArena(),
+                        self.index_manager.query_state.result_strings[idx],
                         self.index_manager.query_state.result_positions[idx],
-                        self.index_manager.cols,
+                        self.column_names,
                         self.index_manager.query_state.results_arrays[0].scores[idx],
                         idx,
-                    ) catch return) catch return;
+                    ));
             }
             const end = std.time.milliTimestamp();
             const time_taken_ms = end - start;
 
             var response = std.json.Value{
                 .object = std.StringArrayHashMap(std.json.Value).init(
-                    self.index_manager.scratchArena()
+                    // self.index_manager.scratchArena()
+                    self.index_manager.stringArena()
                     ),
             };
 
-            response.object.put(
+            try response.object.put(
                 "results",
-                std.json.Value{ .array = self.json_objects },
-            ) catch return;
-            response.object.put(
+                // std.json.Value{ .array = self.json_objects.toManaged(self.index_manager.scratchArena()) },
+                std.json.Value{ .array = self.json_objects.toManaged(self.index_manager.stringArena()) },
+            );
+            try response.object.put(
                 "time_taken_ms",
                 std.json.Value{ .integer = time_taken_ms },
-            ) catch return;
+            );
 
-            std.json.stringify(
+            try std.json.stringify(
                 response,
                 .{},
-                self.output_buffer.writer(),
-            ) catch unreachable;
+                // self.output_buffer.writer(self.index_manager.scratchArena()),
+                self.output_buffer.writer(self.index_manager.stringArena()),
+            );
 
-            r.sendJson(self.output_buffer.items) catch return;
+            try r.sendJson(self.output_buffer.items);
         }
     }
 
     pub fn getColumns(
         self: *QueryHandlerZap,
         r: zap.Request,
-    ) void {
+    ) !void {
         r.setHeader("Access-Control-Allow-Origin", "*") catch |err| {
             std.debug.print("Error setting header: {?}\n", .{err});
         };
@@ -336,56 +345,72 @@ pub const QueryHandlerZap = struct {
         self.output_buffer.clearRetainingCapacity();
 
         var response = std.json.Value{
-            .object = std.StringArrayHashMap(std.json.Value).init(self.allocator),
+            .object = std.StringArrayHashMap(std.json.Value).init(
+                // self.index_manager.scratchArena(),
+                self.index_manager.stringArena(),
+                ),
         };
 
-        var json_cols = std.ArrayList(std.json.Value).initCapacity(
-            self.allocator, 
-            self.index_manager.cols.items.len
-            ) catch return;
-        defer json_cols.deinit();
+        var json_cols = std.ArrayListUnmanaged(std.json.Value).initCapacity(
+            // self.index_manager.scratchArena(), 
+            self.index_manager.stringArena(), 
+            self.index_manager.columns.num_keys,
+            ) catch {
+            std.debug.print("ERROR GETTING COLUMNS\n", .{});
+            @panic("Failed to initialize json_cols.\n");
+        };
 
         json_cols.resize(
             self.index_manager.stringArena(), 
             self.index_manager.columns.num_keys,
             ) catch return;
 
-        var it = try self.index_manager.columns.iterator();
-        while (try it.next()) |val| {
-            json_cols[val.value] = std.json.Value{
+        var it = self.index_manager.columns.iterator() catch {
+            std.debug.print("ERROR GETTING COLUMNS\n", .{});
+            return;
+        };
+        while (it.next() catch @panic("Column iterator failed")) |val| {
+            json_cols.items[val.value] = std.json.Value{
                 .string = val.key,
-            } catch return;
+            };
         }
 
         // Swap search_cols to be first.
-        for (0.., self.index_manager.search_col_idxs.items) |idx, col_idx| {
-            const tmp = json_cols.items[col_idx];
-            json_cols.items[col_idx] = json_cols.items[idx];
-            json_cols.items[idx] = tmp;
-        }
+        // for (0.., self.index_manager.search_col_idxs.items) |idx, col_idx| {
+            // const tmp                = json_cols.items[col_idx];
+            // json_cols.items[col_idx] = json_cols.items[idx];
+            // json_cols.items[idx]     = tmp;
+        // }
         json_cols.append(
             self.index_manager.stringArena(),
             std.json.Value{
                 .string = "SCORE",
         }) catch return;
 
-        const csv_idx = json_cols.items.len - 1;
-        const tmp = json_cols.items[csv_idx];
-        json_cols.items[csv_idx] = json_cols.items[
-            self.index_manager.search_col_idxs.items.len
-        ];
-        json_cols.items[self.index_manager.search_col_idxs.items.len] = tmp;
+        // const csv_idx = json_cols.items.len - 1;
+        // const tmp = json_cols.items[csv_idx];
+        // json_cols.items[csv_idx] = json_cols.items[
+            // self.index_manager.search_col_idxs.items.len
+        // ];
+        // json_cols.items[self.index_manager.search_col_idxs.items.len] = tmp;
         
+
+        for (json_cols.items) |*json| {
+            self.column_names.append(
+                self.index_manager.stringArena(),
+                json.string,
+            ) catch return;
+        }
 
         response.object.put(
             "columns",
-            std.json.Value{ .array = json_cols },
+            std.json.Value{ .array = json_cols.toManaged(self.index_manager.stringArena()) },
         ) catch return;
 
         std.json.stringify(
             response,
             .{},
-            self.output_buffer.writer(),
+            self.output_buffer.writer(self.index_manager.stringArena()),
         ) catch unreachable;
 
         r.sendJson(self.output_buffer.items) catch return;
@@ -394,7 +419,7 @@ pub const QueryHandlerZap = struct {
     pub fn getSearchColumns(
         self: *QueryHandlerZap,
         r: zap.Request,
-    ) void {
+    ) !void {
         r.setHeader("Access-Control-Allow-Origin", "*") catch |err| {
             std.debug.print("Error setting header: {?}\n", .{err});
         };
@@ -409,32 +434,40 @@ pub const QueryHandlerZap = struct {
 
         var json_cols = std.ArrayListUnmanaged(std.json.Value){};
         json_cols.resize(
-            self.index_manager.scratchArena(), 
+            // self.index_manager.scratchArena(), 
+            self.index_manager.stringArena(), 
             self.index_manager.search_col_idxs.items.len,
             ) catch unreachable;
 
-        for (0.., self.index_manager.search_col_idxs.items) |idx, val| {
-            json_cols[idx] = std.json.Value{
-                .string = val.key,
-            } catch @panic("This part failed\n");
+        for (0.., self.index_manager.search_col_idxs.items) |idx, col_idx| {
+            json_cols.items[idx] = std.json.Value{
+                .string = self.column_names.items[col_idx],
+            };
+
+            self.query_map.put(
+                self.column_names.items[col_idx],
+                "",
+            ) catch unreachable;
         }
 
         response.object.put(
             "columns",
-            std.json.Value{ .array = json_cols },
+            // std.json.Value{ .array = json_cols.toManaged(self.index_manager.scratchArena()) },
+            std.json.Value{ .array = json_cols.toManaged(self.index_manager.stringArena()) },
         ) catch @panic("put failed");
 
         std.json.stringify(
             response,
             .{},
-            self.output_buffer.writer(),
+            // self.output_buffer.writer(self.index_manager.scratchArena()),
+            self.output_buffer.writer(self.index_manager.stringArena()),
         ) catch unreachable;
 
         r.sendJson(self.output_buffer.items) catch unreachable;
     }
 
-    pub fn healthcheck(_: *QueryHandlerZap, r: zap.Request) void {
-        r.setStatus(zap.StatusCode.ok);
+    pub fn healthcheck(_: *QueryHandlerZap, r: zap.Request) !void {
+        r.setStatus(zap.http.StatusCode.ok);
         r.setHeader("Access-Control-Allow-Origin", "*") catch {};
         r.markAsFinished(true);
         r.sendBody("") catch {};
@@ -475,6 +508,10 @@ pub const QueryHandlerZap = struct {
                         urlDecode(allocator, URL_BUFFER[0..count]) catch @panic("Failed to copy input string.\n"),
                         ) catch @panic("Failed to copy input string.\n");
                     result.?.* = value_copy;
+                    std.debug.print("Query: {s} - {s}\n", .{
+                        URL_BUFFER[0..count],
+                        value_copy,
+                    });
                 }
                 count = 0;
                 idx += 1;
