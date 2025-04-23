@@ -1,35 +1,7 @@
-const std = @import("std");
+const std     = @import("std");
 const builtin = @import("builtin");
 
-const HuffmanCompressor = @import("huffman.zig").HuffmanCompressor;
-
-// inline fn encodeVbyte(value: u64, buffer: [*]u8, idx: *usize) void {
-    // while (true) {
-        // const byte = @as(u8, value & 0b01111111);
-        // value >>= 7;
-        // if (value == 0) {
-            // buffer[idx.*] = byte;
-            // idx.* += 1;
-            // break;
-        // }
-        // buffer[idx.*] = byte | 0b10000000;
-        // idx.* += 1;
-    // }
-// }
-// 
-// inline fn decodeVbyte(buffer: [*]u8, idx: *usize) u64 {
-    // var value: u64 = 0;
-    // var shift: u6 = 0;
-    // while (true) {
-        // const byte = buffer[idx.*];
-        // value |= @as(u64, @intCast(byte & 0b01111111)) << shift;
-        // idx.* += 1;
-        // if (byte < 128) break;
-        // shift += 7;
-    // }
-    // return value;
-// }
-
+const HuffmanCompressor = @import("../compression/huffman.zig").HuffmanCompressor;
 
 pub const DocStore = struct {
     huffman_compressor: HuffmanCompressor,

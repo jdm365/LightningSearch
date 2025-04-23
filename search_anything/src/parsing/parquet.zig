@@ -1,7 +1,8 @@
 const std = @import("std");
-const string_utils = @import("string_utils.zig");
+
+const string_utils = @import("../utils/string_utils.zig");
+
 const lp = @cImport({
-    // @cInclude("/home/jakemehlman/SearchAnything/search_anything/lib/parquet_bindings.h");
     @cInclude("parquet_bindings.h");
 });
 

@@ -1,22 +1,19 @@
 const std = @import("std");
 
-const string_utils = @import("string_utils.zig");
-const file_utils   = @import("file_utils.zig");
+const string_utils = @import("../utils/string_utils.zig");
+const fu           = @import("../storage/file_utils.zig");
 
-const DoubleBufferedReader = @import("file_utils.zig").DoubleBufferedReader;
-const FileType             = @import("file_utils.zig").FileType;
-const TokenStream          = @import("file_utils.zig").TokenStream;
-const ParquetTokenStream   = @import("file_utils.zig").ParquetTokenStream;
+const StaticIntegerSet = @import("../utils/static_integer_set.zig").StaticIntegerSet;
 
-const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
+const progress = @import("../utils/progress.zig");
 
-const progress = @import("progress.zig");
+const csv  = @import("../parsing/csv.zig");
+const json = @import("../parsing/json.zig");
+const pq   = @import("../parsing/parquet.zig");
 
-const csv  = @import("csv.zig");
-const json = @import("json.zig");
-const pq   = @import("parquet.zig");
+const rt = @import("../utils/radix_trie.zig");
 
-const TermPos = @import("server.zig").TermPos;
+const TermPos = @import("../server/server.zig").TermPos;
 
 const BM25Partition   = @import("index.zig").BM25Partition;
 const QueryResult     = @import("index.zig").QueryResult;
@@ -24,11 +21,10 @@ const ScoringInfo     = @import("index.zig").ScoringInfo;
 const MAX_TERM_LENGTH = @import("index.zig").MAX_TERM_LENGTH;
 const MAX_NUM_TERMS   = @import("index.zig").MAX_NUM_TERMS;
 
-const RadixTrie = @import("radix_trie.zig").RadixTrie;
-const rt = @import("radix_trie.zig");
 
-const SortedScoreMultiArray = @import("sorted_array.zig").SortedScoreMultiArray;
-const ScorePair             = @import("sorted_array.zig").ScorePair;
+const SortedScoreMultiArray = @import("../utils/sorted_array.zig").SortedScoreMultiArray;
+const ScorePair             = @import("../utils/sorted_array.zig").ScorePair;
+const findSorted            = @import("../utils/misc_utils.zig").findSorted;
 
 const AtomicCounter = std.atomic.Value(u64);
 
@@ -38,22 +34,6 @@ const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 // const MAX_NUM_THREADS: usize = 1;
 const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
-
-pub inline fn findSorted(
-    comptime T: type,
-    sorted_arr: []T,
-    key: T,
-) !usize {
-    var val: T = sorted_arr[0];
-    var idx: usize = 0;
-    while (val <= key) {
-        if (val == key) return idx;
-        idx += 1;
-        val = sorted_arr[idx];
-    }
-
-    return error.KeyNotFound;
-}
 
 const Column = struct {
     csv_idx: usize,
@@ -74,7 +54,7 @@ pub const IndexManager = struct {
     query_state: QueryState,
     indexing_state: IndexingState,
 
-    columns: RadixTrie(u32),
+    columns: rt.RadixTrie(u32),
     search_col_idxs: std.ArrayListUnmanaged(u32),
 
     const Allocators = struct {
@@ -92,7 +72,7 @@ pub const IndexManager = struct {
         input_filename_c: [*:0]const u8,
         tmp_dir: []const u8,
         file_handles: []std.fs.File,
-        file_type: FileType,
+        file_type: fu.FileType,
         pq_data: ?PQData = null,
         header_bytes: ?usize = null,
 
@@ -151,7 +131,7 @@ pub const IndexManager = struct {
             manager.allocators.gpa.allocator(), 
             4,
             );
-        manager.columns = try RadixTrie(u32).initCapacity(
+        manager.columns = try rt.RadixTrie(u32).initCapacity(
             manager.allocators.gpa.allocator(),
             32,
             );
@@ -206,7 +186,7 @@ pub const IndexManager = struct {
     pub fn readHeader(
         self: *IndexManager, 
         filename: []const u8,
-        filetype: FileType,
+        filetype: fu.FileType,
         ) !void {
         self.file_data.input_filename_c = try self.stringArena().dupeZ(u8, filename);
         self.file_data.file_type = filetype;
@@ -227,13 +207,13 @@ pub const IndexManager = struct {
         };
 
         switch (self.file_data.file_type) {
-            FileType.CSV => {
+            fu.FileType.CSV => {
                 try self.readCSVHeader();
            },
-            FileType.JSON => {
+            fu.FileType.JSON => {
                 try self.getUniqueJSONKeys(16384);
             },
-            FileType.PARQUET => {
+            fu.FileType.PARQUET => {
                 var cols = std.ArrayListUnmanaged([]const u8){};
                 try pq.getParquetCols(
                     self.stringArena(),
@@ -272,7 +252,7 @@ pub const IndexManager = struct {
         );
 
         switch (self.file_data.file_type) {
-            FileType.CSV, FileType.JSON, FileType.PARQUET => {
+            fu.FileType.CSV, fu.FileType.JSON, fu.FileType.PARQUET => {
                 const matched_col_idx = self.columns.find(col_name_upper) catch {
                     return error.ColumnNotFound;
                 };
@@ -372,7 +352,7 @@ pub const IndexManager = struct {
 
         const file_size = try file.getEndPos();
 
-        var buffered_reader = try DoubleBufferedReader.init(
+        var buffered_reader = try fu.DoubleBufferedReader.init(
             self.scratchArena(),
             file,
             '{',
@@ -412,7 +392,7 @@ pub const IndexManager = struct {
 
         const file_size = try file.getEndPos();
 
-        var buffered_reader = try DoubleBufferedReader.init(
+        var buffered_reader = try fu.DoubleBufferedReader.init(
             self.scratchArena(),
             file,
             '{',
@@ -490,13 +470,13 @@ pub const IndexManager = struct {
             );
 
         const end_token: u8 = switch (self.file_data.file_type) {
-            FileType.CSV => '\n',
-            FileType.JSON => '{',
-            FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
+            fu.FileType.CSV => '\n',
+            fu.FileType.JSON => '{',
+            fu.FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
         };
 
         const start_byte = self.index_partitions[partition_idx].line_offsets[0];
-        var token_stream = try TokenStream(file_utils.token_32t).init(
+        var token_stream = try fu.TokenStream(fu.token_32t).init(
             self.file_data.inputFilename(),
             output_filename,
             self.gpa(),
@@ -530,7 +510,7 @@ pub const IndexManager = struct {
             }
 
             switch (self.file_data.file_type) {
-                FileType.CSV => {
+                fu.FileType.CSV => {
                     var search_col_idx: usize = 0;
                     var prev_col:       usize = 0;
 
@@ -556,7 +536,7 @@ pub const IndexManager = struct {
                         try token_stream.iterFieldCSV(&byte_idx);
                     }
                 },
-                FileType.JSON => {
+                fu.FileType.JSON => {
                     const buffer = try token_stream.getBuffer(byte_idx);
                     byte_idx += string_utils.simdFindCharIdxEscapedFull(
                         buffer,
@@ -574,7 +554,7 @@ pub const IndexManager = struct {
                             ) catch break;
                     }
                 },
-                FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
+                fu.FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
             }
         }
 
@@ -611,7 +591,7 @@ pub const IndexManager = struct {
             .{self.file_data.tmp_dir, partition_idx}
             );
 
-        var token_stream = try ParquetTokenStream(file_utils.token_32t).init(
+        var token_stream = try fu.ParquetTokenStream(fu.token_32t).init(
             self.file_data.input_filename_c,
             output_filename,
             self.gpa(),
@@ -672,9 +652,9 @@ pub const IndexManager = struct {
 
     pub fn scanFile(self: *IndexManager) !void {
         switch (self.file_data.file_type) {
-            FileType.CSV => try self.scanCSVFile(),
-            FileType.JSON => try self.scanJSONFile(),
-            FileType.PARQUET => try self.scanParquetFile(),
+            fu.FileType.CSV => try self.scanCSVFile(),
+            fu.FileType.JSON => try self.scanJSONFile(),
+            fu.FileType.PARQUET => try self.scanParquetFile(),
         }
     }
 
@@ -684,7 +664,7 @@ pub const IndexManager = struct {
 
         const file_size = try file.getEndPos();
 
-        var buffered_reader = try DoubleBufferedReader.init(
+        var buffered_reader = try fu.DoubleBufferedReader.init(
             self.gpa(),
             file,
             '\n',
@@ -1286,7 +1266,7 @@ test "index_csv" {
 
     var index_manager = try IndexManager.init();
 
-    try index_manager.readHeader(filename, FileType.CSV);
+    try index_manager.readHeader(filename, fu.FileType.CSV);
     try index_manager.scanFile();
 
     try index_manager.addSearchCol("title");
@@ -1305,7 +1285,7 @@ test "index_json" {
 
     var index_manager = try IndexManager.init();
 
-    try index_manager.readHeader(filename, FileType.JSON);
+    try index_manager.readHeader(filename, fu.FileType.JSON);
     try index_manager.scanFile();
 
     try index_manager.addSearchCol("title");

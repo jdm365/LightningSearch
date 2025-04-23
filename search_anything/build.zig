@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
 
     const shared_lib = b.addSharedLibrary(.{
         .name = "search_app",
-        .root_source_file = b.path("src/server.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
         // .optimize = .ReleaseFast,

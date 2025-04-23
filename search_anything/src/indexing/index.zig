@@ -1,23 +1,19 @@
-const std = @import("std");
+const std     = @import("std");
 const builtin = @import("builtin");
 
-const TokenStream = @import("file_utils.zig").TokenStream;
-const ParquetTokenStream = @import("file_utils.zig").ParquetTokenStream;
-const TOKEN_STREAM_CAPACITY = @import("file_utils.zig").TOKEN_STREAM_CAPACITY;
+const csv  = @import("../parsing/csv.zig");
+const json = @import("../parsing/json.zig");
+const pq   = @import("../parsing/parquet.zig");
 
-const csv  = @import("csv.zig");
-const json = @import("json.zig");
-const pq   = @import("parquet.zig");
-const string_utils = @import("string_utils.zig");
-const file_utils = @import("file_utils.zig");
-const findSorted = @import("index_manager.zig").findSorted;
+const string_utils = @import("../utils/string_utils.zig");
+const file_utils   = @import("../storage/file_utils.zig");
 
-const TermPos = @import("server.zig").TermPos;
-const StaticIntegerSet = @import("static_integer_set.zig").StaticIntegerSet;
-const PruningRadixTrie = @import("pruning_radix_trie.zig").PruningRadixTrie;
-const RadixTrie = @import("radix_trie.zig").RadixTrie;
-
-const DocStore = @import("doc_store.zig").DocStore;
+const findSorted       = @import("../utils/misc_utils.zig").findSorted;
+const TermPos          = @import("../server/server.zig").TermPos;
+const StaticIntegerSet = @import("../utils/static_integer_set.zig").StaticIntegerSet;
+const PruningRadixTrie = @import("../utils/pruning_radix_trie.zig").PruningRadixTrie;
+const RadixTrie        = @import("../utils/radix_trie.zig").RadixTrie;
+const DocStore         = @import("../storage/doc_store.zig").DocStore;
 
 pub const MAX_TERM_LENGTH = 256;
 pub const MAX_NUM_TERMS   = 4096;
@@ -403,7 +399,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: u8,
         col_idx: usize,
-        token_stream: *TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStream(file_utils.token_32t),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -453,7 +449,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: *u8,
         col_idx: usize,
-        token_stream: *TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStream(file_utils.token_32t),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -483,7 +479,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: u8,
         col_idx: usize,
-        token_stream: *ParquetTokenStream(file_utils.token_32t),
+        token_stream: *file_utils.ParquetTokenStream(file_utils.token_32t),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -532,7 +528,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: *u8,
         col_idx: usize,
-        token_stream: *ParquetTokenStream(file_utils.token_32t),
+        token_stream: *file_utils.ParquetTokenStream(file_utils.token_32t),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -562,7 +558,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: *u8,
         col_idx: usize,
-        token_stream: *TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStream(file_utils.token_32t),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -588,7 +584,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: *u8,
         col_idx: usize,
-        token_stream: *ParquetTokenStream(file_utils.token_32t),
+        token_stream: *file_utils.ParquetTokenStream(file_utils.token_32t),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -610,7 +606,7 @@ pub const BM25Partition = struct {
 
     pub fn processDocRfc4180(
         self: *BM25Partition,
-        token_stream: *TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStream(file_utils.token_32t),
         byte_idx: *usize,
         doc_id: u32,
         col_idx: usize,
@@ -810,7 +806,7 @@ pub const BM25Partition = struct {
 
     pub fn processDocVbyte(
         self: *BM25Partition,
-        token_stream: *ParquetTokenStream(file_utils.token_32t),
+        token_stream: *file_utils.ParquetTokenStream(file_utils.token_32t),
         doc_id: u32,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
@@ -921,7 +917,7 @@ pub const BM25Partition = struct {
 
     pub fn processDocRfc8259(
         self: *BM25Partition,
-        token_stream: *TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStream(file_utils.token_32t),
         trie: *const RadixTrie(u32),
         search_col_idxs: *const std.ArrayListUnmanaged(u32),
         byte_idx: *usize,
@@ -1239,7 +1235,7 @@ pub const BM25Partition = struct {
 
     pub fn constructFromTokenStream(
         self: *BM25Partition,
-        token_stream: *TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStream(file_utils.token_32t),
         ) !void {
 
         var term_cntr = try self.allocator.alloc(usize, self.II[0].num_terms);
@@ -1260,10 +1256,10 @@ pub const BM25Partition = struct {
 
             var bytes_read: usize = 0;
 
-            var num_tokens: usize = TOKEN_STREAM_CAPACITY;
+            var num_tokens: usize = file_utils.TOKEN_STREAM_CAPACITY;
             var current_doc_id: usize = 0;
 
-            while (num_tokens == TOKEN_STREAM_CAPACITY) {
+            while (num_tokens == file_utils.TOKEN_STREAM_CAPACITY) {
                 var _num_tokens: [4]u8 = undefined;
                 bytes_read = try output_file.read(std.mem.asBytes(&_num_tokens));
                 std.debug.assert(bytes_read == 4);
@@ -1308,7 +1304,7 @@ pub const BM25Partition = struct {
 
     pub fn constructFromTokenStreamPq(
         self: *BM25Partition,
-        token_stream: *ParquetTokenStream(file_utils.token_32t),
+        token_stream: *file_utils.ParquetTokenStream(file_utils.token_32t),
         ) !void {
 
         var term_cntr = try self.allocator.alloc(usize, self.II[0].num_terms);
@@ -1329,10 +1325,10 @@ pub const BM25Partition = struct {
 
             var bytes_read: usize = 0;
 
-            var num_tokens: usize = TOKEN_STREAM_CAPACITY;
+            var num_tokens: usize = file_utils.TOKEN_STREAM_CAPACITY;
             var current_doc_id: usize = 0;
 
-            while (num_tokens == TOKEN_STREAM_CAPACITY) {
+            while (num_tokens == file_utils.TOKEN_STREAM_CAPACITY) {
                 var _num_tokens: [4]u8 = undefined;
                 _ = try output_file.read(std.mem.asBytes(&_num_tokens));
                 num_tokens = std.mem.readInt(u32, &_num_tokens, ENDIANESS);

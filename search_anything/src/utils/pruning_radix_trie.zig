@@ -1,7 +1,8 @@
 const std = @import("std");
+
 const print = std.debug.print;
 
-const SortedArray = @import("sorted_array.zig").SortedScoreArray;
+const SortedArray = @import("../utils/sorted_array.zig").SortedScoreArray;
 
 const MAX_STRING_LEN = 7;
 

@@ -1,6 +1,6 @@
 const std = @import("std");
-const string_utils = @import("string_utils.zig");
-const TermPos = @import("server.zig").TermPos;
+const string_utils = @import("../utils/string_utils.zig");
+const TermPos      = @import("../server/server.zig").TermPos;
 
 
 pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {

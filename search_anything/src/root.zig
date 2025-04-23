@@ -2,11 +2,12 @@
 //! you are making an executable, the convention is to delete this file and
 //! start with main.zig instead.
 const std = @import("std");
-const IndexManager = @import("main.zig").IndexManager;
 
-pub const progress = @import("progress.zig");
-pub const sorted_array = @import("sorted_array.zig");
-pub const server = @import("server.zig");
+const IndexManager = @import("indexing/index_manager.zig").IndexManager;
+
+pub const progress     = @import("utils/progress.zig");
+pub const sorted_array = @import("utils/sorted_array.zig");
+pub const server       = @import("server/server.zig");
 
 
 test "build_index" {

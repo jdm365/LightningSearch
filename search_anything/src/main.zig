@@ -1,12 +1,12 @@
 const std     = @import("std");
 const builtin = @import("builtin");
 
-const zap = @import("zap");
+// const zap = @import("zap");
 
-const IndexManager = @import("index_manager.zig").IndexManager;
-const FileType = @import("file_utils.zig").FileType;
+const IndexManager = @import("indexing/index_manager.zig").IndexManager;
+const FileType = @import("storage/file_utils.zig").FileType;
 
-const server = @import("server.zig");
+const server = @import("server/server.zig");
 
 
 fn bench(testing: bool) !void {

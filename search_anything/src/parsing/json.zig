@@ -1,8 +1,9 @@
 const std = @import("std");
-const string_utils = @import("string_utils.zig");
-const MAX_TERM_LENGTH = @import("index.zig").MAX_TERM_LENGTH;
-const RadixTrie = @import("radix_trie.zig").RadixTrie;
-const TermPos = @import("server.zig").TermPos;
+
+const string_utils    = @import("../utils/string_utils.zig");
+const RadixTrie       = @import("../utils/radix_trie.zig").RadixTrie;
+const MAX_TERM_LENGTH = @import("../indexing/index.zig").MAX_TERM_LENGTH;
+const TermPos         = @import("../server/server.zig").TermPos;
 
 
 pub inline fn nextPoint(buffer: []const u8, byte_idx: *usize) void {

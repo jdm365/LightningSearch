@@ -1,11 +1,11 @@
 const std = @import("std");
-const csv = @import("csv.zig");
 
-const string_utils = @import("string_utils.zig");
+const csv          = @import("../parsing/csv.zig");
+const string_utils = @import("../utils/string_utils.zig");
 
-const IndexManager    = @import("index_manager.zig").IndexManager;
-const MAX_NUM_RESULTS = @import("index_manager.zig").MAX_NUM_RESULTS;
-const FileType        = @import("file_utils.zig").FileType;
+const IndexManager    = @import("../indexing/index_manager.zig").IndexManager;
+const MAX_NUM_RESULTS = @import("../indexing/index_manager.zig").MAX_NUM_RESULTS;
+const FileType        = @import("../storage/file_utils.zig").FileType;
 
 var float_buf: [1000][64]u8 = undefined;
 

@@ -1,8 +1,10 @@
 const std = @import("std");
-const csv = @import("csv.zig");
-const json = @import("json.zig");
-const pq   = @import("parquet.zig");
-const string_utils = @import("string_utils.zig");
+
+const csv  = @import("../parsing/csv.zig");
+const json = @import("../parsing/json.zig");
+const pq   = @import("../parsing/parquet.zig");
+
+const string_utils = @import("../utils/string_utils.zig");
 
 pub const FileType = enum {
     CSV,
