@@ -31,8 +31,8 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_NUM_RESULTS = 1000;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
-// const MAX_NUM_THREADS: usize = 1;
-const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+const MAX_NUM_THREADS: usize = 1;
+// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -783,12 +783,12 @@ pub const IndexManager = struct {
             self.query_state.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa(), MAX_NUM_RESULTS);
         }
 
-        const chunk_size:       usize = num_lines / num_partitions;
+        const chunk_size:       usize = @divFloor(num_lines, num_partitions);
         const final_chunk_size: usize = chunk_size + (num_lines % num_partitions);
 
         for (0..num_partitions) |i| {
             const current_chunk_size = switch (i != num_partitions - 1) {
-                true => chunk_size,
+                true  => chunk_size,
                 false => final_chunk_size,
             };
 

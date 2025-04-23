@@ -116,12 +116,13 @@ pub fn main() !void {
     try boost_factors.append(1.0);
 
     const num_queries: usize = 1;
+    const K: usize = 25;
 
     const start_time = std.time.milliTimestamp();
     for (0..num_queries) |_| {
         try index_manager.query(
             query_map,
-            10,
+            K,
             boost_factors,
             );
     }
@@ -146,7 +147,7 @@ pub fn main() !void {
         column_names.items[val.value] = val.key;
     }
 
-    for (0..10) |idx| {
+    for (0..K) |idx| {
         const line = try server.csvLineToJson(
             index_manager.scratchArena(),
             index_manager.query_state.result_strings[idx],
