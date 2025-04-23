@@ -31,8 +31,8 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_NUM_RESULTS = 1000;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
-const MAX_NUM_THREADS: usize = 1;
-// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+// const MAX_NUM_THREADS: usize = 1;
+const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -153,19 +153,19 @@ pub const IndexManager = struct {
     
     pub fn deinit(self: *IndexManager, allocator: std.mem.Allocator) !void {
         for (0..self.index_partitions.len) |idx| {
-            self.query_state.results_arrays[idx].deinit(self.gpa());
+            self.query_state.results_arrays[idx].deinit();
             self.index_partitions[idx].deinit();
             self.file_data.file_handles[idx].close();
         }
-        self.gpa().free(self.file_handles);
+        self.gpa().free(self.file_data.file_handles);
         self.gpa().free(self.index_partitions);
-        self.gpa().free(self.results_arrays);
+        self.gpa().free(self.query_state.results_arrays);
 
-        try std.fs.cwd().deleteTree(self.tmp_dir);
+        try std.fs.cwd().deleteTree(self.file_data.tmp_dir);
 
         for (0..MAX_NUM_RESULTS) |idx| {
-            if (self.result_positions[idx].len > 0) {
-                self.gpa().free(self.result_positions[idx]);
+            if (self.query_state.result_positions[idx].len > 0) {
+                self.gpa().free(self.query_state.result_positions[idx]);
             }
         }
 
@@ -173,13 +173,13 @@ pub const IndexManager = struct {
         self.columns.deinit();
         self.query_state.thread_pool.deinit();
 
-        self.allocator.string_arena.deinit();
-        self.allocator.scratch_arena.deinit();
+        self.allocators.string_arena.deinit();
+        self.allocators.scratch_arena.deinit();
         _ = self.allocators.gpa.deinit();
 
         allocator.destroy(self.allocators.gpa);
-        allocator.destroy(self.allocator.string_arena);
-        allocator.destroy(self.allocator.scratch_arena);
+        allocator.destroy(self.allocators.string_arena);
+        allocator.destroy(self.allocators.scratch_arena);
     }
 
 

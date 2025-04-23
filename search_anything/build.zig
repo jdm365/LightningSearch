@@ -4,6 +4,12 @@ pub fn build(b: *std.Build) void {
     const target   = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const zap = b.dependency("zap", .{
+        .target = target,
+        .optimize = optimize,
+        .openssl = false, // set to true to enable TLS support
+    });
+
     const shared_lib = b.addSharedLibrary(.{
         .name = "search_app",
         .root_source_file = b.path("src/main.zig"),
@@ -33,6 +39,8 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(b.path("lib"));
     exe.addObjectFile(b.path("lib/libparquet_bindings.a"));
     exe.installHeader(b.path("lib/parquet_bindings.h"), "parquet_bindings.h");
+
+    exe.root_module.addImport("zap", zap.module("zap"));
 
     b.installArtifact(exe);
 

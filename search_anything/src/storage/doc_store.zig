@@ -35,7 +35,7 @@ pub const DocStore = struct {
         };
     }
 
-    pub fn deinit(self: *DocStore, allocator: *std.mem.Allocator) void {
+    pub fn deinit(self: *DocStore, allocator: std.mem.Allocator) void {
         self.huffman_rows.deinit(allocator);
         self.literal_rows.deinit(allocator);
     }
