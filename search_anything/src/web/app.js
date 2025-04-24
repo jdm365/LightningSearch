@@ -98,6 +98,15 @@ function setupHeaderRow() {
     });
 
     grid.resizeCanvas();
+
+	// Create search boxes
+	const inputData = [];
+	for (let i = 0; i < search_columns.length; i++) {
+		const column = search_columns[i];
+		inputData.push(
+			{ id: `search_box_${column}`, placeholder: `Enter ${column} here...` }
+		);
+	}
 }
 
 async function waitForPort(port, retryInterval = 10000, maxRetries = 60) {
@@ -136,20 +145,16 @@ document.addEventListener("DOMContentLoaded", function() {
 
 		grid = new Slick.Grid("#myGrid", data, columns, options);
 
+		grid.onColumnsReordered.subscribe(function() {
+			console.log("Columns reordered");
+			setupHeaderRow();
+		});
+
 		console.log("Columns: ", columns);
 		console.log("Search columns: ", search_columns);
 
 		setupHeaderRow();
 		search();
-
-		// Create search boxes
-		const inputData = [];
-		for (let i = 0; i < search_columns.length; i++) {
-			const column = search_columns[i];
-			inputData.push(
-				{ id: `search_box_${column}`, placeholder: `Enter ${column} here...` }
-			);
-		}
 	})();
 });
 
@@ -167,8 +172,7 @@ function escapeHtml(text) {
 }
 
 function highlightMatchingText(row, cell, value, columnDef, dataContext) {
-	let searchBox = document.querySelector(`input[data-column-id="${columnDef.name}"]`);
-
+    let searchBox = document.querySelector(`input[data-column-id="${columnDef.name}"]`);
     if (!searchBox || !value || typeof value !== 'string') {
         return escapeHtml(value);
     }
@@ -178,20 +182,66 @@ function highlightMatchingText(row, cell, value, columnDef, dataContext) {
         return escapeHtml(value);
     }
 
-    let tokens = query.split(/\s+/).filter(token => /[a-z0-9]/i.test(token)).slice(0, 6);
+    let tokens = query.split(/\s+/).slice(0, 6).filter(Boolean);
     if (tokens.length === 0) {
         return escapeHtml(value);
     }
 
-    let escapedValue = escapeHtml(value);
-    let regex = new RegExp('(' + tokens.map(escapeRegExp).join('|') + ')', 'gi');
-    return escapedValue.replace(regex, '<span class="highlight">$1</span>');
+    // Normalize value and build a mapping from normalized index to original index
+    let original = value;
+    let normalized = '';
+    let normToOrig = [];
+    for (let i = 0, j = 0; i < original.length; i++) {
+        if (/[a-z0-9]/i.test(original[i])) {
+            normalized += original[i].toLowerCase();
+            normToOrig.push(i);
+        }
+    }
+
+    // Find all match ranges in normalized string
+    let matchRanges = [];
+    for (let token of tokens) {
+        let normToken = token.replace(/[^a-z0-9]/gi, '').toLowerCase();
+        if (!normToken) continue;
+        let startIdx = 0;
+        while (true) {
+            let idx = normalized.indexOf(normToken, startIdx);
+            if (idx === -1) break;
+
+            let origStart = normToOrig[idx];
+            let origEnd = normToOrig[idx + normToken.length - 1] + 1;
+            matchRanges.push([origStart, origEnd]);
+            startIdx = idx + 1;
+        }
+    }
+
+    // Merge overlapping ranges
+    matchRanges.sort((a, b) => a[0] - b[0]);
+    let merged = [];
+    for (let range of matchRanges) {
+        if (!merged.length || merged[merged.length - 1][1] < range[0]) {
+            merged.push(range);
+        } else {
+            merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], range[1]);
+        }
+    }
+
+    // Build highlighted HTML
+    let result = '';
+    let lastIdx = 0;
+    for (let [start, end] of merged) {
+        result += escapeHtml(original.slice(lastIdx, start));
+        result += '<span class="highlight">' + escapeHtml(original.slice(start, end)) + '</span>';
+        lastIdx = end;
+    }
+    result += escapeHtml(original.slice(lastIdx));
+
+    return result;
 }
 
 function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
 
 function updateGrid(results) {
 	// Update metadata

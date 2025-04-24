@@ -116,14 +116,16 @@ pub const QueryHandlerZap = struct {
     zap_router: zap.Router,
     zap_listener: zap.HttpListener,
 
+    html_file: [*:0]const u8,
+    css_file: [*:0]const u8,
+    js_file: [*:0]const u8,
+
     pub fn init(
         index_manager: *IndexManager,
         boost_factors: std.ArrayList(f32),
     ) !QueryHandlerZap {
 
-        writeHTMLFiles(index_manager);
-
-        return QueryHandlerZap{
+        const handler = QueryHandlerZap{
             .index_manager = index_manager,
             .boost_factors = boost_factors,
             .query_map     = std.StringHashMap([]const u8).init(
@@ -136,7 +138,12 @@ pub const QueryHandlerZap = struct {
 
             .zap_router   = undefined,
             .zap_listener = undefined,
+
+            .html_file    = @embedFile("../web/index.html"),
+            .css_file     = @embedFile("../web/style.css"),
+            .js_file      = @embedFile("../web/app.js"),
         };
+        return handler;
     }
 
     pub fn deinit(self: *QueryHandlerZap) void {
@@ -147,6 +154,28 @@ pub const QueryHandlerZap = struct {
 
     pub fn initRouter(self: *QueryHandlerZap) !void {
         self.zap_router = zap.Router.init(self.index_manager.gpa(), .{});
+
+        try self.zap_router.handle_func(
+            "/", 
+            self, 
+            &QueryHandlerZap.serveStatic,
+            );
+        try self.zap_router.handle_func(
+            "/index.html", 
+            self, 
+            &QueryHandlerZap.serveStatic,
+            );
+        try self.zap_router.handle_func(
+            "/app.js", 
+            self, 
+            &QueryHandlerZap.serveStatic,
+            );
+        try self.zap_router.handle_func(
+            "/style.css", 
+            self, 
+            &QueryHandlerZap.serveStatic,
+            );
+
         try self.zap_router.handle_func(
             "/search", 
             self, 
@@ -170,6 +199,8 @@ pub const QueryHandlerZap = struct {
     }
 
     pub fn serve(self: *QueryHandlerZap) !void {
+        // self.writeHTMLFiles();
+
         try self.initRouter();
 
         self.zap_listener = zap.HttpListener.init(.{
@@ -187,80 +218,73 @@ pub const QueryHandlerZap = struct {
         });
     }
 
-    pub fn openIndexHTML(self: *QueryHandlerZap) void {
-        const full_path = std.mem.concat(
-            self.index_manager.scratchArena(),
-            u8, 
-            &[_][]const u8{self.index_manager.file_data.tmp_dir, "/index.html"}
-            ) catch {
-            @panic("Failed to concatenate path.\n");
-        };
+    pub fn serveStatic(self: *QueryHandlerZap, r: zap.Request) !void {
+        const path = r.path orelse "/";
 
+        if (std.mem.eql(u8, path, "/") or std.mem.eql(u8, path, "/index.html")) {
+            try r.setHeader("Content-Type", "text/html");
+            try r.sendBody(std.mem.span(self.html_file));
+
+        } else if (std.mem.eql(u8, path, "/style.css")) {
+            try r.setHeader("Content-Type", "text/css");
+            try r.sendBody(std.mem.span(self.css_file));
+
+        } else if (std.mem.eql(u8, path, "/app.js")) {
+            try r.setHeader("Content-Type", "application/javascript");
+            try r.sendBody(std.mem.span(self.js_file));
+
+        } else {
+            r.setStatus(zap.http.StatusCode.not_found);
+            try r.sendBody("404 Not Found");
+        }
+    }
+
+    pub fn openIndexHTML(self: *QueryHandlerZap) void {
         var cmd = std.process.Child.init(
-            &[_][]const u8{"xdg-open", full_path}, 
+            &[_][]const u8{"xdg-open", "http://localhost:5000/"},
             self.index_manager.scratchArena(),
-            );
+        );
         cmd.spawn() catch @panic("Failed to spawn process.\n");
         _ = cmd.wait() catch @panic("Failed to open file.\n");
     }
 
-    pub fn writeHTMLFiles(index_manager: *IndexManager) void {
-        const index_html = @embedFile("../web/index.html");
-        const style_css  = @embedFile("../web/style.css");
-        const app_js     = @embedFile("../web/app.js");
-
-        var output_filename = std.fmt.allocPrint(
-            index_manager.scratchArena(),
-            "{s}/index.html", 
-            .{index_manager.file_data.tmp_dir}
+    pub inline fn writeFileToTmpDir(
+        self: *QueryHandlerZap,
+        filename: []const u8,
+        data: []const u8,
+    ) void {
+        const full_path = std.mem.concat(
+            self.index_manager.scratchArena(),
+            u8, 
+            &[_][]const u8{self.index_manager.file_data.tmp_dir, filename}
             ) catch {
-            @panic("String concatenation failed.\n");
+            @panic("Failed to concatenate path.\n");
         };
+
         var output_file = std.fs.cwd().createFile(
-            output_filename, 
+            full_path, 
             .{ .read = false },
             ) catch {
             @panic("Failed to create file.\n");
         };
-        _ = output_file.write(index_html) catch {
+        _ = output_file.write(data) catch {
             @panic("Failed to write file.\n");
         };
+    }
 
-        output_filename = std.fmt.allocPrint(
-            index_manager.scratchArena(),
-            "{s}/style.css",
-            .{index_manager.file_data.tmp_dir}
-            ) catch {
-            @panic("String concatenation failed.\n");
-        };
-        output_file = std.fs.cwd().createFile(
-            output_filename, 
-            .{ .read = false },
-            ) catch {
-            @panic("Failed to create file.\n");
-        };
-        _ = output_file.write(style_css) catch {
-            @panic("Failed to write file.\n");
-        };
-
-        output_filename = std.fmt.allocPrint(
-            index_manager.scratchArena(),
-            "{s}/app.js",
-            .{index_manager.file_data.tmp_dir}
-            ) catch {
-            @panic("String concatenation failed.\n");
-        };
-        output_file = std.fs.cwd().createFile(
-            output_filename, 
-            .{ .read = false },
-            ) catch {
-            @panic("Failed to create file.\n");
-        };
-
-        _ = output_file.write(app_js) catch {
-            @panic("Failed to write file.\n");
-        };
-
+    pub fn writeHTMLFiles(self: *QueryHandlerZap) void {
+        self.writeFileToTmpDir(
+            "index.html",
+            std.mem.span(self.html_file),
+        );
+        self.writeFileToTmpDir(
+            "style.css",
+            std.mem.span(self.css_file),
+        );
+        self.writeFileToTmpDir(
+            "app.js",
+            std.mem.span(self.js_file),
+        );
     }
 
     pub fn on_request(self: *QueryHandlerZap, r: zap.Request) !void {
@@ -287,7 +311,6 @@ pub const QueryHandlerZap = struct {
                 25,
                 self.boost_factors,
                 );
-            std.debug.print("Count: {d}\n", .{self.index_manager.query_state.results_arrays[0].count});
 
             for (0..self.index_manager.query_state.results_arrays[0].count) |idx| {
                 try self.json_objects.append(
@@ -508,10 +531,6 @@ pub const QueryHandlerZap = struct {
                         urlDecode(allocator, URL_BUFFER[0..count]) catch @panic("Failed to copy input string.\n"),
                         ) catch @panic("Failed to copy input string.\n");
                     result.?.* = value_copy;
-                    std.debug.print("Query: {s} - {s}\n", .{
-                        URL_BUFFER[0..count],
-                        value_copy,
-                    });
                 }
                 count = 0;
                 idx += 1;
