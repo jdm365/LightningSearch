@@ -2,21 +2,24 @@ const std     = @import("std");
 const builtin = @import("builtin");
 
 const HuffmanCompressor = @import("../compression/huffman.zig").HuffmanCompressor;
+const TermPos           = @import("../server/server.zig").TermPos;
 
 pub const DocStore = struct {
     huffman_compressor: HuffmanCompressor,
-    literal_byte_sizes: *std.ArrayListUnmanaged(usize),
+    literal_byte_sizes: *const std.ArrayListUnmanaged(usize),
     literal_byte_size_sum: usize,
-    literal_col_idxs: *std.ArrayListUnmanaged(usize),
-    huffman_col_idxs: *std.ArrayListUnmanaged(usize),
+    literal_col_idxs: *const std.ArrayListUnmanaged(usize),
+    huffman_col_idxs: *const std.ArrayListUnmanaged(usize),
 
     huffman_rows: std.ArrayListUnmanaged([]u8),
     literal_rows: std.ArrayListUnmanaged([]u8),
 
+    huffman_field_sizes: std.ArrayListUnmanaged(u16),
+
     pub fn init(
-        literal_byte_sizes: *std.ArrayListUnmanaged(usize),
-        literal_col_idxs: *std.ArrayListUnmanaged(usize),
-        huffman_col_idxs: *std.ArrayListUnmanaged(usize),
+        literal_byte_sizes: *const std.ArrayListUnmanaged(usize),
+        literal_col_idxs: *const std.ArrayListUnmanaged(usize),
+        huffman_col_idxs: *const std.ArrayListUnmanaged(usize),
     ) !DocStore {
         var sum: usize = 0;
         for (literal_byte_sizes.items) |byte_size| {
@@ -24,7 +27,7 @@ pub const DocStore = struct {
         }
 
         return DocStore {
-            .huffman_compressor = try HuffmanCompressor.init(),
+            .huffman_compressor = HuffmanCompressor.init(),
             .literal_byte_sizes = literal_byte_sizes,
             .literal_byte_size_sum = sum,
             .literal_col_idxs = literal_col_idxs,
@@ -32,54 +35,66 @@ pub const DocStore = struct {
 
             .huffman_rows = std.ArrayListUnmanaged([]u8){},
             .literal_rows = std.ArrayListUnmanaged([]u8){},
+
+            .huffman_field_sizes = std.ArrayListUnmanaged(u16){},
         };
     }
 
     pub fn deinit(self: *DocStore, allocator: std.mem.Allocator) void {
         self.huffman_rows.deinit(allocator);
         self.literal_rows.deinit(allocator);
+        self.huffman_field_sizes.deinit(allocator);
     }
 
     pub fn addRow(
         self: *DocStore,
-        allocator: *std.mem.Allocator,
-        byte_offsets: *std.ArrayListUnmanaged(usize),
+        allocator: std.mem.Allocator,
+        byte_positions: []TermPos,
         row_data: []u8,
     ) !void {
-        var huffman_row = std.ArrayListUnmanaged(u8){};
-        huffman_row.ensureTotalCapacity(1 << 12);
+        // var huffman_row = std.ArrayListUnmanaged(u8){};
+        var huffman_row = std.ArrayListUnmanaged(u32){};
+        try huffman_row.ensureUnusedCapacity(allocator, 32);
 
-        var literal_row = allocator.alloc(u8, self.literal_byte_size_sum);
+        if (self.literal_byte_size_sum > 0) {
+            var literal_row = try allocator.alloc(u8, self.literal_byte_size_sum);
 
-        var literal_row_offset: usize = 0;
-        for (self.literal_col_idxs.items) |col_idx| {
-            const offset    = byte_offsets.items[col_idx];
-            const num_bytes = self.literal_byte_sizes.items[col_idx];
+            var literal_row_offset: usize = 0;
+            for (self.literal_col_idxs.items) |col_idx| {
+                const start_pos = byte_positions[col_idx].start_pos;
+                const field_len = byte_positions[col_idx].field_len;
 
-            @memcpy(
-                literal_row[literal_row_offset..][0..num_bytes], 
-                row_data[offset..offset + num_bytes],
-                );
-            literal_row_offset += num_bytes;
+                @memcpy(
+                    literal_row[literal_row_offset..][0..field_len], 
+                    row_data[start_pos..(start_pos + field_len)],
+                    );
+                literal_row_offset += field_len;
+            }
+            try self.literal_rows.append(allocator, literal_row);
         }
 
+        var row_size: usize = 0;
         for (self.huffman_col_idxs.items) |col_idx| {
-            const offset = byte_offsets.items[col_idx];
-            const next_offset = byte_offsets.items[col_idx + 1];
+            const start_pos = byte_positions[col_idx].start_pos;
+            const field_len = byte_positions[col_idx].field_len;
 
-            try huffman_row.ensureUnusedCapacity(allocator, next_offset - offset);
+            const start_pos_u32 = try std.math.divCeil(u32, start_pos, 4);
+            const field_len_u32 = try std.math.divCeil(u32, field_len, 4);
 
-            const current_buffer_idx = huffman_row.items.len;
-            const compressed_size: u16 = @truncate(try self.huffman_compressor.compress(
-                row_data[offset..next_offset],
-                self.huffman_buffer.items[(current_buffer_idx + 2)..],
+            try huffman_row.ensureUnusedCapacity(allocator, field_len_u32);
+            try huffman_row.resize(allocator, field_len_u32);
+
+            const compressed_size: u16 = @truncate(try self.huffman_compressor.compressU32(
+                row_data[start_pos..(start_pos + field_len)],
+                huffman_row.items[buffer_size..],
             ));
 
-            self.huffman_buffer.items[current_buffer_idx]     = @truncate(compressed_size >> 8);
-            self.huffman_buffer.items[current_buffer_idx + 1] = @truncate(compressed_size);
+            try self.huffman_field_sizes.append(allocator, compressed_size);
         }
 
-        self.literal_rows.fromOwnedSlice(literal_row);
-        self.huffman_rows.fromOwnedSlice(huffman_row.toOwnedSlice(allocator));
+        try self.huffman_rows.append(
+            allocator, 
+            (try huffman_row.toOwnedSlice(allocator))[0..huffman_row.items.len],
+            );
     }
 };

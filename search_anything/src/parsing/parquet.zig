@@ -104,7 +104,6 @@ pub fn getNumRowGroupsInRowGroup(
 }
 
 pub fn fetchRowFromRowGroup(
-    // filename_c: [*:0]const u8,
     serialized_reader: *anyopaque,
     row_group_idx: usize,
     row_idx: usize,
@@ -112,7 +111,6 @@ pub fn fetchRowFromRowGroup(
     result_positions_ptr: [*]u64,
 ) void {
     return lp.fetch_row_from_row_group_c(
-        // filename_c,
         @ptrCast(serialized_reader),
         row_group_idx,
         row_idx,
@@ -127,14 +125,12 @@ test "read_parquet_col" {
 
     var num_values: usize = 0;
 
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
     var cols = std.ArrayListUnmanaged([]const u8){};
 
     defer {
         cols.deinit(arena.allocator());
-        // _ = gpa.deinit();
         arena.deinit();
     }
 

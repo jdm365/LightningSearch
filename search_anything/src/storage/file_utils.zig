@@ -43,8 +43,8 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         const overflow_size = 16384;
 
         // Make buffers larger to accommodate overlap
-        const buffers = try allocator.alloc(u8, 2 * buffer_size);
-        const overflow_buffer = try allocator.alloc(u8, 2 * overflow_size);
+        const buffers = try allocator.alignedAlloc(u8, .@"32", 2 * buffer_size);
+        const overflow_buffer = try allocator.alignedAlloc(u8, .@"32", 2 * overflow_size);
 
         try file.seekTo(start_byte);
         const bytes_read = try file.read(buffers);

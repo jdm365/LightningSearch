@@ -3,6 +3,8 @@ const std = @import("std");
 const string_utils = @import("../utils/string_utils.zig");
 const fu           = @import("../storage/file_utils.zig");
 
+const DocStore = @import("../storage/doc_store.zig").DocStore;
+
 const StaticIntegerSet = @import("../utils/static_integer_set.zig").StaticIntegerSet;
 
 const progress = @import("../utils/progress.zig");
@@ -76,6 +78,8 @@ pub const IndexManager = struct {
         pq_data: ?PQData = null,
         header_bytes: ?usize = null,
 
+        doc_store: DocStore,
+
         inline fn inputFilename(self: *FileData) []const u8 {
             return std.mem.span(self.input_filename_c);
         }
@@ -107,6 +111,7 @@ pub const IndexManager = struct {
                 .tmp_dir          = undefined,
                 .file_handles     = undefined,
                 .file_type        = undefined,
+                .doc_store        = undefined,
             },
 
             .query_state = QueryState{
@@ -680,11 +685,35 @@ pub const IndexManager = struct {
         // Time read.
         const start_time = std.time.microTimestamp();
 
+        var freq_table: [256]u32 = undefined;
+        @memset(freq_table[0..], 0);
+
+        var buffer = try buffered_reader.getBuffer(file_pos);
+        for (0..(1 << 14)) |idx| {
+            freq_table[buffer[idx]] += 1;
+        }
+
+        const literal_byte_sizes = std.ArrayListUnmanaged(usize){};
+        const literal_col_idxs   = std.ArrayListUnmanaged(usize){};
+        var huffman_col_idxs     = std.ArrayListUnmanaged(usize){};
+        for (0..self.columns.num_keys) |idx| {
+            try huffman_col_idxs.append(self.gpa(), idx);
+        }
+        self.file_data.doc_store = try DocStore.init(
+            &literal_byte_sizes,
+            &literal_col_idxs,
+            &huffman_col_idxs,
+        );
+        try self.file_data.doc_store.huffman_compressor.buildHuffmanTreeGivenFreqs(
+            self.gpa(),
+            &freq_table,
+        );
+
         try line_offsets.ensureTotalCapacity(16384);
 
         while (file_pos < file_size - 1) {
             try line_offsets.append(file_pos);
-            const buffer = try buffered_reader.getBuffer(file_pos);
+            buffer = try buffered_reader.getBuffer(file_pos);
 
             if (line_offsets.items.len == 16384) {
                 const estimated_lines = @as(usize, @intFromFloat(@as(f32, @floatFromInt(file_size)) /
@@ -694,14 +723,24 @@ pub const IndexManager = struct {
 
             var index: usize = 0;
             try csv.iterLineCSV(buffer, &index);
+
+            try csv.parseRecordCSV(
+                buffer[0..index],
+                self.query_state.result_positions[0],
+            );
+            try self.file_data.doc_store.addRow(
+                self.stringArena(),
+                self.query_state.result_positions[0],
+                buffer[0..index],
+            );
+
             file_pos += index;
         }
         try line_offsets.append(file_size);
 
         const end_time = std.time.microTimestamp();
-        const execution_time_us = end_time - start_time;
-        const mb_s: usize = @intFromFloat(0.000_001 * @as(f64, @floatFromInt(file_size)) 
-                            / @as(f64, @floatFromInt(execution_time_us)));
+        const execution_time_us: usize = @intCast(end_time - start_time);
+        const mb_s = @divFloor(file_size, execution_time_us);
 
         std.debug.print("Read {d} lines in {d}ms\n", .{line_offsets.items.len - 1, @divFloor(execution_time_us, 1000)});
         std.debug.print("{d}MB/s\n", .{mb_s});

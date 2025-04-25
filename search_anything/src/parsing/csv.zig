@@ -39,7 +39,9 @@ pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
             const skip_idx = @min(newline_idx, comma_idx);
             byte_idx.* += skip_idx;
             if (skip_idx == string_utils.VEC_SIZE) continue;
-            std.debug.assert((buffer[byte_idx.*] == ',') or (buffer[byte_idx.*] == '\n'));
+            std.debug.assert(
+                (buffer[byte_idx.*] == ',') or (buffer[byte_idx.*] == '\n')
+                );
             byte_idx.* += 1;
             break :outer_loop;
         }

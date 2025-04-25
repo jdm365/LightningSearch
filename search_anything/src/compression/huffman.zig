@@ -178,10 +178,10 @@ pub const HuffmanCompressor = struct {
         self.buildLookupTable();
     }
 
-    fn buildHuffmanTreeGivenFreqs(
+    pub fn buildHuffmanTreeGivenFreqs(
         self: *HuffmanCompressor,
         allocator: std.mem.Allocator,
-        freqs: [256]usize,
+        freqs: *[256]u32,
     ) !void {
         var pq = std.PriorityQueue(HuffmanNode, void, lessThan).init(allocator, {});
         defer pq.deinit();
@@ -208,8 +208,8 @@ pub const HuffmanCompressor = struct {
             self.huffman_nodes[node_idx] = right; node_idx += 1;
 
             const parent = HuffmanNode{
-                .value = 0,
                 .freq = left.freq + right.freq,
+                .value = 0,
                 .left_idx = @truncate(node_idx - 2),
                 .right_idx = @truncate(node_idx - 1),
             };
@@ -289,7 +289,7 @@ pub const HuffmanCompressor = struct {
         }
     }
 
-    fn compress(
+    pub fn compress(
         self: *HuffmanCompressor,
         input_buffer: []u8,
         output_buffer: []u8,
@@ -304,7 +304,7 @@ pub const HuffmanCompressor = struct {
         var output_buffer_bit_idx: usize = 0;
 
         const output_buffer_u32 = @as(
-            [*]u32,
+            [*]align(4) u32,
             @ptrCast(@alignCast(output_buffer.ptr)),
         );
 
@@ -331,7 +331,44 @@ pub const HuffmanCompressor = struct {
         return compressed_size;
     }
 
-    fn decompressBase(
+    pub inline fn compressU32(
+        self: *HuffmanCompressor,
+        input_buffer: []u8,
+        output_buffer_u32: []u32,
+    ) !usize {
+        if (self.root_node_idx == 0) {
+            @branchHint(.cold);
+            return error.HuffmanTreeNotBuilt;
+        }
+
+        @memset(output_buffer_u32, 0);
+
+        var output_buffer_bit_idx: usize = 0;
+
+        for (input_buffer) |byte| {
+            const nbits = self.code_lengths[byte];
+
+            try writeBits(
+                output_buffer_u32[@divFloor(output_buffer_bit_idx, 32)..],
+                output_buffer_bit_idx % 32,
+                self.codes[byte],
+                nbits,
+            );
+
+            output_buffer_bit_idx += nbits;
+        }
+
+        const compressed_size = try std.math.divCeil(usize, output_buffer_bit_idx, 8);
+        const last_word_idx   = try std.math.divCeil(usize, output_buffer_bit_idx, 32);
+
+        for (0.., output_buffer_u32[0..last_word_idx]) |idx, word| {
+            output_buffer_u32[idx] = @byteSwap(word);
+        }
+
+        return compressed_size;
+    }
+
+    pub fn decompressBase(
         self: *HuffmanCompressor,
         compressed_buffer: []u8,
         decompressed_buffer: []u8,
@@ -395,7 +432,7 @@ pub const HuffmanCompressor = struct {
         return decompressed_buffer_idx;
     }
 
-    fn decompress(
+    pub fn decompress(
         self: *HuffmanCompressor,
         compressed_buffer: []u8,
         decompressed_buffer: []u8,
