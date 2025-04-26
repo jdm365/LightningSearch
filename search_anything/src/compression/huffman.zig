@@ -235,7 +235,7 @@ pub const HuffmanCompressor = struct {
 
             if (left_null and right_null) {
                 const value = @as(usize, @intCast(node.value));
-                self.codes[value] = current_code;
+                self.codes[value] = current_code << @truncate(64 - current_code_length);
                 self.code_lengths[value] = current_code_length;
 
                 std.debug.assert(self.code_lengths[value] <= 32);
@@ -245,14 +245,14 @@ pub const HuffmanCompressor = struct {
             if (!left_null) {
                 self.gatherCodes(
                     node.left_idx,
-                    current_code >> 1,
+                    current_code << 1,
                     current_code_length + 1,
                 );
             }
             if (!right_null) {
                 self.gatherCodes(
                     node.right_idx,
-                    (current_code >> 1) | comptime (1 << 63),
+                    (current_code << 1) | 1,
                     current_code_length + 1,
                 );
             }
