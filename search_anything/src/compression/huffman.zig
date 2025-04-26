@@ -40,15 +40,6 @@ pub fn printBits(comptime T: type, value: T) void {
     std.debug.print("{s}\n", .{SCRATCH_BUFFER[0..num_bits]});
 }
 
-
-pub inline fn sum(comptime T: type, x: []T) usize {
-    var _sum: usize = 0;
-    for (x) |val| {
-        _sum += @intCast(val);
-    }
-    return _sum;
-}
-
 const HuffmanNode = packed struct(u64) {
     freq: u32,
     value: u8,
@@ -89,25 +80,22 @@ fn lessThan(_: void, a: HuffmanNode, b: HuffmanNode) std.math.Order {
 }
 
 inline fn writeBits(
-    output_buffer: [*]u32,
+    output_buffer: [*]u8,
     bit_offset: usize,
-    code: u32,
-    code_length: u8,
+    code: u64,
 ) !void {
-    const shifted_code_0 = code >> @truncate(bit_offset);
-
-    output_buffer[0] |= shifted_code_0;
-
-    if (@as(u8, @truncate(code_length)) + bit_offset > 32) {
-        const shift_val: u5 = @truncate((32 - bit_offset) % 32);
-        output_buffer[1] |= code << shift_val;
+    const code_buf: [8]u8 = @bitCast(
+        code >> @truncate(bit_offset)
+    );
+    inline for (0..8) |idx| {
+        output_buffer[idx] |= code_buf[idx];
     }
 }
 
 
 pub const HuffmanCompressor = struct {
     huffman_nodes: [512]HuffmanNode,
-    codes: [256]u32,
+    codes: [256]u64,
     code_lengths: [256]u8,
     root_node_idx: u12,
 
@@ -115,15 +103,21 @@ pub const HuffmanCompressor = struct {
     lookup_table_lengths: [4096]u8,
 
     pub fn init() HuffmanCompressor {
-        return HuffmanCompressor{
+        var compressor = HuffmanCompressor{
             .huffman_nodes = undefined,
-            .codes = [_]u32{0} ** 256,
+            .codes = undefined,
             .code_lengths = [_]u8{0} ** 256,
             .root_node_idx = 0,
 
             .lookup_table = [_]u8{0} ** 4096,
             .lookup_table_lengths = [_]u8{0} ** 4096,
         };
+
+        for (0..256) |idx| {
+            compressor.codes[idx] = 0;
+        }
+
+        return compressor;
     }
 
     fn buildHuffmanTree(
@@ -174,6 +168,7 @@ pub const HuffmanCompressor = struct {
 
         self.huffman_nodes[node_idx] = pq.remove(); node_idx += 1;
         self.root_node_idx = @truncate(node_idx - 1);
+
         self.gatherCodes(self.root_node_idx, 0, 0);
         self.buildLookupTable();
     }
@@ -219,15 +214,15 @@ pub const HuffmanCompressor = struct {
 
         self.huffman_nodes[node_idx] = pq.remove(); node_idx += 1;
         self.root_node_idx = @truncate(node_idx - 1);
+
         self.gatherCodes(self.root_node_idx, 0, 0);
         self.buildLookupTable();
     }
 
-
     fn gatherCodes(
         self: *HuffmanCompressor,
         current_node_idx: u12,
-        current_code: u32,
+        current_code: u64,
         current_code_length: u8,
     ) void {
 
@@ -240,9 +235,7 @@ pub const HuffmanCompressor = struct {
 
             if (left_null and right_null) {
                 const value = @as(usize, @intCast(node.value));
-
-                const shift_val: u5 = @truncate((32 - current_code_length) % 32);
-                self.codes[value] = current_code << shift_val;
+                self.codes[value] = current_code;
                 self.code_lengths[value] = current_code_length;
 
                 std.debug.assert(self.code_lengths[value] <= 32);
@@ -252,14 +245,14 @@ pub const HuffmanCompressor = struct {
             if (!left_null) {
                 self.gatherCodes(
                     node.left_idx,
-                    current_code << 1,
+                    current_code >> 1,
                     current_code_length + 1,
                 );
             }
             if (!right_null) {
                 self.gatherCodes(
                     node.right_idx,
-                    (current_code << 1) | 1,
+                    (current_code >> 1) | comptime (1 << 63),
                     current_code_length + 1,
                 );
             }
@@ -277,9 +270,10 @@ pub const HuffmanCompressor = struct {
             if (self.code_lengths[idx] == 0) continue;
             if (self.code_lengths[idx] > 12) continue;
 
-            const mask = (@as(u64, 1) << @truncate(@as(u8, 12) - self.code_lengths[idx])) - 1;
+            const mask = (@as(u12, 1) << @truncate(@as(u8, 12) - self.code_lengths[idx])) - 1;
+            const code_u12 = code >> 52;
 
-            const min_code = code >> 20;
+            const min_code = code_u12;
             const max_code = min_code | mask;
 
             for (min_code..max_code + 1) |_code| {
@@ -303,133 +297,58 @@ pub const HuffmanCompressor = struct {
 
         var output_buffer_bit_idx: usize = 0;
 
-        const output_buffer_u32 = @as(
-            [*]align(4) u32,
-            @ptrCast(@alignCast(output_buffer.ptr)),
-        );
-
         for (input_buffer) |byte| {
             const nbits = self.code_lengths[byte];
 
             try writeBits(
-                output_buffer_u32[@divFloor(output_buffer_bit_idx, 32)..],
-                output_buffer_bit_idx % 32,
+                output_buffer[@divFloor(output_buffer_bit_idx, 8)..].ptr,
+                output_buffer_bit_idx % 8,
                 self.codes[byte],
-                nbits,
             );
 
             output_buffer_bit_idx += nbits;
         }
 
         const compressed_size = try std.math.divCeil(usize, output_buffer_bit_idx, 8);
-        const last_word_idx   = try std.math.divCeil(usize, output_buffer_bit_idx, 32);
-
-        for (0.., output_buffer_u32[0..last_word_idx]) |idx, word| {
-            output_buffer_u32[idx] = @byteSwap(word);
-        }
-
-        return compressed_size;
-    }
-
-    pub inline fn compressU32(
-        self: *HuffmanCompressor,
-        input_buffer: []u8,
-        output_buffer_u32: []u32,
-    ) !usize {
-        if (self.root_node_idx == 0) {
-            @branchHint(.cold);
-            return error.HuffmanTreeNotBuilt;
-        }
-
-        @memset(output_buffer_u32, 0);
-
-        var output_buffer_bit_idx: usize = 0;
-
-        for (input_buffer) |byte| {
-            const nbits = self.code_lengths[byte];
-
-            try writeBits(
-                output_buffer_u32[@divFloor(output_buffer_bit_idx, 32)..],
-                output_buffer_bit_idx % 32,
-                self.codes[byte],
-                nbits,
-            );
-
-            output_buffer_bit_idx += nbits;
-        }
-
-        const compressed_size = try std.math.divCeil(usize, output_buffer_bit_idx, 8);
-        const last_word_idx   = try std.math.divCeil(usize, output_buffer_bit_idx, 32);
-
-        for (0.., output_buffer_u32[0..last_word_idx]) |idx, word| {
-            output_buffer_u32[idx] = @byteSwap(word);
-        }
 
         return compressed_size;
     }
 
     pub fn decompressBase(
         self: *HuffmanCompressor,
-        compressed_buffer: []u8,
-        decompressed_buffer: []u8,
+        compressed: []u8,
+        out: []u8,
     ) !usize {
-        if (self.root_node_idx == 0) {
-            @branchHint(.cold);
-            return error.HuffmanTreeNotBuilt;
-        }
+        if (self.root_node_idx == 0) return error.HuffmanTreeNotBuilt;
 
-        var decompressed_buffer_idx:   usize = 0;
-        var compressed_buffer_bit_idx: usize = 0;
+        var out_idx: usize = 0;
+        var bit_idx: usize = 0;
+        while (out_idx < out.len) {
+            var node_idx: usize = self.root_node_idx;
 
-        var current_node_idx = self.root_node_idx;
+            while (true) {
+                const byte_idx   = @divFloor(bit_idx, 8);
+                const bit_offset = bit_idx % 8;
+                if (byte_idx >= compressed.len) return error.InsufficientInput;
 
-        while (decompressed_buffer_idx < decompressed_buffer.len) {
-            const node = self.huffman_nodes[current_node_idx];
+                const byte = compressed[byte_idx];
+                const bit  = (byte >> @truncate(7 - bit_offset)) & 1;
+                bit_idx += 1;
 
-            if (node.left_idx == 0 and node.right_idx == 0) {
-                decompressed_buffer[decompressed_buffer_idx] = node.value;
-                decompressed_buffer_idx += 1;
-                current_node_idx = self.root_node_idx;
-                continue;
-            }
+                const node = self.huffman_nodes[node_idx];
+                node_idx = if (bit == 0) node.left_idx else node.right_idx;
+                if (node_idx == 0) return error.InvalidHuffmanCode;
 
-            const byte_idx    = compressed_buffer_bit_idx / 8;
-            const bit_in_byte = compressed_buffer_bit_idx % 8;
-
-            if (byte_idx >= compressed_buffer.len) {
-                if (decompressed_buffer_idx < decompressed_buffer.len) {
-                    return error.InsufficientInput;
-                }
-                break;
-            }
-
-            const byte = compressed_buffer[byte_idx];
-            const bit = (byte >> @truncate(7 - bit_in_byte)) & 1;
-
-            compressed_buffer_bit_idx += 1;
-
-            if (bit == 0) {
-                current_node_idx = node.left_idx;
-                if (current_node_idx == 0) {
-                    return error.InvalidHuffmanCode;
-                }
-            } else {
-                current_node_idx = node.right_idx;
-                if (current_node_idx == 0) {
-                    return error.InvalidHuffmanCode;
+                const next = self.huffman_nodes[node_idx];
+                if (next.left_idx == 0 and next.right_idx == 0) {
+                    out[out_idx] = next.value;
+                    out_idx += 1;
+                    break;
                 }
             }
         }
 
-        const final_node = self.huffman_nodes[current_node_idx];
-        if (
-            (decompressed_buffer_idx < decompressed_buffer.len) and 
-            (final_node.left_idx != 0 or final_node.right_idx != 0)
-            ) {
-             return error.InvalidHuffmanCode;
-        }
-
-        return decompressed_buffer_idx;
+        return out_idx;
     }
 
     pub fn decompress(
@@ -449,12 +368,13 @@ pub const HuffmanCompressor = struct {
             const byte_idx = @divFloor(compressed_buffer_bit_idx, 8);
             const bit_idx  = compressed_buffer_bit_idx % 8;
 
-            const slice = compressed_buffer[byte_idx..@min(byte_idx + 4, compressed_buffer.len)];
-            var current_word = std.mem.readInt(u32, slice[0..4], big_endian);
-            current_word = (current_word >> @truncate(20 - bit_idx)) & 0xFFF;
+            var current_u32: u32 = 0;
+            current_u32  = compressed_buffer[byte_idx] << @truncate(bit_idx);
+            current_u32 |= (current_u32 << 8)  | (compressed_buffer[byte_idx] << @truncate(bit_idx));
+            current_u32 |= (current_u32 << 16) | (compressed_buffer[byte_idx] << @truncate(bit_idx));
 
-            const length = self.lookup_table_lengths[current_word];
-            const symbol = self.lookup_table[current_word];
+            const length = self.lookup_table_lengths[@as(u12, @truncate(current_u32))];
+            const symbol = self.lookup_table[@as(u12, @truncate(current_u32))];
 
             if (length > 0) {
                 @branchHint(.likely);
@@ -533,8 +453,8 @@ test "compression" {
     const decompressed_buffer = try arena.allocator().alloc(u8, file_size);
 
     const init2 = std.time.microTimestamp();
-    // const decompressed_size = try compressor.decompressBase(
-    const decompressed_size = try compressor.decompress(
+    const decompressed_size = try compressor.decompressBase(
+    // const decompressed_size = try compressor.decompress(
         output_buffer, 
         decompressed_buffer,
         );
