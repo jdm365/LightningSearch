@@ -737,6 +737,7 @@ pub const IndexManager = struct {
             file_pos += index;
         }
         try line_offsets.append(file_size);
+        self.file_data.doc_store.printMemoryUsage();
 
         const end_time = std.time.microTimestamp();
         const execution_time_us: usize = @intCast(end_time - start_time);

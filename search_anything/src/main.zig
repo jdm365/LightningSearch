@@ -76,8 +76,8 @@ fn bench(testing: bool) !void {
 }
 
 fn serveHTML() !void {
-    const filename: []const u8 = "../data/mb_small.csv";
-    // const filename: []const u8 = "../data/mb.csv";
+    // const filename: []const u8 = "../data/mb_small.csv";
+    const filename: []const u8 = "../data/mb.csv";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();

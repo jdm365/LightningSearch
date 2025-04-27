@@ -46,15 +46,47 @@ pub const DocStore = struct {
         self.huffman_field_sizes.deinit(allocator);
     }
 
+    pub fn printMemoryUsage(self: *const DocStore) void {
+        var total_bytes: usize = 0;
+        var huffman_rows_sum: usize = 0;
+        var literal_rows_sum: usize = 0;
+        var huffman_field_sizes_sum: usize = 0;
+
+        for (self.huffman_rows.items) |row| {
+            huffman_rows_sum += row.len;
+        }
+        for (self.literal_rows.items) |row| {
+            literal_rows_sum += row.len;
+        }
+        huffman_field_sizes_sum += 2 * self.huffman_field_sizes.items.len;
+        total_bytes += huffman_rows_sum + total_bytes + huffman_field_sizes_sum;
+
+        if (huffman_rows_sum >= (1 << 20)) {
+            std.debug.print("HUFFMAN ROWS SIZE:  {d}MB\n", .{@divFloor(huffman_rows_sum, 1 << 20)});
+            std.debug.print("LITERAL ROWS SIZE:  {d}MB\n", .{@divFloor(literal_rows_sum, 1 << 20)});
+            std.debug.print("HUFFMAN FIELD SIZE: {d}MB\n", .{@divFloor(huffman_field_sizes_sum, 1 << 20)});
+            std.debug.print("-------------------------\n", .{});
+            std.debug.print("TOTAL SIZE:         {d}MB\n", .{@divFloor(total_bytes, 1 << 20)});
+        } else {
+            std.debug.print("HUFFMAN ROWS SIZE:  {d}kB\n", .{@divFloor(huffman_rows_sum, 1 << 10)});
+            std.debug.print("LITERAL ROWS SIZE:  {d}kB\n", .{@divFloor(literal_rows_sum, 1 << 10)});
+            std.debug.print("HUFFMAN FIELD SIZE: {d}kB\n", .{@divFloor(huffman_field_sizes_sum, 1 << 10)});
+            std.debug.print("-------------------------\n", .{});
+            std.debug.print("TOTAL SIZE:         {d}kB\n", .{@divFloor(total_bytes, 1 << 10)});
+        }
+
+    }
+
+
     pub fn addRow(
         self: *DocStore,
         allocator: std.mem.Allocator,
         byte_positions: []TermPos,
         row_data: []u8,
     ) !void {
-        // var huffman_row = std.ArrayListUnmanaged(u8){};
-        var huffman_row = std.ArrayListUnmanaged(u32){};
-        try huffman_row.ensureUnusedCapacity(allocator, 32);
+        // TODO: Make member to retain allocation.
+        var huffman_row = std.ArrayListUnmanaged(u8){};
+        try huffman_row.ensureUnusedCapacity(allocator, 128);
 
         if (self.literal_byte_size_sum > 0) {
             var literal_row = try allocator.alloc(u8, self.literal_byte_size_sum);
@@ -70,7 +102,8 @@ pub const DocStore = struct {
                     );
                 literal_row_offset += field_len;
             }
-            try self.literal_rows.append(allocator, literal_row);
+            const val = try self.literal_rows.addOne(allocator);
+            val.* = literal_row[0..literal_row_offset];
         }
 
         var row_size: usize = 0;
@@ -78,23 +111,21 @@ pub const DocStore = struct {
             const start_pos = byte_positions[col_idx].start_pos;
             const field_len = byte_positions[col_idx].field_len;
 
-            const start_pos_u32 = try std.math.divCeil(u32, start_pos, 4);
-            const field_len_u32 = try std.math.divCeil(u32, field_len, 4);
+            try huffman_row.ensureUnusedCapacity(allocator, field_len);
+            try huffman_row.resize(allocator, 2 * (row_size + field_len + 8));
 
-            try huffman_row.ensureUnusedCapacity(allocator, field_len_u32);
-            try huffman_row.resize(allocator, field_len_u32);
-
-            const compressed_size: u16 = @truncate(try self.huffman_compressor.compressU32(
-                row_data[start_pos..(start_pos + field_len)],
-                huffman_row.items[buffer_size..],
-            ));
-
+            const compressed_size: u16 = @truncate(
+                try self.huffman_compressor.compress(
+                    row_data[start_pos..(start_pos + field_len)],
+                    huffman_row.items[row_size..],
+                    )
+                );
             try self.huffman_field_sizes.append(allocator, compressed_size);
+            row_size += compressed_size;
         }
+        try huffman_row.resize(allocator, row_size);
 
-        try self.huffman_rows.append(
-            allocator, 
-            (try huffman_row.toOwnedSlice(allocator))[0..huffman_row.items.len],
-            );
+        const val = try self.huffman_rows.addOne(allocator);
+        val.* = (try huffman_row.toOwnedSlice(allocator))[0..row_size];
     }
 };
