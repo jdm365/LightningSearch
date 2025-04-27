@@ -78,8 +78,6 @@ pub const IndexManager = struct {
         pq_data: ?PQData = null,
         header_bytes: ?usize = null,
 
-        doc_store: DocStore,
-
         inline fn inputFilename(self: *FileData) []const u8 {
             return std.mem.span(self.input_filename_c);
         }
@@ -111,7 +109,6 @@ pub const IndexManager = struct {
                 .tmp_dir          = undefined,
                 .file_handles     = undefined,
                 .file_type        = undefined,
-                .doc_store        = undefined,
             },
 
             .query_state = QueryState{
@@ -479,8 +476,9 @@ pub const IndexManager = struct {
             fu.FileType.JSON => '{',
             fu.FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
         };
+        const current_IP = &self.index_partitions[partition_idx];
 
-        const start_byte = self.index_partitions[partition_idx].line_offsets[0];
+        const start_byte = current_IP.line_offsets[0];
         var token_stream = try fu.TokenStream(fu.token_32t).init(
             self.file_data.inputFilename(),
             output_filename,
@@ -490,6 +488,25 @@ pub const IndexManager = struct {
             end_token,
         );
         defer token_stream.deinit();
+
+        var freq_table: [256]u32 = undefined;
+        @memset(freq_table[0..], 0);
+
+        switch (self.file_data.file_type) {
+            fu.FileType.CSV, fu.FileType.JSON => {
+                const buffer = token_stream.getBuffer(0);
+                const num_bytes = @min(buffer.len, 1 << 14);
+                for (0..num_bytes) |idx| {
+                    freq_table[buffer[idx]] += 1;
+                }
+            },
+            fu.FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
+        }
+
+        try current_IP.doc_store.huffman_compressor.buildHuffmanTreeGivenFreqs(
+            self.gpa(),
+            &freq_table,
+        );
 
         var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
 
@@ -524,7 +541,7 @@ pub const IndexManager = struct {
                             try token_stream.iterFieldCSV(&byte_idx);
                         }
 
-                        try self.index_partitions[partition_idx].processDocRfc4180(
+                        try current_IP.processDocRfc4180(
                             &token_stream,
                             &byte_idx,
                             @intCast(doc_id), 
@@ -549,7 +566,7 @@ pub const IndexManager = struct {
                     );
 
                     while (true) {
-                        self.index_partitions[partition_idx].processDocRfc8259(
+                        current_IP.processDocRfc8259(
                             &token_stream,
                             &self.columns,
                             &self.search_col_idxs,
@@ -570,7 +587,7 @@ pub const IndexManager = struct {
         _ = total_docs_read.fetchAdd(end_doc - (start_doc + prev_doc_id), .monotonic);
 
         // Construct II
-        try self.index_partitions[partition_idx].constructFromTokenStream(&token_stream);
+        try current_IP.constructFromTokenStream(&token_stream);
     }
 
     fn readPartitionParquet(
@@ -685,35 +702,11 @@ pub const IndexManager = struct {
         // Time read.
         const start_time = std.time.microTimestamp();
 
-        var freq_table: [256]u32 = undefined;
-        @memset(freq_table[0..], 0);
-
-        var buffer = try buffered_reader.getBuffer(file_pos);
-        for (0..(1 << 14)) |idx| {
-            freq_table[buffer[idx]] += 1;
-        }
-
-        const literal_byte_sizes = std.ArrayListUnmanaged(usize){};
-        const literal_col_idxs   = std.ArrayListUnmanaged(usize){};
-        var huffman_col_idxs     = std.ArrayListUnmanaged(usize){};
-        for (0..self.columns.num_keys) |idx| {
-            try huffman_col_idxs.append(self.gpa(), idx);
-        }
-        self.file_data.doc_store = try DocStore.init(
-            &literal_byte_sizes,
-            &literal_col_idxs,
-            &huffman_col_idxs,
-        );
-        try self.file_data.doc_store.huffman_compressor.buildHuffmanTreeGivenFreqs(
-            self.gpa(),
-            &freq_table,
-        );
-
         try line_offsets.ensureTotalCapacity(16384);
 
         while (file_pos < file_size - 1) {
             try line_offsets.append(file_pos);
-            buffer = try buffered_reader.getBuffer(file_pos);
+            const buffer = try buffered_reader.getBuffer(file_pos);
 
             if (line_offsets.items.len == 16384) {
                 const estimated_lines = @as(usize, @intFromFloat(@as(f32, @floatFromInt(file_size)) /
@@ -723,16 +716,6 @@ pub const IndexManager = struct {
 
             var index: usize = 0;
             try csv.iterLineCSV(buffer, &index);
-
-            try csv.parseRecordCSV(
-                buffer[0..index],
-                self.query_state.result_positions[0],
-            );
-            try self.file_data.doc_store.addRow(
-                self.stringArena(),
-                self.query_state.result_positions[0],
-                buffer[0..index],
-            );
 
             file_pos += index;
         }

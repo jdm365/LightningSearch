@@ -199,13 +199,11 @@ pub const Postings = struct {
 
 
 pub const InvertedIndexV2 = struct {
-    postings: Postings,
+    doc_store: DocStore,
 
+    postings: Postings,
     vocab: Vocab,
-    // vocab: std.hash_map.HashMap([]const u8, u32, SHM, 80),
-    // prt_vocab: PruningRadixTrie(u32),
     prt_vocab: RadixTrie(u32),
-    // hashed_ngrams: []HashNGram,
     term_offsets: []usize,
     doc_freqs: std.ArrayList(u32),
     doc_sizes: []u16,
@@ -219,7 +217,6 @@ pub const InvertedIndexV2 = struct {
         allocator: std.mem.Allocator,
         num_docs: usize,
         ) !InvertedIndexV2 {
-        // var vocab = std.hash_map.HashMap([]const u8, u32, SHM, 80).init(allocator);
         var II = InvertedIndexV2{
             .postings = Postings{
                 .doc_ids = undefined,
@@ -243,6 +240,21 @@ pub const InvertedIndexV2 = struct {
         // Guess capacity
         try II.vocab.string_bytes.ensureTotalCapacity(allocator, @intCast(num_docs));
         try II.vocab.map.ensureTotalCapacityContext(allocator, @intCast(num_docs / 25), II.vocab.getCtx());
+
+        ///////////////////////////////////////////////////////
+        // for (0..self.columns.num_keys) |idx| {
+            // try huffman_col_idxs.append(self.gpa(), idx);
+        // }
+
+        try csv.parseRecordCSV(
+            buffer[0..index],
+            self.query_state.result_positions[0],
+        );
+        try self.file_data.doc_store.addRow(
+            self.stringArena(),
+            self.query_state.result_positions[0],
+            buffer[0..index],
+        );
 
         return II;
     }
@@ -322,9 +334,9 @@ pub const BM25Partition = struct {
     num_records: usize,
     allocator: std.mem.Allocator,
     string_arena: std.heap.ArenaAllocator,
-    doc_score_map: std.AutoHashMap(u32, ScoringInfo),
+    // doc_score_map: std.AutoHashMap(u32, ScoringInfo),
 
-    doc_store: *DocStore,
+    doc_store: DocStore,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -332,9 +344,9 @@ pub const BM25Partition = struct {
         line_offsets: []usize,
         num_records: usize,
 
-        // literal_byte_sizes: *std.ArrayListUnmanaged(usize),
-        // literal_col_idxs: *std.ArrayListUnmanaged(usize),
-        // huffman_col_idxs: *std.ArrayListUnmanaged(usize),
+        literal_byte_sizes: *const std.ArrayListUnmanaged(usize),
+        literal_col_idxs: *const std.ArrayListUnmanaged(usize),
+        huffman_col_idxs: *const std.ArrayListUnmanaged(usize),
 
     ) !BM25Partition {
         var doc_score_map = std.AutoHashMap(u32, ScoringInfo).init(allocator);
@@ -346,16 +358,16 @@ pub const BM25Partition = struct {
             .num_records = num_records,
             .allocator = allocator,
             .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
-            .doc_score_map = doc_score_map,
+            // .doc_score_map = doc_score_map,
 
             .doc_store = undefined,
         };
 
-        // partition.doc_store = try DocStore.init(
-            // literal_byte_sizes,
-            // literal_col_idxs,
-            // huffman_col_idxs,
-            // );
+        partition.doc_store = try DocStore.init(
+            literal_byte_sizes,
+            literal_col_idxs,
+            huffman_col_idxs,
+            );
 
         for (0..num_search_cols) |idx| {
             partition.II[idx] = try InvertedIndexV2.init(
@@ -374,7 +386,7 @@ pub const BM25Partition = struct {
         }
         self.allocator.free(self.II);
         self.string_arena.deinit();
-        self.doc_score_map.deinit();
+        // self.doc_score_map.deinit();
 
         self.doc_store.deinit(self.allocator);
     }
@@ -403,7 +415,6 @@ pub const BM25Partition = struct {
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
-        // const gop = try self.II[col_idx].vocab.getOrPut(term[0..term_len]);
         const gop = try self.II[col_idx].vocab.map.getOrPutContextAdapted(
             self.allocator,
             term[0..term_len],
@@ -412,14 +423,9 @@ pub const BM25Partition = struct {
             );
 
         if (!gop.found_existing) {
-            // const term_copy = try self.string_arena.allocator().dupe(
-                // u8, 
-                // term[0..term_len],
-                // );
             try self.II[col_idx].vocab.string_bytes.appendSlice(self.allocator, term[0..term_len]);
             try self.II[col_idx].vocab.string_bytes.append(self.allocator, 0);
 
-            // gop.key_ptr.* = term_copy;
             gop.key_ptr.* = @truncate(
                 self.II[col_idx].vocab.string_bytes.items.len - term_len - 1,
                 );
