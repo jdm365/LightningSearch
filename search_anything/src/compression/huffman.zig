@@ -88,7 +88,7 @@ inline fn writeBits(
         code >> @truncate(bit_offset)
     );
     inline for (0..8) |idx| {
-        output_buffer[idx] |= code_buf[idx];
+        output_buffer[idx] |= code_buf[7-idx];
     }
 }
 
@@ -271,7 +271,7 @@ pub const HuffmanCompressor = struct {
             if (self.code_lengths[idx] > 12) continue;
 
             const mask = (@as(u12, 1) << @truncate(@as(u8, 12) - self.code_lengths[idx])) - 1;
-            const code_u12 = code >> 52;
+            const code_u12 = code >> (comptime 64 - 12);
 
             const min_code = code_u12;
             const max_code = min_code | mask;
@@ -314,6 +314,37 @@ pub const HuffmanCompressor = struct {
         return compressed_size;
     }
 
+    pub inline fn iterDecompressBitwise(
+        self: *HuffmanCompressor,
+        compressed: []u8,
+        out: []u8,
+        bit_idx: *usize,
+        out_idx: *usize,
+    ) !void {
+        var node_idx: usize = self.root_node_idx;
+
+        while (true) {
+            const byte_idx   = @divFloor(bit_idx.*, 8);
+            const bit_offset = bit_idx.* % 8;
+            if (byte_idx >= compressed.len) return error.InsufficientInput;
+
+            const byte = compressed[byte_idx];
+            const bit  = (byte >> @truncate(7 - bit_offset)) & 1;
+            bit_idx.* += 1;
+
+            const node = self.huffman_nodes[node_idx];
+            node_idx = if (bit == 0) node.left_idx else node.right_idx;
+            if (node_idx == 0) return error.InvalidHuffmanCode;
+
+            const next = self.huffman_nodes[node_idx];
+            if (next.left_idx == 0 and next.right_idx == 0) {
+                out[out_idx.*] = next.value;
+                out_idx.* += 1;
+                return;
+            }
+        }
+    }
+
     pub fn decompressBase(
         self: *HuffmanCompressor,
         compressed: []u8,
@@ -324,30 +355,13 @@ pub const HuffmanCompressor = struct {
         var out_idx: usize = 0;
         var bit_idx: usize = 0;
         while (out_idx < out.len) {
-            var node_idx: usize = self.root_node_idx;
-
-            while (true) {
-                const byte_idx   = @divFloor(bit_idx, 8);
-                const bit_offset = bit_idx % 8;
-                if (byte_idx >= compressed.len) return error.InsufficientInput;
-
-                const byte = compressed[byte_idx];
-                const bit  = (byte >> @truncate(7 - bit_offset)) & 1;
-                bit_idx += 1;
-
-                const node = self.huffman_nodes[node_idx];
-                node_idx = if (bit == 0) node.left_idx else node.right_idx;
-                if (node_idx == 0) return error.InvalidHuffmanCode;
-
-                const next = self.huffman_nodes[node_idx];
-                if (next.left_idx == 0 and next.right_idx == 0) {
-                    out[out_idx] = next.value;
-                    out_idx += 1;
-                    break;
-                }
-            }
+            try self.iterDecompressBitwise(
+                compressed,
+                out,
+                &bit_idx,
+                &out_idx,
+            );
         }
-
         return out_idx;
     }
 
@@ -368,13 +382,14 @@ pub const HuffmanCompressor = struct {
             const byte_idx = @divFloor(compressed_buffer_bit_idx, 8);
             const bit_idx  = compressed_buffer_bit_idx % 8;
 
-            var current_u32: u32 = 0;
-            current_u32  = compressed_buffer[byte_idx] << @truncate(bit_idx);
-            current_u32 |= (current_u32 << 8)  | (compressed_buffer[byte_idx] << @truncate(bit_idx));
-            current_u32 |= (current_u32 << 16) | (compressed_buffer[byte_idx] << @truncate(bit_idx));
+            const u64_val = std.mem.readInt(
+                u64,
+                @ptrCast(compressed_buffer[byte_idx..(byte_idx+8)]),
+                std.builtin.Endian.big,
+            ) >> @truncate((comptime 64 - 12) - bit_idx);
 
-            const length = self.lookup_table_lengths[@as(u12, @truncate(current_u32))];
-            const symbol = self.lookup_table[@as(u12, @truncate(current_u32))];
+            const length = self.lookup_table_lengths[@as(u12, @truncate(u64_val))];
+            const symbol = self.lookup_table[@as(u12, @truncate(u64_val))];
 
             if (length > 0) {
                 @branchHint(.likely);
@@ -387,33 +402,12 @@ pub const HuffmanCompressor = struct {
             }
             std.debug.assert(length == 0);
 
-            var current_node_idx = self.root_node_idx;
-
-            while (true) {
-                const node = self.huffman_nodes[current_node_idx];
-
-                if ((node.left_idx == 0) and (node.right_idx == 0)) {
-                    decompressed_buffer[decompressed_buffer_idx] = node.value;
-                    decompressed_buffer_idx += 1;
-                    break;
-                }
-
-                const _byte_idx = @divFloor(compressed_buffer_bit_idx, 8);
-                const _bit_idx  = compressed_buffer_bit_idx % 8;
-
-                const byte = compressed_buffer[_byte_idx];
-                const bit = (byte >> @truncate(7 - _bit_idx)) & 1;
-
-                compressed_buffer_bit_idx += 1;
-
-                if (bit == 0) {
-                    current_node_idx = node.left_idx;
-                    if (current_node_idx == 0) return error.InvalidHuffmanCode;
-                } else {
-                    current_node_idx = node.right_idx;
-                    if (current_node_idx == 0) return error.InvalidHuffmanCode;
-                }
-            }
+            try self.iterDecompressBitwise(
+                compressed_buffer,
+                decompressed_buffer,
+                &compressed_buffer_bit_idx,
+                &decompressed_buffer_idx,
+            );
         }
         return decompressed_buffer_idx;
     }
@@ -453,8 +447,8 @@ test "compression" {
     const decompressed_buffer = try arena.allocator().alloc(u8, file_size);
 
     const init2 = std.time.microTimestamp();
-    const decompressed_size = try compressor.decompressBase(
-    // const decompressed_size = try compressor.decompress(
+    // const decompressed_size = try compressor.decompressBase(
+    const decompressed_size = try compressor.decompress(
         output_buffer, 
         decompressed_buffer,
         );
