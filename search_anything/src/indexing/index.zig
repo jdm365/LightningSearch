@@ -199,8 +199,6 @@ pub const Postings = struct {
 
 
 pub const InvertedIndexV2 = struct {
-    doc_store: DocStore,
-
     postings: Postings,
     vocab: Vocab,
     prt_vocab: RadixTrie(u32),
@@ -241,21 +239,6 @@ pub const InvertedIndexV2 = struct {
         try II.vocab.string_bytes.ensureTotalCapacity(allocator, @intCast(num_docs));
         try II.vocab.map.ensureTotalCapacityContext(allocator, @intCast(num_docs / 25), II.vocab.getCtx());
 
-        ///////////////////////////////////////////////////////
-        // for (0..self.columns.num_keys) |idx| {
-            // try huffman_col_idxs.append(self.gpa(), idx);
-        // }
-
-        try csv.parseRecordCSV(
-            buffer[0..index],
-            self.query_state.result_positions[0],
-        );
-        try self.file_data.doc_store.addRow(
-            self.stringArena(),
-            self.query_state.result_positions[0],
-            buffer[0..index],
-        );
-
         return II;
     }
 
@@ -263,7 +246,6 @@ pub const InvertedIndexV2 = struct {
         self: *InvertedIndexV2,
         allocator: std.mem.Allocator,
         ) void {
-        // allocator.free(self.postings.new_docs);
         allocator.free(self.postings.term_positions);
         allocator.free(self.postings.doc_ids);
 
@@ -334,7 +316,7 @@ pub const BM25Partition = struct {
     num_records: usize,
     allocator: std.mem.Allocator,
     string_arena: std.heap.ArenaAllocator,
-    // doc_score_map: std.AutoHashMap(u32, ScoringInfo),
+    doc_score_map: std.AutoHashMap(u32, ScoringInfo),
 
     doc_store: DocStore,
 
@@ -343,10 +325,10 @@ pub const BM25Partition = struct {
         num_search_cols: usize,
         line_offsets: []usize,
         num_records: usize,
-
-        literal_byte_sizes: *const std.ArrayListUnmanaged(usize),
-        literal_col_idxs: *const std.ArrayListUnmanaged(usize),
-        huffman_col_idxs: *const std.ArrayListUnmanaged(usize),
+// 
+        // literal_byte_sizes: *const std.ArrayListUnmanaged(usize),
+        // literal_col_idxs: *const std.ArrayListUnmanaged(usize),
+        // huffman_col_idxs: *const std.ArrayListUnmanaged(usize),
 
     ) !BM25Partition {
         var doc_score_map = std.AutoHashMap(u32, ScoringInfo).init(allocator);
@@ -358,17 +340,17 @@ pub const BM25Partition = struct {
             .num_records = num_records,
             .allocator = allocator,
             .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
-            // .doc_score_map = doc_score_map,
+            .doc_score_map = doc_score_map,
 
             .doc_store = undefined,
         };
 
-        partition.doc_store = try DocStore.init(
-            literal_byte_sizes,
-            literal_col_idxs,
-            huffman_col_idxs,
-            );
-
+        // partition.doc_store = try DocStore.init(
+            // literal_byte_sizes,
+            // literal_col_idxs,
+            // huffman_col_idxs,
+            // );
+// 
         for (0..num_search_cols) |idx| {
             partition.II[idx] = try InvertedIndexV2.init(
                 allocator, 
@@ -386,9 +368,10 @@ pub const BM25Partition = struct {
         }
         self.allocator.free(self.II);
         self.string_arena.deinit();
-        // self.doc_score_map.deinit();
+        self.doc_score_map.deinit();
 
-        self.doc_store.deinit(self.allocator);
+        // self.doc_store.deinit(self.allocator);
+        self.doc_store.deinit();
     }
 
     pub fn resizeNumSearchCols(self: *BM25Partition, num_search_cols: usize) !void {

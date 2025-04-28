@@ -16,6 +16,8 @@ pub const DocStore = struct {
 
     huffman_field_sizes: std.ArrayListUnmanaged(u16),
 
+    arena: std.heap.ArenaAllocator,
+
     pub fn init(
         literal_byte_sizes: *const std.ArrayListUnmanaged(usize),
         literal_col_idxs: *const std.ArrayListUnmanaged(usize),
@@ -37,13 +39,17 @@ pub const DocStore = struct {
             .literal_rows = std.ArrayListUnmanaged([]u8){},
 
             .huffman_field_sizes = std.ArrayListUnmanaged(u16){},
+
+            .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
         };
     }
 
-    pub fn deinit(self: *DocStore, allocator: std.mem.Allocator) void {
-        self.huffman_rows.deinit(allocator);
-        self.literal_rows.deinit(allocator);
-        self.huffman_field_sizes.deinit(allocator);
+    // pub fn deinit(self: *DocStore, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *DocStore) void {
+        // self.huffman_rows.deinit(allocator);
+        // self.literal_rows.deinit(allocator);
+        // self.huffman_field_sizes.deinit(allocator);
+        self.arena.deinit();
     }
 
     pub fn printMemoryUsage(self: *const DocStore) void {
@@ -80,16 +86,16 @@ pub const DocStore = struct {
 
     pub fn addRow(
         self: *DocStore,
-        allocator: std.mem.Allocator,
+        // allocator: std.mem.Allocator,
         byte_positions: []TermPos,
         row_data: []u8,
     ) !void {
         // TODO: Make member to retain allocation.
         var huffman_row = std.ArrayListUnmanaged(u8){};
-        try huffman_row.ensureUnusedCapacity(allocator, 128);
+        try huffman_row.ensureUnusedCapacity(self.arena.allocator(), 128);
 
         if (self.literal_byte_size_sum > 0) {
-            var literal_row = try allocator.alloc(u8, self.literal_byte_size_sum);
+            var literal_row = try self.arena.allocator().alloc(u8, self.literal_byte_size_sum);
 
             var literal_row_offset: usize = 0;
             for (self.literal_col_idxs.items) |col_idx| {
@@ -102,7 +108,7 @@ pub const DocStore = struct {
                     );
                 literal_row_offset += field_len;
             }
-            const val = try self.literal_rows.addOne(allocator);
+            const val = try self.literal_rows.addOne(self.arena.allocator());
             val.* = literal_row[0..literal_row_offset];
         }
 
@@ -111,8 +117,8 @@ pub const DocStore = struct {
             const start_pos = byte_positions[col_idx].start_pos;
             const field_len = byte_positions[col_idx].field_len;
 
-            try huffman_row.ensureUnusedCapacity(allocator, field_len);
-            try huffman_row.resize(allocator, 2 * (row_size + field_len + 8));
+            try huffman_row.ensureUnusedCapacity(self.arena.allocator(), field_len);
+            try huffman_row.resize(self.arena.allocator(), 2 * (row_size + field_len + 8));
 
             const compressed_size: u16 = @truncate(
                 try self.huffman_compressor.compress(
@@ -120,12 +126,12 @@ pub const DocStore = struct {
                     huffman_row.items[row_size..],
                     )
                 );
-            try self.huffman_field_sizes.append(allocator, compressed_size);
+            try self.huffman_field_sizes.append(self.arena.allocator(), compressed_size);
             row_size += compressed_size;
         }
-        try huffman_row.resize(allocator, row_size);
+        try huffman_row.resize(self.arena.allocator(), row_size);
 
-        const val = try self.huffman_rows.addOne(allocator);
-        val.* = (try huffman_row.toOwnedSlice(allocator))[0..row_size];
+        const val = try self.huffman_rows.addOne(self.arena.allocator());
+        val.* = (try huffman_row.toOwnedSlice(self.arena.allocator()))[0..row_size];
     }
 };

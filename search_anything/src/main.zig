@@ -10,8 +10,8 @@ const server = @import("server/server.zig");
 
 
 fn bench(testing: bool) !void {
-    // const filename: []const u8 = "../tests/mb_small.csv";
-    const filename: []const u8 = "../tests/mb.csv";
+    const filename: []const u8 = "../tests/mb_small.csv";
+    // const filename: []const u8 = "../tests/mb.csv";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
