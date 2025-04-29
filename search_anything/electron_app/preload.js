@@ -16,31 +16,4 @@ window.addEventListener('DOMContentLoaded', () => {
 		replaceText(`${type}-version`, process.versions[type])
 	}
 
-	// Change the title of the window
-	const title = document.getElementById('title')
-	if (title) {
-		title.innerText = 'Lightning Search'
-	}
-
-	// Run binary in this directory
-	const { exec } = require('child_process')
-	const path = require('path')
-	const fs = require('fs')
-
-	const binaryPath = path.join(__dirname, 'lightning_search')
-	const args = ['../data/mb_small.csv']
-
-	if (fs.existsSync(binaryPath)) {
-		exec(binaryPath, args, (error, stdout, stderr) => {
-			if (error) {
-				console.error(`Error executing binary: ${error.message}`)
-				return
-			}
-			if (stderr) {
-				console.error(`stderr: ${stderr}`)
-				return
-			}
-			console.log(`stdout: ${stdout}`)
-		})
-	}
 })

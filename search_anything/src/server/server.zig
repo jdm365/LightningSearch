@@ -210,7 +210,7 @@ pub const QueryHandlerZap = struct {
         });
         try self.zap_listener.listen();
 
-        self.openIndexHTML();
+        // self.openIndexHTML();
 
         zap.start(.{
             .threads = 1,

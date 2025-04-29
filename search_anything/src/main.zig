@@ -205,6 +205,10 @@ pub fn main() !void {
 
     if (args.len != 2) {
         std.debug.print("Usage: {s} <filename>\n", .{args[0]});
+
+        for (args) |arg| {
+            std.debug.print("Arg: {s}\n", .{arg});
+        }
         return error.InvalidArguments;
     }
 

@@ -112,8 +112,7 @@ function setupHeaderRow() {
 	}
 }
 
-async function waitForPort(port, retryInterval = 10000, maxRetries = 60) {
-	return;
+async function waitForPort(port, retryInterval = 50, maxRetries = 60) {
     let retries = 0;
     while (retries < maxRetries) {
         try {
