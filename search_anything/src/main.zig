@@ -75,9 +75,9 @@ fn bench(testing: bool) !void {
     std.debug.print("================================================\n", .{});
 }
 
-fn serveHTML() !void {
+fn serveHTML(filename: []const u8) !void {
     // const filename: []const u8 = "../data/mb_small.csv";
-    const filename: []const u8 = "../data/mb.csv";
+    // const filename: []const u8 = "../data/mb.csv";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -195,5 +195,19 @@ pub fn main() !void {
         // line.dump();
     // }
 
-    try serveHTML();
+    // get command line arguments
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (args.len != 2) {
+        std.debug.print("Usage: {s} <filename>\n", .{args[0]});
+        return error.InvalidArguments;
+    }
+
+    const filename = args[1];
+    try serveHTML(filename);
 }

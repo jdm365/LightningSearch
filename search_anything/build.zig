@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(shared_lib);
 
     const exe = b.addExecutable(.{
-        .name = "search_anything",
+        .name = "lightning_search",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
