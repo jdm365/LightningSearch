@@ -23,7 +23,8 @@ function createWindow () {
 
 app.whenReady().then(() => {
   const binaryPath = path.join(__dirname, 'lightning_search');
-  const dataFilePath = path.join(__dirname, '../../data/mb_small.csv');
+  // const dataFilePath = path.join(__dirname, '../../data/mb_small.csv');
+  const dataFilePath = path.join(__dirname, '../../data/mb.csv');
   const args = [dataFilePath];
 
   console.log(`Starting backend command: ${binaryPath} ${args.join(' ')}`);

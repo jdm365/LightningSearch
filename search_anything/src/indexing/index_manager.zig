@@ -784,8 +784,7 @@ pub const IndexManager = struct {
             const buffer = try buffered_reader.getBuffer(file_pos);
 
             if (line_offsets.items.len == 16384) {
-                const estimated_lines = @as(usize, @intFromFloat(@as(f32, @floatFromInt(file_size)) /
-                                        @as(f32, @floatFromInt(file_pos))));
+                const estimated_lines = @divFloor(file_size, file_pos);
                 try line_offsets.ensureTotalCapacity(estimated_lines);
             }
 

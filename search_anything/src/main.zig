@@ -97,25 +97,25 @@ fn serveHTML(filename: []const u8) !void {
 }
 
 pub fn main() !void {
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // const allocator = gpa.allocator();
-    // defer _ = gpa.deinit();
-// 
-    // const args = try std.process.argsAlloc(allocator);
-    // defer std.process.argsFree(allocator, args);
-// 
-    // if (args.len != 2) {
-        // std.debug.print("Usage: {s} <filename>\n", .{args[0]});
-// 
-        // for (args) |arg| {
-            // std.debug.print("Arg: {s}\n", .{arg});
-        // }
-        // return error.InvalidArguments;
-    // }
-// 
-    // const filename = args[1];
-    // try serveHTML(filename);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
 
-    const filename = "../data/mb_small.csv";
-    try bench(filename);
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (args.len != 2) {
+        std.debug.print("Usage: {s} <filename>\n", .{args[0]});
+
+        for (args) |arg| {
+            std.debug.print("Arg: {s}\n", .{arg});
+        }
+        return error.InvalidArguments;
+    }
+
+    const filename = args[1];
+    try serveHTML(filename);
+
+    // const filename = "../data/mb_small.csv";
+    // try bench(filename);
 }
