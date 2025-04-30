@@ -1,46 +1,38 @@
 const std     = @import("std");
 const builtin = @import("builtin");
 
-// const zap = @import("zap");
-
 const IndexManager = @import("indexing/index_manager.zig").IndexManager;
 const FileType = @import("storage/file_utils.zig").FileType;
 
 const server = @import("server/server.zig");
 
 
-fn bench(testing: bool) !void {
-    const filename: []const u8 = "../tests/mb_small.csv";
-    // const filename: []const u8 = "../tests/mb.csv";
-
+fn bench(filename: []const u8) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    // const allocator = std.heap.c_allocator;
 
-    var search_cols = std.ArrayList([]u8).init(allocator);
-    const title:  []u8 = try allocator.dupe(u8, "Title");
-    const artist: []u8 = try allocator.dupe(u8, "ARTIST");
-    const album:  []u8 = try allocator.dupe(u8, "ALBUM");
-
-    try search_cols.append(title);
-    try search_cols.append(artist);
-    try search_cols.append(album);
-
-    // var index_manager = try IndexManager.init(filename, &search_cols, allocator);
-    var index_manager = try IndexManager.init(filename, &search_cols);
-    try index_manager.readFile();
-
-    try index_manager.printDebugInfo();
+    var index_manager = try IndexManager.init(allocator);
 
     defer {
-        allocator.free(title);
-        allocator.free(artist);
-        allocator.free(album);
-
-        search_cols.deinit();
-        index_manager.deinit() catch {};
-        _ = gpa.deinit();
+        // index_manager.deinit(gpa.allocator()) catch {};
+        // _ = gpa.deinit();
     }
+
+    try index_manager.readHeader(filename, FileType.CSV);
+    try index_manager.scanFile();
+
+    try index_manager.addSearchCol("title");
+    try index_manager.addSearchCol("artist");
+    try index_manager.addSearchCol("album");
+
+    try index_manager.indexFile();
+
+    var boost_factors = std.ArrayList(f32).init(allocator);
+    defer boost_factors.deinit();
+
+    try boost_factors.append(2.0);
+    try boost_factors.append(1.0);
+    try boost_factors.append(1.0);
 
     var query_map = std.StringHashMap([]const u8).init(allocator);
     defer query_map.deinit();
@@ -49,14 +41,7 @@ fn bench(testing: bool) !void {
     try query_map.put("ARTIST", "FRANK SINATRA");
     try query_map.put("ALBUM", "LIGHTNING");
 
-    var boost_factors = std.ArrayList(f32).init(allocator);
-    defer boost_factors.deinit();
-
-    try boost_factors.append(1.0);
-    try boost_factors.append(1.0);
-    try boost_factors.append(1.0);
-
-    const num_queries: usize = if (testing) 1 else 5_000;
+    const num_queries: usize = 5_000;
 
     const start_time = std.time.milliTimestamp();
     for (0..num_queries) |_| {
@@ -67,8 +52,8 @@ fn bench(testing: bool) !void {
             );
     }
     const end_time = std.time.milliTimestamp();
-    const execution_time_ms = (end_time - start_time);
-    const qps = @as(f64, @floatFromInt(num_queries)) / @as(f64, @floatFromInt(execution_time_ms)) * 1000;
+    const execution_time_ms: usize = @intCast(end_time - start_time);
+    const qps = @divFloor(num_queries * 1000, execution_time_ms);
 
     std.debug.print("\n\n================================================\n", .{});
     std.debug.print("QUERIES PER SECOND: {d}\n", .{qps});
@@ -76,9 +61,6 @@ fn bench(testing: bool) !void {
 }
 
 fn serveHTML(filename: []const u8) !void {
-    // const filename: []const u8 = "../data/mb_small.csv";
-    // const filename: []const u8 = "../data/mb.csv";
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
@@ -116,102 +98,24 @@ fn serveHTML(filename: []const u8) !void {
 
 pub fn main() !void {
     // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const allocator = gpa.allocator();
+    // defer _ = gpa.deinit();
 // 
-    // // const filename: []const u8 = "../data/mb.csv";
-    // const filename: []const u8 = "../data/mb_small.csv";
+    // const args = try std.process.argsAlloc(allocator);
+    // defer std.process.argsFree(allocator, args);
 // 
-    // var index_manager = try IndexManager.init(gpa.allocator());
+    // if (args.len != 2) {
+        // std.debug.print("Usage: {s} <filename>\n", .{args[0]});
 // 
-    // defer {
-        // index_manager.deinit(gpa.allocator()) catch {};
-        // _ = gpa.deinit();
+        // for (args) |arg| {
+            // std.debug.print("Arg: {s}\n", .{arg});
+        // }
+        // return error.InvalidArguments;
     // }
 // 
-    // // try index_manager.readHeader(filename, FileType.PARQUET);
-    // try index_manager.readHeader(filename, FileType.CSV);
-    // try index_manager.scanFile();
-// 
-    // try index_manager.addSearchCol("title");
-    // try index_manager.addSearchCol("artist");
-    // try index_manager.addSearchCol("album");
-// 
-    // try index_manager.indexFile();
-// 
-    // var query_map = std.StringHashMap([]const u8).init(gpa.allocator());
-    // defer query_map.deinit();
-// 
-    // try query_map.put("TITLE", "UNDER MY SKIN");
-    // try query_map.put("ARTIST", "FRANK SINATRA");
-    // try query_map.put("ALBUM", "LIGHTNING");
-// 
-    // var boost_factors = std.ArrayList(f32).init(gpa.allocator());
-    // defer boost_factors.deinit();
-// 
-    // try boost_factors.append(1.0);
-    // try boost_factors.append(1.0);
-    // try boost_factors.append(1.0);
-// 
-    // const num_queries: usize = 1;
-    // const K: usize = 25;
-// 
-    // const start_time = std.time.milliTimestamp();
-    // for (0..num_queries) |_| {
-        // try index_manager.query(
-            // query_map,
-            // K,
-            // boost_factors,
-            // );
-    // }
-    // const end_time = std.time.milliTimestamp();
-    // const execution_time_ms = (end_time - start_time);
-    // const qps = @as(f64, @floatFromInt(num_queries)) / @as(f64, @floatFromInt(execution_time_ms)) * 1000;
-// 
-    // std.debug.print("\n\n================================================\n", .{});
-    // std.debug.print("QUERIES PER SECOND: {d}\n", .{qps});
-    // std.debug.print("================================================\n", .{});
-// 
-    // var query_it = query_map.iterator();
-    // while (query_it.next()) |val| {
-        // std.debug.print("Query - {s}: {s}\n", .{val.key_ptr.*, val.value_ptr.*});
-    // }
-// 
-    // var column_names = std.ArrayList([]const u8).init(index_manager.stringArena());
-    // try column_names.resize(index_manager.columns.num_keys);
-// 
-    // var it = try index_manager.columns.iterator();
-    // while (try it.next()) |val| {
-        // column_names.items[val.value] = val.key;
-    // }
-// 
-    // for (0..K) |idx| {
-        // const line = try server.csvLineToJson(
-            // index_manager.scratchArena(),
-            // index_manager.query_state.result_strings[idx],
-            // index_manager.query_state.result_positions[idx],
-            // column_names,
-        // );
-// 
-        // std.debug.print("Result {d}\n", .{idx});
-        // line.dump();
-    // }
+    // const filename = args[1];
+    // try serveHTML(filename);
 
-    // get command line arguments
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-
-    if (args.len != 2) {
-        std.debug.print("Usage: {s} <filename>\n", .{args[0]});
-
-        for (args) |arg| {
-            std.debug.print("Arg: {s}\n", .{arg});
-        }
-        return error.InvalidArguments;
-    }
-
-    const filename = args[1];
-    try serveHTML(filename);
+    const filename = "../data/mb_small.csv";
+    try bench(filename);
 }

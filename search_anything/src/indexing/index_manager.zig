@@ -17,6 +17,7 @@ const rt = @import("../utils/radix_trie.zig");
 
 const TermPos = @import("../server/server.zig").TermPos;
 
+const fetchRecordsDocStore = @import("index.zig").BM25Partition.fetchRecordsDocStore;
 const BM25Partition   = @import("index.zig").BM25Partition;
 const QueryResult     = @import("index.zig").QueryResult;
 const ScoringInfo     = @import("index.zig").ScoringInfo;
@@ -137,6 +138,7 @@ pub const IndexManager = struct {
             manager.allocators.gpa.allocator(),
             32,
             );
+
 
         return manager;
     }
@@ -478,8 +480,11 @@ pub const IndexManager = struct {
         };
         const current_IP = &self.index_partitions[partition_idx];
 
+        // TODO: Remove this and line_offsets.
         const start_byte = current_IP.line_offsets[0];
         const end_byte = current_IP.line_offsets[current_IP.line_offsets.len - 1];
+        // current_IP.line_offsets
+
         var token_stream = try fu.TokenStream(fu.token_32t).init(
             self.file_data.inputFilename(),
             output_filename,
@@ -505,9 +510,13 @@ pub const IndexManager = struct {
         }
 
         // TODO: Implement type inference to allow literal types.
-        const literal_byte_idxs = std.ArrayListUnmanaged(usize){};
-        const literal_col_idxs  = std.ArrayListUnmanaged(usize){};
-        var huffman_col_idxs    = std.ArrayListUnmanaged(usize){};
+        var literal_byte_idxs = std.ArrayListUnmanaged(usize){};
+        var literal_col_idxs  = std.ArrayListUnmanaged(usize){};
+        var huffman_col_idxs  = std.ArrayListUnmanaged(usize){};
+        defer literal_byte_idxs.deinit(self.gpa());
+        defer literal_col_idxs.deinit(self.gpa());
+        defer huffman_col_idxs.deinit(self.gpa());
+
         for (0..self.columns.num_keys) |idx| {
             try huffman_col_idxs.append(self.gpa(), idx);
         }
@@ -582,7 +591,7 @@ pub const IndexManager = struct {
 
                             self.query_state.result_positions[partition_idx][col_idx] = TermPos{
                                 .start_pos = @truncate(row_byte_idx),
-                                .field_len = @truncate(byte_idx - init_byte_idx),
+                                .field_len = @truncate(byte_idx - init_byte_idx - 1),
                             };
                             row_byte_idx += byte_idx - init_byte_idx;
                         }
@@ -598,7 +607,7 @@ pub const IndexManager = struct {
 
                         self.query_state.result_positions[partition_idx][self.search_col_idxs.items[search_col_idx]] = TermPos{
                             .start_pos = @truncate(row_byte_idx),
-                            .field_len = @truncate(byte_idx - init_byte_idx),
+                            .field_len = @truncate(byte_idx - init_byte_idx - 1),
                         };
                         row_byte_idx += byte_idx - init_byte_idx;
 
@@ -614,7 +623,7 @@ pub const IndexManager = struct {
 
                         self.query_state.result_positions[partition_idx][col_idx] = TermPos{
                             .start_pos = @truncate(row_byte_idx),
-                            .field_len = @truncate(byte_idx - init_byte_idx),
+                            .field_len = @truncate(byte_idx - init_byte_idx - 1),
                         };
                         row_byte_idx += byte_idx - init_byte_idx;
                     }
@@ -642,7 +651,6 @@ pub const IndexManager = struct {
 
             try current_IP.doc_store.addRow(
                 self.query_state.result_positions[partition_idx],
-                // (try token_stream.getBuffer(start_byte_idx))[0..(byte_idx - start_byte_idx)],
                 mmap_buffer[(align_offset + start_byte_idx)..][0..(byte_idx - start_byte_idx)],
             );
         }
@@ -1311,8 +1319,10 @@ pub const IndexManager = struct {
                 }
             }
         }
-        std.debug.print("FOUND {d} results\n", .{self.query_state.results_arrays[0].count});
+
         if (self.query_state.results_arrays[0].count == 0) return;
+
+        var wg2: std.Thread.WaitGroup = .{};
 
         for (0..self.query_state.results_arrays[0].count) |idx| {
             const result = self.query_state.results_arrays[0].items[idx];
@@ -1326,25 +1336,20 @@ pub const IndexManager = struct {
                     &self.query_state.result_strings[idx],
                 );
             } else {
-                try self.index_partitions[result.partition_idx].fetchRecords(
-                    self.query_state.result_positions[idx],
-                    &self.file_data.file_handles[result.partition_idx],
-                    result,
-                    &self.query_state.result_strings[idx],
-                    self.file_data.file_type,
-                    &self.columns,
+                self.query_state.thread_pool.spawnWg(
+                    &wg2,
+                    fetchRecordsDocStore,
+                    .{
+                        &self.index_partitions[result.partition_idx],
+                        self.query_state.result_positions[idx],
+                        result,
+                        &self.query_state.result_strings[idx],
+                    },
                 );
             }
-            std.debug.print(
-                "Score {d}: {d} - Doc id: {d}\n", 
-                .{
-                    idx, 
-                    self.query_state.results_arrays[0].scores[idx], 
-                    self.query_state.results_arrays[0].items[idx].doc_id,
-                }
-                );
         }
-        std.debug.print("\n", .{});
+
+        wg2.wait();
     }
 };
 

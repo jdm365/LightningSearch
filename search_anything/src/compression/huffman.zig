@@ -146,6 +146,14 @@ pub const HuffmanCompressor = struct {
                     .right_idx = 0,
                 };
                 try pq.add(new_node);
+            } else {
+                const new_node = HuffmanNode{
+                    .freq = 1,
+                    .value = @truncate(i),
+                    .left_idx = 0,
+                    .right_idx = 0,
+                };
+                try pq.add(new_node);
             }
         }
 
@@ -187,6 +195,14 @@ pub const HuffmanCompressor = struct {
             if (freq > 0) {
                 const new_node = HuffmanNode{
                     .freq = @truncate(freq),
+                    .value = @truncate(i),
+                    .left_idx = 0,
+                    .right_idx = 0,
+                };
+                try pq.add(new_node);
+            } else {
+                const new_node = HuffmanNode{
+                    .freq = 1,
                     .value = @truncate(i),
                     .left_idx = 0,
                     .right_idx = 0,
@@ -287,7 +303,7 @@ pub const HuffmanCompressor = struct {
         self: *HuffmanCompressor,
         input_buffer: []u8,
         output_buffer: []u8,
-    ) !usize {
+    ) !u64 {
         if (self.root_node_idx == 0) {
             @branchHint(.cold);
             return error.HuffmanTreeNotBuilt;
@@ -299,6 +315,7 @@ pub const HuffmanCompressor = struct {
 
         for (input_buffer) |byte| {
             const nbits = self.code_lengths[byte];
+            std.debug.assert(nbits > 0);
 
             try writeBits(
                 output_buffer[@divFloor(output_buffer_bit_idx, 8)..].ptr,
@@ -309,9 +326,7 @@ pub const HuffmanCompressor = struct {
             output_buffer_bit_idx += nbits;
         }
 
-        const compressed_size = try std.math.divCeil(usize, output_buffer_bit_idx, 8);
-
-        return compressed_size;
+        return output_buffer_bit_idx;
     }
 
     pub inline fn iterDecompressBitwise(
@@ -349,12 +364,15 @@ pub const HuffmanCompressor = struct {
         self: *HuffmanCompressor,
         compressed: []u8,
         out: []u8,
+        bits_rem: u3,
     ) !usize {
         if (self.root_node_idx == 0) return error.HuffmanTreeNotBuilt;
 
+        const total_bits = ((compressed.len - 1) * 8) + @as(usize, @intCast(bits_rem));
+
         var out_idx: usize = 0;
         var bit_idx: usize = 0;
-        while (out_idx < out.len) {
+        while (bit_idx < total_bits) {
             try self.iterDecompressBitwise(
                 compressed,
                 out,
@@ -369,6 +387,7 @@ pub const HuffmanCompressor = struct {
         self: *HuffmanCompressor,
         compressed_buffer: []u8,
         decompressed_buffer: []u8,
+        bits_rem: u3,
     ) !usize {
         if (self.root_node_idx == 0) {
             @branchHint(.cold);
@@ -378,13 +397,16 @@ pub const HuffmanCompressor = struct {
         var decompressed_buffer_idx:   usize = 0;
         var compressed_buffer_bit_idx: usize = 0;
 
-        while (decompressed_buffer_idx < decompressed_buffer.len) {
+        const total_compressed_bits = ((compressed_buffer.len - 1) * 8) + 
+                                      @as(usize, @intCast(bits_rem));
+
+        while (compressed_buffer_bit_idx < total_compressed_bits) {
             const byte_idx = @divFloor(compressed_buffer_bit_idx, 8);
             const bit_idx  = compressed_buffer_bit_idx % 8;
 
             const u64_val = std.mem.readInt(
                 u64,
-                @ptrCast(compressed_buffer[byte_idx..(byte_idx+8)]),
+                @ptrCast(@as([*]u8, @ptrCast(compressed_buffer))[byte_idx..(byte_idx+8)]),
                 std.builtin.Endian.big,
             ) >> @truncate((comptime 64 - 12) - bit_idx);
 
@@ -402,13 +424,19 @@ pub const HuffmanCompressor = struct {
             }
             std.debug.assert(length == 0);
 
-            try self.iterDecompressBitwise(
+            self.iterDecompressBitwise(
                 compressed_buffer,
                 decompressed_buffer,
                 &compressed_buffer_bit_idx,
                 &decompressed_buffer_idx,
-            );
+            ) catch {
+                // if (@divFloor(compressed_buffer_bit_idx, 8) == compressed_buffer.len) {
+                    // return decompressed_buffer_idx;
+                // }
+                return error.DecompressionError;
+            };
         }
+
         return decompressed_buffer_idx;
     }
 
@@ -441,7 +469,7 @@ test "compression" {
     const mb_s = file_size / elapsed;
 
     std.debug.print("Original size:   {d}\n", .{file_size});
-    std.debug.print("Compressed size: {d}\n", .{compressed_size});
+    std.debug.print("Compressed size: {d}\n", .{try std.math.divCeil(u64, compressed_size, 8)});
     std.debug.print("MB/s:            {d}\n", .{mb_s});
 
     const decompressed_buffer = try arena.allocator().alloc(u8, file_size);

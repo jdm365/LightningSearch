@@ -370,7 +370,6 @@ pub const BM25Partition = struct {
         self.string_arena.deinit();
         self.doc_score_map.deinit();
 
-        // self.doc_store.deinit(self.allocator);
         self.doc_store.deinit();
     }
 
@@ -1356,6 +1355,21 @@ pub const BM25Partition = struct {
                 (current_doc_id == II.num_docs)
             );
         }
+    }
+
+    pub inline fn fetchRecordsDocStore(
+        self: *BM25Partition,
+        result_positions: []TermPos,
+        query_result: QueryResult,
+        record_string: *std.ArrayListUnmanaged(u8),
+    ) void {
+        self.doc_store.getRow(
+            @intCast(query_result.doc_id),
+            record_string.items[0..],
+            result_positions,
+        ) catch {
+            @panic("Error fetching document.");
+        };
     }
 
     pub fn fetchRecords(

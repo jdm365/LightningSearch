@@ -17,6 +17,11 @@ exec:
 run: build exec
 
 app:
+	zig build
+	mv zig-out/bin/lightning_search electron_app/
+	cd electron_app && npm start
+
+app_release:
 	zig build -Doptimize=ReleaseSafe
 	mv zig-out/bin/lightning_search electron_app/
 	cd electron_app && npm start
