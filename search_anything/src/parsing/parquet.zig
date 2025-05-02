@@ -7,6 +7,21 @@ const lp = @cImport({
 });
 
 
+pub fn readRowGroup(filename_c: [*:0]const u8, row_group_idx: usize) []u8 {
+    var num_bytes: usize = undefined;
+    const buffer = lp.convert_row_group_to_vbyte_buffer_c(
+        filename_c,
+        row_group_idx,
+        &num_bytes,
+    );
+
+    return std.mem.bytesAsSlice(u8, buffer[0..num_bytes]);
+}
+
+pub fn freeRowGroup(buffer: []u8) void {
+    lp.free_csv_buffer_c(buffer.ptr);
+}
+
 pub fn getSerializedReader(filename_c: [*:0]const u8) *anyopaque {
     return @ptrCast(lp.create_parquet_reader(filename_c));
 }
@@ -94,11 +109,13 @@ pub fn getNumRowsParquet(
 }
 
 pub fn getNumRowGroupsInRowGroup(
-    filename_c: [*:0]const u8,
+    // filename_c: [*:0]const u8,
+    serialized_reader: *anyopaque,
     row_group_idx: usize,
 ) usize {
     return lp.get_num_rows_in_row_group_c(
-        filename_c,
+        // filename_c,
+        @ptrCast(serialized_reader),
         row_group_idx,
     );
 }

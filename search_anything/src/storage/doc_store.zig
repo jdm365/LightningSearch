@@ -11,6 +11,8 @@ pub const DocStore = struct {
     literal_col_idxs: std.ArrayListUnmanaged(usize),
     huffman_col_idxs: std.ArrayListUnmanaged(usize),
 
+    huffman_rows_indexing: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u8)),
+    literal_rows_indexing: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u8)),
     huffman_rows: std.ArrayListUnmanaged([]u8),
     literal_rows: std.ArrayListUnmanaged([]u8),
 
@@ -36,6 +38,8 @@ pub const DocStore = struct {
             .literal_col_idxs = std.ArrayListUnmanaged(usize){},
             .huffman_col_idxs = std.ArrayListUnmanaged(usize){},
 
+            .huffman_rows_indexing = std.ArrayListUnmanaged(std.ArrayListUnmanaged(u8)){},
+            .literal_rows_indexing = std.ArrayListUnmanaged(std.ArrayListUnmanaged(u8)){},
             .huffman_rows = std.ArrayListUnmanaged([]u8){},
             .literal_rows = std.ArrayListUnmanaged([]u8){},
 
@@ -171,6 +175,126 @@ pub const DocStore = struct {
 
         const val = try self.huffman_rows.addOne(self.arena.allocator());
         val.* = (try huffman_row.toOwnedSlice(self.arena.allocator()))[0..row_size];
+    }
+
+    pub fn addHuffmanRowIter(
+        self: *DocStore,
+        field_len: usize,
+        row_data: []u8,
+        row_idx: usize,
+        // col_idx: usize,
+    ) !void {
+        // Add the next column's data to the given row.
+        
+        // TODO: Make member to retain allocation.
+
+        if (row_idx >= self.huffman_rows_indexing.items.len) {
+            // First entry. 
+            var huffman_row = try self.huffman_rows_indexing.addOne(self.arena.allocator());
+            try huffman_row.resize(
+                self.arena.allocator(), 
+                2 * (field_len + 8),
+                );
+            var row_size: usize = 0;
+
+            if (field_len == 0) {
+                try self.huffman_field_sizes.append(
+                    self.arena.allocator(), 
+                    0,
+                    );
+                try self.huffman_field_rem_bits.append(
+                    self.arena.allocator(), 
+                    0,
+                    );
+                const val = try self.huffman_rows.addOne(self.arena.allocator());
+                val.* = "";
+                return;
+            }
+
+            const compressed_bit_size = try self.huffman_compressor.compress(
+                    row_data[0..field_len],
+                    huffman_row.items[0..],
+                    );
+            const compressed_byte_size: u16 = @truncate(
+                try std.math.divCeil(u64, compressed_bit_size, 8)
+                );
+            const rem_bits: u3 = @truncate(compressed_bit_size % 8);
+            std.debug.assert(compressed_byte_size > 0);
+
+            try self.huffman_field_sizes.append(
+                self.arena.allocator(), 
+                compressed_byte_size,
+                );
+            try self.huffman_field_rem_bits.append(
+                self.arena.allocator(), 
+                rem_bits,
+                );
+            row_size += compressed_byte_size;
+
+            try huffman_row.resize(self.arena.allocator(), row_size);
+            return;
+        }
+
+        var current_huffman_row = &self.huffman_rows_indexing.items[row_idx];
+        var row_size: usize = current_huffman_row.items.len;
+
+        if (field_len == 0) {
+            try self.huffman_field_sizes.append(
+                self.arena.allocator(), 
+                0,
+                );
+            try self.huffman_field_rem_bits.append(
+                self.arena.allocator(), 
+                0,
+                );
+            return;
+        }
+
+        try current_huffman_row.resize(
+            self.arena.allocator(), 
+            2 * (field_len + 8),
+            );
+
+        const compressed_bit_size = try self.huffman_compressor.compress(
+                row_data[0..field_len],
+                current_huffman_row.items[row_size..],
+                );
+        const compressed_byte_size: u16 = @truncate(
+            try std.math.divCeil(u64, compressed_bit_size, 8)
+            );
+        const rem_bits: u3 = @truncate(compressed_bit_size % 8);
+        std.debug.assert(compressed_byte_size > 0);
+
+        try self.huffman_field_sizes.append(
+            self.arena.allocator(), 
+                compressed_byte_size,
+                );
+        try self.huffman_field_rem_bits.append(
+            self.arena.allocator(), 
+            rem_bits,
+            );
+        row_size += compressed_byte_size;
+
+        try current_huffman_row.resize(self.arena.allocator(), row_size);
+    }
+
+    pub fn finalize(self: *DocStore) !void {
+        if ((self.huffman_rows.items.len > 0) or (self.literal_rows.items.len > 0)) {
+            return error.InvalidState;
+        }
+
+        for (self.huffman_rows_indexing.items) |*row| {
+            const val = try self.huffman_rows.addOne(self.arena.allocator());
+            val.* = (try row.toOwnedSlice(self.arena.allocator()))[0..row.items.len];
+        }
+
+        for (self.literal_rows_indexing.items) |*row| {
+            const val = try self.literal_rows.addOne(self.arena.allocator());
+            val.* = (try row.toOwnedSlice(self.arena.allocator()))[0..row.items.len];
+        }
+
+        self.huffman_rows_indexing.deinit(self.arena.allocator());
+        self.literal_rows_indexing.deinit(self.arena.allocator());
     }
 
     pub inline fn getRow(

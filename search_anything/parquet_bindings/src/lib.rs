@@ -4,6 +4,9 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::data_type::{ByteArray, FixedLenByteArray};
 use arrow_array::LargeStringArray;
 use parquet::arrow::ProjectionMask; 
+use parquet::record::reader::RowIter;
+
+use libc::{malloc, free};
 
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
@@ -74,6 +77,71 @@ pub extern "C" fn convert_parquet_to_csv(_parquet_path: *const u8) {
     let mut df = ParquetReader::new(File::open(input_path).unwrap()).finish().unwrap();
     let mut file = File::create(output_path).unwrap();
     CsvWriter::new(&mut file).finish(&mut df).unwrap();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn convert_row_group_to_vbyte_buffer_c(
+    _parquet_path: *const u8,
+    row_group_index: usize,
+    csv_buffer_capacity: *mut usize,
+) -> *mut u8 {
+    let parquet_path = unsafe {
+        CStr::from_ptr(_parquet_path as *const i8)
+            .to_string_lossy()
+            .into_owned()
+    };
+
+    let file = match File::open(&parquet_path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to open file {:?} {:?}", parquet_path, e);
+            return std::ptr::null_mut();
+        }
+    };
+    let reader = SerializedFileReader::new(file).unwrap();
+    let arc_reader = Arc::new(reader);
+
+    // Get the row group reader
+    let row_group_reader = arc_reader.get_row_group(row_group_index).unwrap();
+
+    // Create a RowIter for the row group
+    let row_iter = RowIter::from_row_group(None, row_group_reader.as_ref()).unwrap();
+
+    let mut buffer: Vec<u8> = Vec::new();
+    for row in row_iter {
+        let row = row.unwrap();
+        let json_row = row.to_json_value();
+
+        for (_, value) in json_row.as_object().unwrap() {
+            let value_bytes = stringify_json_value(value);
+            vbyte_encode(value_bytes.len() as u64, &mut buffer);
+            buffer.extend_from_slice(&value_bytes);
+        }
+    }
+
+    unsafe {
+        // Set the length of the buffer.
+        *csv_buffer_capacity = buffer.len();
+
+        // Copy
+        let csv_buffer = malloc(buffer.len()) as *mut u8;
+        std::ptr::copy_nonoverlapping(
+            buffer.as_ptr(),
+            csv_buffer,
+            buffer.len(),
+        );
+
+        return csv_buffer;
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn free_csv_buffer_c(csv_buffer: *mut u8) {
+    if !csv_buffer.is_null() {
+        unsafe {
+            free(csv_buffer as *mut libc::c_void);
+        }
+    }
 }
 
 
@@ -474,6 +542,7 @@ pub fn read_parquet_row_group_column_utf8_null_terminated(
     for batch in reader {
         let rb = batch.expect("Reading batch failed");
         let col = rb.column(0);
+
         let col_arr = match col.as_any().downcast_ref::<LargeStringArray>() {
             Some(arr) => arr,
             None => {
@@ -679,27 +748,27 @@ pub extern "C" fn get_num_rows_c(filename: *const u8) -> usize {
     get_num_rows(&filename_rs)
 }
 
-pub fn get_num_rows_in_row_group(filename: &str, row_group_index: usize) -> usize {
-    let rdr = SerializedFileReader::try_from(filename).unwrap();
-    let metadata = rdr.metadata();
-    metadata.row_group(row_group_index).num_rows() as usize
+pub fn get_num_rows_in_row_group(
+    rdr: &SerializedFileReader<File>,
+    row_group_index: usize,
+) -> usize {
+    rdr.metadata()
+       .row_group(row_group_index)
+       .num_rows() as usize
 }
 
+
 #[unsafe(no_mangle)]
-pub extern "C" fn get_num_rows_in_row_group_c(filename: *const u8, row_group_index: usize) -> usize {
-    if filename.is_null() {
-        eprintln!("Error: Filename pointer is null");
-        return 0; // Or another appropriate error value
+pub extern "C" fn get_num_rows_in_row_group_c(
+    rdr: *mut ParquetReaderHandle,
+    row_group_index: usize,
+) -> usize {
+    if rdr.is_null() {
+        eprintln!("Error: Reader pointer is null");
+        return 0;
     }
-
-    // Convert C string to Rust string safely
-    let filename_rs = unsafe {
-        CStr::from_ptr(filename as *const i8)
-            .to_string_lossy()
-            .into_owned()
-    };
-
-    get_num_rows_in_row_group(&filename_rs, row_group_index)
+    let handle = unsafe { &*rdr };
+    get_num_rows_in_row_group(&handle.reader, row_group_index)
 }
 
 pub fn get_col_names(filename: &str) -> Vec<String> {
@@ -736,6 +805,7 @@ pub extern "C" fn get_col_names_c(
             );
     }
 }
+
 
 #[allow(dead_code)]
 #[repr(packed)]

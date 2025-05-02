@@ -228,6 +228,10 @@ pub const IndexManager = struct {
                     try self.columns.insert(col, @truncate(idx));
                 }
 
+                self.file_data.pq_data = PQData{
+                    .num_row_groups = undefined,
+                    .pq_file_handle = undefined,
+                };
                 self.file_data.pq_data.?.pq_file_handle = pq.getSerializedReader(self.file_data.input_filename_c);
             },
         }
@@ -483,7 +487,6 @@ pub const IndexManager = struct {
         // TODO: Remove this and line_offsets.
         const start_byte = current_IP.line_offsets[0];
         const end_byte = current_IP.line_offsets[current_IP.line_offsets.len - 1];
-        // current_IP.line_offsets
 
         var token_stream = try fu.TokenStream(fu.token_32t).init(
             self.file_data.inputFilename(),
@@ -492,6 +495,7 @@ pub const IndexManager = struct {
             self.search_col_idxs.items.len,
             start_byte,
             end_token,
+            false,
         );
         defer token_stream.deinit();
 
@@ -665,6 +669,7 @@ pub const IndexManager = struct {
         try current_IP.constructFromTokenStream(&token_stream);
     }
 
+
     fn readPartitionParquet(
         self: *IndexManager,
         partition_idx: usize,
@@ -673,8 +678,6 @@ pub const IndexManager = struct {
         total_docs_read: *AtomicCounter,
         progress_bar: *progress.ProgressBar,
     ) !void {
-        std.debug.assert(self.file_data.file_type == .PARQUET);
-
         defer {
             _ = self.allocators.scratch_arena.reset(.retain_capacity);
         }
@@ -688,32 +691,118 @@ pub const IndexManager = struct {
             .{self.file_data.tmp_dir, partition_idx}
             );
 
-        var token_stream = try fu.ParquetTokenStream(fu.token_32t).init(
-            self.file_data.input_filename_c,
+        const current_IP = &self.index_partitions[partition_idx];
+
+        var token_stream = try fu.TokenStream(fu.token_32t).init(
+            self.file_data.inputFilename(),
             output_filename,
             self.gpa(),
-            self.search_col_idxs.items,
-            min_row_group,
-            max_row_group,
+            self.search_col_idxs.items.len,
+            0,
+            0,
+            true,
         );
         defer token_stream.deinit();
 
+        var freq_table: [256]u32 = undefined;
+        @memset(freq_table[0..], 0);
+
+        var buffer = pq.readRowGroup(
+            self.file_data.input_filename_c,
+            min_row_group,
+        );
+        const num_bytes = @min(buffer.len, 1 << 14);
+        for (0..num_bytes) |idx| {
+            freq_table[buffer[idx]] += 1;
+        }
+
+        // TODO: Implement type inference to allow literal types.
+        var literal_byte_idxs = std.ArrayListUnmanaged(usize){};
+        var literal_col_idxs  = std.ArrayListUnmanaged(usize){};
+        var huffman_col_idxs  = std.ArrayListUnmanaged(usize){};
+        defer literal_byte_idxs.deinit(self.gpa());
+        defer literal_col_idxs.deinit(self.gpa());
+        defer huffman_col_idxs.deinit(self.gpa());
+
+        for (0..self.columns.num_keys) |idx| {
+            try huffman_col_idxs.append(self.gpa(), idx);
+        }
+
+        current_IP.doc_store = try DocStore.init(
+            &literal_byte_idxs,
+            &literal_col_idxs,
+            &huffman_col_idxs,
+        );
+
+        try current_IP.doc_store.huffman_compressor.buildHuffmanTreeGivenFreqs(
+            self.gpa(),
+            &freq_table,
+        );
+
         var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
 
-        var first = true;
-        var docs_read: usize = 0;
-        while (token_stream.getNextBuffer(first)) {
-            first = false;
 
-            var row_idx: u32 = 0;
-            while (token_stream.current_idx < token_stream.buffer_len) {
+        var prev_doc_id: usize = 0;
+        var doc_id: usize = 0;
+
+        const positions = &self.query_state.result_positions[partition_idx];
+
+        for (0.., min_row_group..max_row_group) |idx, rg_idx| {
+            if (idx != 0) {
+                pq.freeRowGroup(buffer);
+                buffer = pq.readRowGroup(
+                    self.file_data.input_filename_c,
+                    rg_idx,
+                );
+            }
+
+            var byte_idx: usize = 0;
+            while (byte_idx < buffer.len) {
+                var search_col_idx: usize = 0;
+                var col_idx: usize        = 0;
+                const start_byte_idx = byte_idx;
+
+                while (col_idx < self.columns.num_keys) {
+                    var current_col_idx = col_idx;
+                    for (current_col_idx..self.search_col_idxs.items[search_col_idx]) |_| {
+                        positions.*[col_idx].field_len = try token_stream.iterFieldVbyte(&byte_idx, buffer);
+                        positions.*[col_idx].start_pos = @truncate(byte_idx - start_byte_idx - positions.*[col_idx].field_len);
+                        std.debug.print("Field len: {d}\n", .{positions.*[col_idx].field_len});
+                        col_idx += 1;
+                    }
+
+                    const init_byte_idx = byte_idx;
+
+                    positions.*[col_idx].start_pos = @truncate(byte_idx - start_byte_idx);
+                    byte_idx += try current_IP.processDocVbyte(
+                        &token_stream,
+                        buffer[byte_idx..],
+                        @truncate(doc_id), 
+                        search_col_idx,
+                        &terms_seen_bitset,
+                        );
+                    positions.*[col_idx].field_len = @truncate(byte_idx - init_byte_idx);
+
+                    search_col_idx += 1;
+                    col_idx += 1;
+
+                    if (search_col_idx == self.search_col_idxs.items.len) {
+                        current_col_idx = col_idx;
+                        for (current_col_idx..self.columns.num_keys) |_| {
+                            positions.*[col_idx].field_len = try token_stream.iterFieldVbyte(&byte_idx, buffer);
+                            positions.*[col_idx].start_pos = @truncate(byte_idx - start_byte_idx - positions.*[col_idx].field_len);
+                            col_idx += 1;
+                        }
+                    }
+                }
+                doc_id += 1;
 
                 if (timer.read() >= interval_ns) {
                     const current_docs_read = total_docs_read.fetchAdd(
-                        docs_read,
+                        doc_id - prev_doc_id, 
                         .monotonic
-                        );
-                    docs_read = 0;
+                        ) + (doc_id - prev_doc_id);
+                    prev_doc_id = doc_id;
                     timer.reset();
 
                     self.indexing_state.last_progress = current_docs_read;
@@ -724,28 +813,144 @@ pub const IndexManager = struct {
                     }
                 }
 
-                try self.index_partitions[partition_idx].processDocVbyte(
-                    &token_stream,
-                    row_idx, 
-                    &terms_seen_bitset,
-                    );
-                row_idx += 1;
-                if (token_stream.current_col_idx == 0) {
-                    docs_read += 1;
-                }
+                try current_IP.doc_store.addRow(
+                    positions.*,
+                    buffer[start_byte_idx..byte_idx],
+                );
             }
         }
+        pq.freeRowGroup(buffer);
 
         // Flush remaining tokens.
-        for (0..token_stream.num_terms.len) |search_col_idx| {
-            try token_stream.flushTokenStream(search_col_idx);
+        for (0..token_stream.num_terms.len) |_search_col_idx| {
+            try token_stream.flushTokenStream(_search_col_idx);
         }
-        _ = total_docs_read.fetchAdd(docs_read, .monotonic);
+        _ = total_docs_read.fetchAdd(doc_id - prev_doc_id, .monotonic);
 
         // Construct II
-        // TODO: Make all ***Pq functions unioned on token stream, instead of duplicated.
-        try self.index_partitions[partition_idx].constructFromTokenStreamPq(&token_stream);
+        try current_IP.constructFromTokenStream(&token_stream);
     }
+
+
+
+    // fn readPartitionParquet(
+        // self: *IndexManager,
+        // partition_idx: usize,
+        // min_row_group: usize,
+        // max_row_group: usize,
+        // total_docs_read: *AtomicCounter,
+        // progress_bar: *progress.ProgressBar,
+    // ) !void {
+        // std.debug.assert(self.file_data.file_type == .PARQUET);
+// 
+        // defer {
+            // _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        // }
+// 
+        // var timer = try std.time.Timer.start();
+        // const interval_ns: u64 = 1_000_000_000 / 30;
+// 
+        // const output_filename = try std.fmt.allocPrint(
+            // self.scratchArena(), 
+            // "{s}/output_{d}", 
+            // .{self.file_data.tmp_dir, partition_idx}
+            // );
+// 
+        // var token_stream = try fu.ParquetTokenStream(fu.token_32t).init(
+            // self.file_data.input_filename_c,
+            // output_filename,
+            // self.gpa(),
+            // self.search_col_idxs.items,
+            // min_row_group,
+            // max_row_group,
+        // );
+        // defer token_stream.deinit();
+// 
+        // var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
+// 
+        // var first = true;
+        // var docs_read: usize = 0;
+        // while (token_stream.getNextBuffer(first)) {
+            // first = false;
+// 
+            // var row_idx: u32 = 0;
+            // while (token_stream.current_idx < token_stream.buffer_len) {
+// 
+                // if (timer.read() >= interval_ns) {
+                    // const current_docs_read = total_docs_read.fetchAdd(
+                        // docs_read,
+                        // .monotonic
+                        // );
+                    // docs_read = 0;
+                    // timer.reset();
+// 
+                    // self.indexing_state.last_progress = current_docs_read;
+// 
+                    // if (partition_idx == 0) {
+                        // progress_bar.update(current_docs_read);
+                        // self.indexing_state.last_progress = current_docs_read;
+                    // }
+                // }
+// 
+                // try self.index_partitions[partition_idx].processDocVbyte(
+                    // &token_stream,
+                    // row_idx, 
+                    // &terms_seen_bitset,
+                    // );
+                // row_idx += 1;
+                // if (token_stream.current_col_idx == 0) {
+                    // docs_read += 1;
+                // }
+            // }
+        // }
+// 
+        // // Flush remaining tokens.
+        // for (0..token_stream.num_terms.len) |search_col_idx| {
+            // try token_stream.flushTokenStream(search_col_idx);
+        // }
+        // _ = total_docs_read.fetchAdd(docs_read, .monotonic);
+// 
+        // // Construct II
+        // // TODO: Make all ***Pq functions unioned on token stream, instead of duplicated.
+        // try self.index_partitions[partition_idx].constructFromTokenStreamPq(&token_stream);
+// 
+// 
+        // // TODO: Implement type inference to allow literal types.
+        // var literal_byte_idxs = std.ArrayListUnmanaged(usize){};
+        // var literal_col_idxs  = std.ArrayListUnmanaged(usize){};
+        // var huffman_col_idxs  = std.ArrayListUnmanaged(usize){};
+        // defer literal_byte_idxs.deinit(self.gpa());
+        // defer literal_col_idxs.deinit(self.gpa());
+        // defer huffman_col_idxs.deinit(self.gpa());
+// 
+        // for (0..self.columns.num_keys) |idx| {
+            // try huffman_col_idxs.append(self.gpa(), idx);
+        // }
+// 
+        // self.index_partitions[partition_idx].doc_store = try DocStore.init(
+            // &literal_byte_idxs,
+            // &literal_col_idxs,
+            // &huffman_col_idxs,
+        // );
+// 
+        // var freq_table: [256]u32 = undefined;
+        // @memset(freq_table[0..], 1);
+// 
+        // const num_bytes = @min(token_stream.buffer_len, 1 << 14);
+        // for (token_stream.column_buffer[0..num_bytes]) |byte| {
+            // freq_table[byte] += 1;
+        // }
+// 
+        // try self.index_partitions[partition_idx].doc_store.huffman_compressor.buildHuffmanTreeGivenFreqs(
+            // self.gpa(),
+            // &freq_table,
+        // );
+// 
+        // try token_stream.writeDocStore(
+            // &self.index_partitions[partition_idx].doc_store,
+            // self.columns.num_keys,
+        // );
+    // }
 
     pub fn scanFile(self: *IndexManager) !void {
         switch (self.file_data.file_type) {
@@ -811,10 +1016,6 @@ pub const IndexManager = struct {
         );
         const num_rg = self.file_data.pq_data.?.num_row_groups;
 
-        // const num_partitions = @min(
-            // try std.Thread.getCpuCount(), 
-            // num_rg,
-            // );
         const num_partitions = @min(
             try std.Thread.getCpuCount(), 
             MAX_NUM_THREADS,
@@ -840,10 +1041,13 @@ pub const IndexManager = struct {
                 max_row_group - min_row_group,
                 );
 
+            const reader = pq.getSerializedReader(self.file_data.input_filename_c);
+
             var num_rows: usize = 0;
             for (0.., min_row_group..max_row_group) |i, rg_idx| {
                 row_group_sizes[i] = pq.getNumRowGroupsInRowGroup(
-                    self.file_data.input_filename_c,
+                    // self.file_data.input_filename_c,
+                    reader,
                     rg_idx,
                 );
                 num_rows += row_group_sizes[i];

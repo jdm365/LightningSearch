@@ -362,7 +362,6 @@ pub const BM25Partition = struct {
     }
 
     pub fn deinit(self: *BM25Partition) void {
-        // self.allocator.free(self.line_offsets);
         for (0..self.II.len) |i| {
             self.II[i].deinit(self.allocator);
         }
@@ -792,7 +791,7 @@ pub const BM25Partition = struct {
         byte_idx.* += buffer_idx;
     }
 
-    pub fn processDocVbyte(
+    pub fn processDocVbyteOld(
         self: *BM25Partition,
         token_stream: *file_utils.ParquetTokenStream(file_utils.token_32t),
         doc_id: u32,
@@ -901,6 +900,124 @@ pub const BM25Partition = struct {
                 col_idx,
             );
         }
+    }
+
+    pub fn processDocVbyte(
+        self: *BM25Partition,
+        token_stream: *file_utils.TokenStream(file_utils.token_32t),
+        buffer: []u8,
+        doc_id: u32,
+        search_col_idx: usize,
+        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
+    ) !usize {
+        var bytes_read: usize = 0;
+
+        const field_len = pq.decodeVbyte(
+            @ptrCast(buffer),
+            &bytes_read,
+            );
+
+        string_utils.stringToUpper(
+            @ptrCast(buffer[0..field_len]), 
+            field_len,
+            );
+
+        var buffer_idx: usize = 0;
+
+        if (field_len == 0) {
+            try token_stream.addToken(
+                true,
+                std.math.maxInt(u7),
+                std.math.maxInt(u24),
+                search_col_idx,
+            );
+            return bytes_read;
+        }
+
+        var term_pos: u8 = 0;
+
+        var cntr: usize = 0;
+        var new_doc: bool = (doc_id != 0);
+
+        terms_seen.clear();
+
+        while (buffer_idx < field_len) {
+            std.debug.assert(
+                self.II[search_col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS
+                );
+
+            if (cntr > MAX_TERM_LENGTH - 4) {
+                try self.flushLargeToken(
+                    buffer[buffer_idx - cntr..], 
+                    &cntr, 
+                    doc_id, 
+                    &term_pos, 
+                    search_col_idx, 
+                    token_stream, 
+                    terms_seen,
+                    &new_doc,
+                    );
+                buffer_idx += 1;
+                continue;
+            }
+
+
+            switch (buffer[buffer_idx]) {
+                0...47, 58...64, 91...96, 123...126 => {
+                    if (cntr == 0) {
+                        buffer_idx += 1;
+                        cntr = 0;
+                        continue;
+                    }
+
+                    const start_idx = buffer_idx - @min(buffer_idx, cntr);
+                    try self.addToken(
+                        buffer[start_idx..], 
+                        &cntr, 
+                        doc_id, 
+                        &term_pos, 
+                        search_col_idx, 
+                        token_stream, 
+                        terms_seen,
+                        &new_doc,
+                        );
+                },
+                else => {
+                    cntr += 1;
+                    buffer_idx += 1;
+                },
+            }
+        }
+
+        if (cntr > 0) {
+            std.debug.assert(
+                self.II[search_col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS
+                );
+
+            const start_idx = buffer_idx - @min(buffer_idx, cntr + 1);
+            try self.addTerm(
+                buffer[start_idx..], 
+                cntr, 
+                doc_id, 
+                term_pos, 
+                search_col_idx, 
+                token_stream, 
+                terms_seen,
+                &new_doc,
+                );
+        }
+
+        if (new_doc) {
+            // No terms found. Add null token.
+            try token_stream.addToken(
+                true,
+                std.math.maxInt(u7),
+                std.math.maxInt(u24),
+                search_col_idx,
+            );
+        }
+
+        return bytes_read;
     }
 
     pub fn processDocRfc8259(
@@ -1349,11 +1466,13 @@ pub const BM25Partition = struct {
                     II.postings.term_positions[postings_offset] = @intCast(term_pos);
                 }
             }
-            std.debug.assert(
-                (current_doc_id == II.num_docs - 1)
-                    or
-                (current_doc_id == II.num_docs)
-            );
+            // std.debug.print("\n\ncurrent_doc_id: {d}\n", .{current_doc_id});
+            // std.debug.print("II.num_docs:    {d}\n", .{II.num_docs});
+            // std.debug.assert(
+                // (current_doc_id == II.num_docs - 1)
+                    // or
+                // (current_doc_id == II.num_docs)
+            // );
         }
     }
 

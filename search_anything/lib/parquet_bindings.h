@@ -14,6 +14,12 @@ typedef struct ParquetReaderHandle ParquetReaderHandle;
 
 void convert_parquet_to_csv(const uint8_t *_parquet_path);
 
+uint8_t *convert_row_group_to_vbyte_buffer_c(const uint8_t *_parquet_path,
+                                             uintptr_t row_group_index,
+                                             uintptr_t *csv_buffer_capacity);
+
+void free_csv_buffer_c(uint8_t *csv_buffer);
+
 /**
  * Create a new Parquet reader and return a handle to it.
  *
@@ -40,7 +46,7 @@ uintptr_t get_num_row_groups_c(const uint8_t *filename);
 
 uintptr_t get_num_rows_c(const uint8_t *filename);
 
-uintptr_t get_num_rows_in_row_group_c(const uint8_t *filename, uintptr_t row_group_index);
+uintptr_t get_num_rows_in_row_group_c(struct ParquetReaderHandle *rdr, uintptr_t row_group_index);
 
 void get_col_names_c(const uint8_t *filename, uint8_t *col_names);
 

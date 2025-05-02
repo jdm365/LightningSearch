@@ -4,6 +4,8 @@ const csv  = @import("../parsing/csv.zig");
 const json = @import("../parsing/json.zig");
 const pq   = @import("../parsing/parquet.zig");
 
+const DocStore = @import("../storage/doc_store.zig").DocStore;
+
 const string_utils = @import("../utils/string_utils.zig");
 
 pub const FileType = enum {
@@ -280,7 +282,7 @@ pub fn TokenStream(comptime token_t: type) type {
         const Self = @This();
 
         tokens: [][]token_t,
-        double_buffer: SingleThreadedDoubleBufferedReader,
+        double_buffer: ?SingleThreadedDoubleBufferedReader = null,
         num_terms: []u32,
         allocator: std.mem.Allocator,
         output_files: []std.fs.File,
@@ -294,6 +296,8 @@ pub fn TokenStream(comptime token_t: type) type {
             num_search_cols: usize,
             start_byte: usize,
             end_token: u8,
+
+            is_parquet: bool,
         ) !Self {
 
             const input_file = try std.fs.cwd().openFile(filename, .{});
@@ -324,27 +328,37 @@ pub fn TokenStream(comptime token_t: type) type {
                     );
             }
 
-            const token_stream = Self{
-                .tokens = token_buffers,
-                .double_buffer = try SingleThreadedDoubleBufferedReader.init(
-                    allocator,
-                    input_file,
-                    start_byte,
-                    end_token,
-                ),
-                .num_terms = num_terms,
-                .allocator = allocator,
-                .output_files = output_files,
-                .input_file = input_file,
-                .buffer_idx = 0,
-            };
-
-            return token_stream;
+            if (is_parquet) {
+                return Self{
+                    .tokens = token_buffers,
+                    .num_terms = num_terms,
+                    .allocator = allocator,
+                    .output_files = output_files,
+                    .input_file = input_file,
+                    .buffer_idx = 0,
+                };
+            } else {
+                return Self{
+                    .tokens = token_buffers,
+                    .double_buffer = try SingleThreadedDoubleBufferedReader.init(
+                        allocator,
+                        input_file,
+                        start_byte,
+                        end_token,
+                    ),
+                    .num_terms = num_terms,
+                    .allocator = allocator,
+                    .output_files = output_files,
+                    .input_file = input_file,
+                    .buffer_idx = 0,
+                };
+            }
         }
 
         pub fn deinit(self: *Self) void {
-            // self.allocator.free(self.f_data);
-            self.double_buffer.deinit(self.allocator);
+            if (self.double_buffer) |*db| {
+                db.deinit(self.allocator);
+            }
             for (0.., self.output_files) |col_idx, *file| {
                 self.allocator.free(self.tokens[col_idx]);
                 file.close();
@@ -411,7 +425,7 @@ pub fn TokenStream(comptime token_t: type) type {
         }
 
         pub inline fn getBuffer(self: *Self, file_pos: usize) ![]u8 {
-            return try self.double_buffer.getBuffer(file_pos, true);
+            return try self.double_buffer.?.getBuffer(file_pos, true);
         }
 
         pub inline fn iterFieldCSV(self: *Self, byte_idx: *usize) !void {
@@ -428,6 +442,21 @@ pub fn TokenStream(comptime token_t: type) type {
             var buffer_idx: usize = 0;
             try json._iterFieldJSON(buffer, &buffer_idx);
             byte_idx.* += buffer_idx;
+        }
+
+        pub inline fn iterFieldVbyte(
+            _: *Self, 
+            byte_idx: *usize,
+            buffer: []u8,
+            ) !u32 {
+            // Iterate to next field using vbyte encoded prefix length.
+            const field_len = pq.decodeVbyte(
+                @ptrCast(buffer),
+                byte_idx,
+            );
+            byte_idx.* += field_len;
+
+            return @truncate(field_len);
         }
     };
 }
@@ -571,6 +600,46 @@ pub fn ParquetTokenStream(comptime token_t: type) type {
             );
             self.current_idx = 0;
             return true;
+        }
+
+        pub fn writeDocStore(
+            self: *Self, 
+            doc_store: *DocStore,
+            num_cols: usize,
+            ) !void {
+
+            var row_offset: usize = 0;
+            for (self.min_row_group..self.max_row_group) |rg_idx| {
+                for (0..num_cols) |col_idx| {
+                    var buffer_len: usize = 0;
+                    self.column_buffer = pq.readParquetRowGroupColumnUtf8Vbyte(
+                        self.input_filename,
+                        rg_idx,
+                        col_idx,
+                        &buffer_len,
+                    );
+
+                    var buffer_idx: usize = 0;
+                    var row_idx:    usize = row_offset;
+                    while (buffer_idx < buffer_len) {
+                        const field_len = pq.decodeVbyte(
+                            self.column_buffer,
+                            &buffer_idx,
+                        );
+                        try doc_store.addHuffmanRowIter(
+                            field_len,
+                            std.mem.bytesAsSlice(u8, self.column_buffer[buffer_idx..buffer_len]),
+                            row_idx,
+                            // col_idx,
+                        );
+                        row_idx += 1;
+                        buffer_idx += field_len;
+                    }
+                    row_offset = row_idx;
+                }
+            }
+
+            try doc_store.finalize();
         }
     };
 }
