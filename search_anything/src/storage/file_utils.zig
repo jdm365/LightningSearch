@@ -443,21 +443,6 @@ pub fn TokenStream(comptime token_t: type) type {
             try json._iterFieldJSON(buffer, &buffer_idx);
             byte_idx.* += buffer_idx;
         }
-
-        pub inline fn iterFieldVbyte(
-            _: *Self, 
-            byte_idx: *usize,
-            buffer: []u8,
-            ) !u32 {
-            // Iterate to next field using vbyte encoded prefix length.
-            const field_len = pq.decodeVbyte(
-                @ptrCast(buffer),
-                byte_idx,
-            );
-            byte_idx.* += field_len;
-
-            return @truncate(field_len);
-        }
     };
 }
 

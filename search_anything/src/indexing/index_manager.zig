@@ -745,7 +745,9 @@ pub const IndexManager = struct {
         var prev_doc_id: usize = 0;
         var doc_id: usize = 0;
 
-        const positions = &self.query_state.result_positions[partition_idx];
+        var field_length: usize = 0;
+
+        const positions = self.query_state.result_positions[partition_idx];
 
         for (0.., min_row_group..max_row_group) |idx, rg_idx| {
             if (idx != 0) {
@@ -765,34 +767,51 @@ pub const IndexManager = struct {
                 while (col_idx < self.columns.num_keys) {
                     var current_col_idx = col_idx;
                     for (current_col_idx..self.search_col_idxs.items[search_col_idx]) |_| {
-                        positions.*[col_idx].field_len = try token_stream.iterFieldVbyte(&byte_idx, buffer);
-                        positions.*[col_idx].start_pos = @truncate(byte_idx - start_byte_idx - positions.*[col_idx].field_len);
-                        std.debug.print("Field len: {d}\n", .{positions.*[col_idx].field_len});
-                        col_idx += 1;
+                        field_length = pq.decodeVbyte(
+                            buffer.ptr,
+                            &byte_idx,
+                        );
+                        positions[col_idx].start_pos = @truncate(byte_idx - start_byte_idx);
+                        positions[col_idx].field_len = @truncate(field_length);
+
+                        byte_idx += field_length;
+                        col_idx  += 1;
                     }
 
-                    const init_byte_idx = byte_idx;
+                    field_length = pq.decodeVbyte(
+                        buffer.ptr,
+                        &byte_idx,
+                    );
+                    positions[col_idx].start_pos = @truncate(byte_idx - start_byte_idx);
+                    positions[col_idx].field_len = @truncate(field_length);
 
-                    positions.*[col_idx].start_pos = @truncate(byte_idx - start_byte_idx);
-                    byte_idx += try current_IP.processDocVbyte(
+                    try current_IP.processDocVbyte(
                         &token_stream,
-                        buffer[byte_idx..],
+                        buffer[byte_idx..][0..field_length],
                         @truncate(doc_id), 
                         search_col_idx,
                         &terms_seen_bitset,
                         );
-                    positions.*[col_idx].field_len = @truncate(byte_idx - init_byte_idx);
 
                     search_col_idx += 1;
-                    col_idx += 1;
+
+                    byte_idx += field_length;
+                    col_idx  += 1;
 
                     if (search_col_idx == self.search_col_idxs.items.len) {
                         current_col_idx = col_idx;
                         for (current_col_idx..self.columns.num_keys) |_| {
-                            positions.*[col_idx].field_len = try token_stream.iterFieldVbyte(&byte_idx, buffer);
-                            positions.*[col_idx].start_pos = @truncate(byte_idx - start_byte_idx - positions.*[col_idx].field_len);
-                            col_idx += 1;
+                            field_length = pq.decodeVbyte(
+                                buffer.ptr,
+                                &byte_idx,
+                            );
+                            positions[col_idx].start_pos = @truncate(byte_idx - start_byte_idx);
+                            positions[col_idx].field_len = @truncate(field_length);
+
+                            byte_idx += field_length;
+                            col_idx  += 1;
                         }
+                        std.debug.assert(col_idx == self.columns.num_keys);
                     }
                 }
                 doc_id += 1;
@@ -814,7 +833,7 @@ pub const IndexManager = struct {
                 }
 
                 try current_IP.doc_store.addRow(
-                    positions.*,
+                    positions,
                     buffer[start_byte_idx..byte_idx],
                 );
             }
@@ -822,7 +841,7 @@ pub const IndexManager = struct {
         pq.freeRowGroup(buffer);
 
         // Flush remaining tokens.
-        for (0..token_stream.num_terms.len) |_search_col_idx| {
+        for (0..self.search_col_idxs.items.len) |_search_col_idx| {
             try token_stream.flushTokenStream(_search_col_idx);
         }
         _ = total_docs_read.fetchAdd(doc_id - prev_doc_id, .monotonic);
@@ -1531,25 +1550,35 @@ pub const IndexManager = struct {
             const result = self.query_state.results_arrays[0].items[idx];
 
             std.debug.assert(self.query_state.result_strings[idx].capacity > 0);
-            if (self.file_data.file_type == .PARQUET) {
-                try self.index_partitions[result.partition_idx].fetchRecordsParquet(
+            // if (self.file_data.file_type == .PARQUET) {
+                // try self.index_partitions[result.partition_idx].fetchRecordsParquet(
+                    // self.query_state.result_positions[idx],
+                    // self.file_data.pq_data.?.pq_file_handle,
+                    // result,
+                    // &self.query_state.result_strings[idx],
+                // );
+            // } else {
+                // self.query_state.thread_pool.spawnWg(
+                    // &wg2,
+                    // fetchRecordsDocStore,
+                    // .{
+                        // &self.index_partitions[result.partition_idx],
+                        // self.query_state.result_positions[idx],
+                        // result,
+                        // &self.query_state.result_strings[idx],
+                    // },
+                // );
+            // }
+            self.query_state.thread_pool.spawnWg(
+                &wg2,
+                fetchRecordsDocStore,
+                .{
+                    &self.index_partitions[result.partition_idx],
                     self.query_state.result_positions[idx],
-                    self.file_data.pq_data.?.pq_file_handle,
                     result,
                     &self.query_state.result_strings[idx],
-                );
-            } else {
-                self.query_state.thread_pool.spawnWg(
-                    &wg2,
-                    fetchRecordsDocStore,
-                    .{
-                        &self.index_partitions[result.partition_idx],
-                        self.query_state.result_positions[idx],
-                        result,
-                        &self.query_state.result_strings[idx],
-                    },
-                );
-            }
+                },
+            );
         }
 
         wg2.wait();

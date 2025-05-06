@@ -909,29 +909,19 @@ pub const BM25Partition = struct {
         doc_id: u32,
         search_col_idx: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
-    ) !usize {
-        var bytes_read: usize = 0;
-
-        const field_len = pq.decodeVbyte(
-            @ptrCast(buffer),
-            &bytes_read,
-            );
-
+    ) !void {
         string_utils.stringToUpper(
-            @ptrCast(buffer[0..field_len]), 
-            field_len,
+            @ptrCast(buffer[0..]), 
+            buffer.len,
             );
 
-        var buffer_idx: usize = 0;
-
-        if (field_len == 0) {
+        if (buffer.len == 0) {
             try token_stream.addToken(
                 true,
                 std.math.maxInt(u7),
                 std.math.maxInt(u24),
                 search_col_idx,
             );
-            return bytes_read;
         }
 
         var term_pos: u8 = 0;
@@ -941,7 +931,8 @@ pub const BM25Partition = struct {
 
         terms_seen.clear();
 
-        while (buffer_idx < field_len) {
+        var buffer_idx: usize = 0;
+        while (buffer_idx < buffer.len) {
             std.debug.assert(
                 self.II[search_col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS
                 );
@@ -1016,8 +1007,6 @@ pub const BM25Partition = struct {
                 search_col_idx,
             );
         }
-
-        return bytes_read;
     }
 
     pub fn processDocRfc8259(
