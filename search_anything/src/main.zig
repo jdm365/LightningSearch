@@ -33,9 +33,14 @@ fn bench(filename: []const u8) !void {
     try index_manager.readHeader(filename, filetype);
     try index_manager.scanFile();
 
-    try index_manager.addSearchCol("title");
-    try index_manager.addSearchCol("artist");
-    try index_manager.addSearchCol("album");
+    // try index_manager.addSearchCol("title");
+    // try index_manager.addSearchCol("artist");
+    // try index_manager.addSearchCol("album");
+    try index_manager.addSearchCol("story_url");
+    try index_manager.addSearchCol("story_text");
+    try index_manager.addSearchCol("story_author");
+    try index_manager.addSearchCol("comment_text");
+    try index_manager.addSearchCol("comment_author");
 
     try index_manager.indexFile();
 
@@ -43,6 +48,8 @@ fn bench(filename: []const u8) !void {
     defer boost_factors.deinit();
 
     try boost_factors.append(2.0);
+    try boost_factors.append(1.0);
+    try boost_factors.append(1.0);
     try boost_factors.append(1.0);
     try boost_factors.append(1.0);
 
@@ -140,7 +147,8 @@ pub fn main() !void {
     // const filename = args[1];
     // try serveHTML(filename);
 
-    const filename = "../data/mb.csv";
+    // const filename = "../data/mb.csv";
     // const filename = "../data/mb.parquet";
+    const filename = "../data/hn.csv";
     try bench(filename);
 }

@@ -526,9 +526,11 @@ pub const IndexManager = struct {
         }
 
         current_IP.doc_store = try DocStore.init(
+            self.file_data.tmp_dir,
             &literal_byte_idxs,
             &literal_col_idxs,
             &huffman_col_idxs,
+            partition_idx,
         );
 
         try current_IP.doc_store.huffman_compressor.buildHuffmanTreeGivenFreqs(
@@ -575,7 +577,7 @@ pub const IndexManager = struct {
                 self.indexing_state.last_progress = current_docs_read;
 
                 if (partition_idx == 0) {
-                    progress_bar.update(current_docs_read);
+                    progress_bar.update(current_docs_read, null);
                     self.indexing_state.last_progress = current_docs_read;
                 }
             }
@@ -729,9 +731,11 @@ pub const IndexManager = struct {
         }
 
         current_IP.doc_store = try DocStore.init(
+            self.file_data.tmp_dir,
             &literal_byte_idxs,
             &literal_col_idxs,
             &huffman_col_idxs,
+            partition_idx,
         );
 
         try current_IP.doc_store.huffman_compressor.buildHuffmanTreeGivenFreqs(
@@ -827,7 +831,7 @@ pub const IndexManager = struct {
                     self.indexing_state.last_progress = current_docs_read;
 
                     if (partition_idx == 0) {
-                        progress_bar.update(current_docs_read);
+                        progress_bar.update(current_docs_read, null);
                         self.indexing_state.last_progress = current_docs_read;
                     }
                 }
@@ -906,7 +910,7 @@ pub const IndexManager = struct {
                     // self.indexing_state.last_progress = current_docs_read;
 // 
                     // if (partition_idx == 0) {
-                        // progress_bar.update(current_docs_read);
+                        // progress_bar.update(current_docs_read, null);
                         // self.indexing_state.last_progress = current_docs_read;
                     // }
                 // }
@@ -947,9 +951,11 @@ pub const IndexManager = struct {
         // }
 // 
         // self.index_partitions[partition_idx].doc_store = try DocStore.init(
+        //    self.file_data.tmp_dir,
             // &literal_byte_idxs,
             // &literal_col_idxs,
             // &huffman_col_idxs,
+            // partition_idx,
         // );
 // 
         // var freq_table: [256]u32 = undefined;
@@ -1208,7 +1214,7 @@ pub const IndexManager = struct {
         const _total_docs_read = total_docs_read.load(.acquire);
         std.debug.print("Processed {d} documents\n", .{_total_docs_read});
         std.debug.assert(_total_docs_read == num_lines);
-        progress_bar.update(_total_docs_read);
+        progress_bar.update(_total_docs_read, null);
 
         const time_end = std.time.milliTimestamp();
         const time_diff = time_end - time_start;

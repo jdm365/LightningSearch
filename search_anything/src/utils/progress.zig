@@ -50,7 +50,11 @@ pub const ProgressBar = struct {
         }
     }
 
-    pub fn update(self: *ProgressBar, current_iter: usize) void {
+    pub fn update(
+        self: *ProgressBar, 
+        current_iter: usize,
+        message: ?[]const u8,
+        ) void {
         self.current_iter = current_iter;
         self.current_idx  = 1 + @as(usize, @intFromFloat(BAR_WIDTH * @as(f64, @floatFromInt(self.current_iter)) / @as(f64, @floatFromInt(self.total_iters))));
         self.current_idx = @min(self.total_updates, self.current_idx);
@@ -60,18 +64,25 @@ pub const ProgressBar = struct {
         }
         self.bar_string[self.current_idx] = '>';
 
-        self.display();
+        self.display(message);
 
         if (self.current_iter >= self.total_iters - 1) {
             self.finish();
         }
     }
     
-    fn display(self: *ProgressBar) void {
-        std.debug.print(
-            "Docs Processed: {d}/{d} {s}\r", 
-            .{self.current_iter, self.total_iters, self.bar_string}
-            );
+    fn display(self: *ProgressBar, message: ?[]const u8) void {
+        if (message) |m| {
+            std.debug.print(
+                "{s} | Docs Processed: {d}/{d} {s}\r", 
+                .{m, self.current_iter, self.total_iters, self.bar_string}
+                );
+        } else {
+            std.debug.print(
+                "Docs Processed: {d}/{d} {s}\r", 
+                .{self.current_iter, self.total_iters, self.bar_string}
+                );
+        }
     }
 
     fn finish(self: *ProgressBar) void {
@@ -79,7 +90,7 @@ pub const ProgressBar = struct {
         self.current_idx = BAR_WIDTH;
         self.bar_string[self.current_idx - 1] = '=';
         self.bar_string[self.current_idx] = '=';
-        self.display();
+        self.display(null);
         std.debug.print("\n", .{});
     }
 };
