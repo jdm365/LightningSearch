@@ -105,15 +105,25 @@ pub extern "C" fn convert_row_group_to_vbyte_buffer_c(
     let row_group_reader = arc_reader.get_row_group(row_group_index).unwrap();
 
     // Create a RowIter for the row group
-    let row_iter = RowIter::from_row_group(None, row_group_reader.as_ref()).unwrap();
+    let row_iter = RowIter::from_row_group(
+        None,
+        row_group_reader.as_ref(),
+        ).unwrap();
 
     let mut buffer: Vec<u8> = Vec::new();
     for row in row_iter {
         let row = row.unwrap();
-        let json_row = row.to_json_value();
 
-        for (_, value) in json_row.as_object().unwrap() {
-            let value_bytes = stringify_json_value(value);
+        for (_, value) in row.get_column_iter() {
+            let json_value = value.to_json_value();
+
+            // replace null with empty string
+            if json_value.is_null() {
+                buffer.push(0);
+                continue;
+            }
+
+            let value_bytes = stringify_json_value(&json_value);
             vbyte_encode(value_bytes.len() as u64, &mut buffer);
             buffer.extend_from_slice(&value_bytes);
         }
@@ -479,6 +489,7 @@ pub extern "C" fn free_parquet_reader(handle: *mut ParquetReaderHandle) {
 
 
 
+#[inline]
 fn stringify_json_value(value: &Value) -> Vec<u8> {
     match value {
         Value::String(s) => s.as_bytes().to_vec(),
@@ -774,7 +785,9 @@ pub extern "C" fn get_num_rows_in_row_group_c(
 pub fn get_col_names(filename: &str) -> Vec<String> {
     let rdr = SerializedFileReader::try_from(filename).unwrap();
     let schema = rdr.metadata().file_metadata().schema_descr();
-    schema.columns().iter().map(|c| c.name().to_string()).collect()
+    schema.columns().iter().map(
+        |c| c.name().to_string()
+        ).collect()
 }
 
 #[unsafe(no_mangle)]
@@ -791,11 +804,13 @@ pub extern "C" fn get_col_names_c(
 
     let col_names_rs = get_col_names(&filename_rs);
     let mut col_names_ptrs = Vec::new();
+
+    vbyte_encode(col_names_rs.len() as u64, &mut col_names_ptrs);
     for s in col_names_rs {
-        col_names_ptrs.extend_from_slice(s.as_bytes());
-        col_names_ptrs.push(0);
+        let bytes = s.as_bytes();
+        vbyte_encode(bytes.len() as u64, &mut col_names_ptrs);
+        col_names_ptrs.extend_from_slice(bytes);
     }
-    col_names_ptrs.push(0);
 
     unsafe {
         std::ptr::copy_nonoverlapping(

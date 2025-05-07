@@ -77,22 +77,27 @@ pub fn getParquetCols(
     lp.get_col_names_c(filename_c, @ptrCast(&col_buffer));
 
     var idx: usize = 0;
-    while (true) {
-        if (col_buffer[idx] == 0) break;
 
-        const length = string_utils.simdFindCharIdxEscapedFull(
-            col_buffer[idx..],
-            0,
+    const num_cols = decodeVbyte(
+        col_buffer[0..].ptr,
+        &idx,
+    );
+    for (0..num_cols) |_| {
+        const name_length = decodeVbyte(
+            col_buffer[0..].ptr,
+            &idx,
+        );
+
+        var duped_name = try allocator.dupe(
+            u8,
+            col_buffer[idx..][0..name_length],
         );
         string_utils.stringToUpper(
-            col_buffer[idx..].ptr,
-            length,
+            duped_name[0..].ptr,
+            name_length,
         );
-        try cols.append(
-            allocator,
-            try allocator.dupe(u8, col_buffer[idx..idx+length]),
-            );
-        idx += length + 1;
+        try cols.append(allocator, duped_name);
+        idx += name_length;
     }
 }
 

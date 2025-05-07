@@ -18,8 +18,19 @@ fn bench(filename: []const u8) !void {
         // _ = gpa.deinit();
     }
 
-    // try index_manager.readHeader(filename, FileType.CSV);
-    try index_manager.readHeader(filename, FileType.PARQUET);
+    var filetype: FileType = undefined;
+
+    if (std.mem.endsWith(u8, filename, ".csv")) {
+        filetype = FileType.CSV;
+    } else if (std.mem.endsWith(u8, filename, ".parquet")) {
+        filetype = FileType.PARQUET;
+    } else if (std.mem.endsWith(u8, filename, ".json")) {
+        filetype = FileType.JSON;
+    } else {
+        @panic("Unsupported filetype.");
+    }
+
+    try index_manager.readHeader(filename, filetype);
     try index_manager.scanFile();
 
     try index_manager.addSearchCol("title");
@@ -110,26 +121,26 @@ fn serveHTML(filename: []const u8) !void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const allocator = gpa.allocator();
+    // defer _ = gpa.deinit();
+// 
+    // const args = try std.process.argsAlloc(allocator);
+    // defer std.process.argsFree(allocator, args);
+// 
+    // if (args.len != 2) {
+        // std.debug.print("Usage: {s} <filename>\n", .{args[0]});
+// 
+        // for (args) |arg| {
+            // std.debug.print("Arg: {s}\n", .{arg});
+        // }
+        // return error.InvalidArguments;
+    // }
+// 
+    // const filename = args[1];
+    // try serveHTML(filename);
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-
-    if (args.len != 2) {
-        std.debug.print("Usage: {s} <filename>\n", .{args[0]});
-
-        for (args) |arg| {
-            std.debug.print("Arg: {s}\n", .{arg});
-        }
-        return error.InvalidArguments;
-    }
-
-    const filename = args[1];
-    try serveHTML(filename);
-
-    // const filename = "../data/mb_small.csv";
+    const filename = "../data/mb.csv";
     // const filename = "../data/mb.parquet";
-    // try bench(filename);
+    try bench(filename);
 }
