@@ -315,7 +315,6 @@ pub const BM25Partition = struct {
     line_offsets: []usize,
     num_records: usize,
     allocator: std.mem.Allocator,
-    string_arena: std.heap.ArenaAllocator,
     doc_score_map: std.AutoHashMap(u32, ScoringInfo),
 
     doc_store: DocStore,
@@ -325,11 +324,6 @@ pub const BM25Partition = struct {
         num_search_cols: usize,
         line_offsets: []usize,
         num_records: usize,
-// 
-        // literal_byte_sizes: *const std.ArrayListUnmanaged(usize),
-        // literal_col_idxs: *const std.ArrayListUnmanaged(usize),
-        // huffman_col_idxs: *const std.ArrayListUnmanaged(usize),
-
     ) !BM25Partition {
         var doc_score_map = std.AutoHashMap(u32, ScoringInfo).init(allocator);
         try doc_score_map.ensureTotalCapacity(50_000);
@@ -339,18 +333,11 @@ pub const BM25Partition = struct {
             .line_offsets = line_offsets,
             .num_records = num_records,
             .allocator = allocator,
-            .string_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
             .doc_score_map = doc_score_map,
 
             .doc_store = undefined,
         };
 
-        // partition.doc_store = try DocStore.init(
-            // literal_byte_sizes,
-            // literal_col_idxs,
-            // huffman_col_idxs,
-            // );
-// 
         for (0..num_search_cols) |idx| {
             partition.II[idx] = try InvertedIndexV2.init(
                 allocator, 
@@ -366,7 +353,6 @@ pub const BM25Partition = struct {
             self.II[i].deinit(self.allocator);
         }
         self.allocator.free(self.II);
-        self.string_arena.deinit();
         self.doc_score_map.deinit();
 
         self.doc_store.deinit();
@@ -404,7 +390,10 @@ pub const BM25Partition = struct {
             );
 
         if (!gop.found_existing) {
-            try self.II[col_idx].vocab.string_bytes.appendSlice(self.allocator, term[0..term_len]);
+            try self.II[col_idx].vocab.string_bytes.appendSlice(
+                self.allocator, 
+                term[0..term_len],
+                );
             try self.II[col_idx].vocab.string_bytes.append(self.allocator, 0);
 
             gop.key_ptr.* = @truncate(
@@ -478,14 +467,12 @@ pub const BM25Partition = struct {
             );
 
         if (!gop.found_existing) {
-            // const term_copy = try self.string_arena.allocator().dupe(
-                // u8, 
-                // term[0..term_len],
-                // );
-            try self.II[col_idx].vocab.string_bytes.appendSlice(self.allocator, term[0..term_len]);
+            try self.II[col_idx].vocab.string_bytes.appendSlice(
+                self.allocator, 
+                term[0..term_len],
+                );
             try self.II[col_idx].vocab.string_bytes.append(self.allocator, 0);
 
-            // gop.key_ptr.* = term_copy;
             gop.key_ptr.* = @truncate(
                 self.II[col_idx].vocab.string_bytes.items.len - term_len - 1,
                 );

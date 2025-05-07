@@ -22,6 +22,7 @@ pub const DocStore = struct {
     file_handles: FileHandles,
 
     arena: std.heap.ArenaAllocator,
+    gpa: *std.heap.GeneralPurposeAllocator(.{ .thread_safe = true }),
 
     const FileHandles = struct {
         huffman_rows_file: std.fs.File,
@@ -31,31 +32,34 @@ pub const DocStore = struct {
         pub fn init(doc_store: *DocStore, partition_idx: usize) !FileHandles {
 
             const huffman_rows_filename = try std.fmt.allocPrint(
-                doc_store.arena.allocator(), 
+                doc_store.gpa.allocator(), 
                 "{s}/huffman_rows_{d}.bin", .{doc_store.dir, partition_idx}
                 );
             const huffman_rows_file = try std.fs.cwd().createFile(
                 huffman_rows_filename,
                 .{ .read = true }
                 );
+            defer doc_store.gpa.allocator().free(huffman_rows_filename);
 
             const literal_rows_filename = try std.fmt.allocPrint(
-                doc_store.arena.allocator(), 
+                doc_store.gpa.allocator(), 
                 "{s}/literal_rows_{d}.bin", .{doc_store.dir, partition_idx}
                 );
             const literal_rows_file = try std.fs.cwd().createFile(
                 literal_rows_filename,
                 .{ .read = true }
                 );
+            defer doc_store.gpa.allocator().free(literal_rows_filename);
 
             const huffman_field_sizes_filename = try std.fmt.allocPrint(
-                doc_store.arena.allocator(), 
+                doc_store.gpa.allocator(), 
                 "{s}/huffman_field_sizes_{d}.bin", .{doc_store.dir, partition_idx}
                 );
             const huffman_field_sizes_file = try std.fs.cwd().createFile(
                 huffman_field_sizes_filename,
                 .{ .read = true }
                 );
+            defer doc_store.gpa.allocator().free(huffman_field_sizes_filename);
 
             return FileHandles{
                 .huffman_rows_file = huffman_rows_file,
@@ -73,10 +77,11 @@ pub const DocStore = struct {
     };
 
     pub fn init(
-        dir: []const u8,
+        gpa: *std.heap.GeneralPurposeAllocator(.{ .thread_safe = true }),
         literal_byte_sizes: *const std.ArrayListUnmanaged(usize),
         literal_col_idxs: *const std.ArrayListUnmanaged(usize),
         huffman_col_idxs: *const std.ArrayListUnmanaged(usize),
+        dir: []const u8,
         partition_idx: usize,
     ) !DocStore {
         var sum: usize = 0;
@@ -85,7 +90,6 @@ pub const DocStore = struct {
         }
 
         var store = DocStore {
-            .dir = dir,
             .huffman_compressor = HuffmanCompressor.init(),
             .literal_byte_sizes = std.ArrayListUnmanaged(usize){},
             .literal_byte_size_sum = sum,
@@ -99,6 +103,9 @@ pub const DocStore = struct {
             .huffman_field_rem_bits = std.ArrayListUnmanaged(u3){},
 
             .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+            .gpa = gpa,
+
+            .dir = dir,
 
             .file_handles = FileHandles{
                 .huffman_rows_file = undefined,
@@ -106,9 +113,12 @@ pub const DocStore = struct {
                 .huffman_field_sizes_file = undefined,
             },
         };
-        store.literal_byte_sizes = try literal_byte_sizes.clone(store.arena.allocator());
-        store.literal_col_idxs   = try literal_col_idxs.clone(store.arena.allocator());
-        store.huffman_col_idxs   = try huffman_col_idxs.clone(store.arena.allocator());
+        // store.literal_byte_sizes = try literal_byte_sizes.clone(store.arena.allocator());
+        // store.literal_col_idxs   = try literal_col_idxs.clone(store.arena.allocator());
+        // store.huffman_col_idxs   = try huffman_col_idxs.clone(store.arena.allocator());
+        store.literal_byte_sizes = try literal_byte_sizes.clone(store.gpa.allocator());
+        store.literal_col_idxs   = try literal_col_idxs.clone(store.gpa.allocator());
+        store.huffman_col_idxs   = try huffman_col_idxs.clone(store.gpa.allocator());
 
         store.file_handles = try FileHandles.init(&store, partition_idx);
 
@@ -237,6 +247,7 @@ pub const DocStore = struct {
         val.* = (try huffman_row.toOwnedSlice(self.arena.allocator()))[0..row_size];
 
         if (self.huffman_rows.items.len % 1_000_000 == 0) {
+            @branchHint(.cold);
             if (self.huffman_rows.items.len > 0) {
                 try self.flush();
             }
@@ -254,11 +265,21 @@ pub const DocStore = struct {
             std.mem.sliceAsBytes(self.huffman_field_sizes.items)
         );
 
-        self.huffman_rows.clearRetainingCapacity();
-        self.literal_rows.clearRetainingCapacity();
-        self.huffman_field_sizes.clearRetainingCapacity();
+        self.huffman_rows.deinit(self.arena.allocator());
+        self.literal_rows.deinit(self.arena.allocator());
+        self.huffman_field_sizes.deinit(self.arena.allocator());
+        self.huffman_field_rem_bits.deinit(self.arena.allocator());
 
-        self.arena.reset(.retain_capacity);
+        self.huffman_rows = std.ArrayListUnmanaged([]u8){};
+        self.literal_rows = std.ArrayListUnmanaged([]u8){};
+        self.huffman_field_sizes = std.ArrayListUnmanaged(u16){};
+        self.huffman_field_rem_bits = std.ArrayListUnmanaged(u3){};
+
+        const success = self.arena.reset(.retain_capacity);
+        if (!success) {
+            std.debug.print("Arena reset failed.\n", .{});
+            return error.ArenaResetFailed;
+        }
     }
 
 

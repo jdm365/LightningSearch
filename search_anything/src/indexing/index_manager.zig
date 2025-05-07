@@ -526,10 +526,11 @@ pub const IndexManager = struct {
         }
 
         current_IP.doc_store = try DocStore.init(
-            self.file_data.tmp_dir,
+            self.allocators.gpa,
             &literal_byte_idxs,
             &literal_col_idxs,
             &huffman_col_idxs,
+            self.file_data.tmp_dir,
             partition_idx,
         );
 
@@ -731,10 +732,11 @@ pub const IndexManager = struct {
         }
 
         current_IP.doc_store = try DocStore.init(
-            self.file_data.tmp_dir,
+            self.allocators.gpa,
             &literal_byte_idxs,
             &literal_col_idxs,
             &huffman_col_idxs,
+            self.file_data.tmp_dir,
             partition_idx,
         );
 
