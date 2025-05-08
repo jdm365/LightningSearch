@@ -16,7 +16,7 @@ const RadixTrie        = @import("../utils/radix_trie.zig").RadixTrie;
 const DocStore         = @import("../storage/doc_store.zig").DocStore;
 
 pub const MAX_TERM_LENGTH = 256;
-pub const MAX_NUM_TERMS   = 4096;
+pub const MAX_NUM_TERMS   = 16_384;
 pub const MAX_LINE_LENGTH = 1_048_576;
 
 pub const ENDIANESS = builtin.cpu.arch.endian();
@@ -371,7 +371,8 @@ pub const BM25Partition = struct {
         }
     }
 
-    inline fn addTerm(
+    // inline fn addTerm(
+    fn addTerm(
         self: *BM25Partition,
         term: []u8,
         term_len: usize,
@@ -382,6 +383,12 @@ pub const BM25Partition = struct {
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
+        std.debug.assert(
+            self.II[col_idx].vocab.map.count() < (1 << 32),
+            );
+        std.debug.assert(
+            terms_seen.count < MAX_NUM_TERMS
+            );
         const gop = try self.II[col_idx].vocab.map.getOrPutContextAdapted(
             self.allocator,
             term[0..term_len],
@@ -418,6 +425,7 @@ pub const BM25Partition = struct {
         new_doc.* = false;
     }
 
+    // inline fn addToken(
     inline fn addToken(
         self: *BM25Partition,
         term: []u8,
@@ -581,13 +589,14 @@ pub const BM25Partition = struct {
     pub fn processDocRfc4180(
         self: *BM25Partition,
         token_stream: *file_utils.TokenStream(file_utils.token_32t),
+        buffer: []u8,
         byte_idx: *usize,
         doc_id: u32,
         col_idx: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
-        const buffer = try token_stream.getBuffer(byte_idx.*);
-        var buffer_idx: usize = 0;
+        // const buffer = try token_stream.getBuffer(byte_idx.*);
+        var buffer_idx: usize = byte_idx.*;
 
         if (
             (buffer[buffer_idx] == ',') 
@@ -617,9 +626,7 @@ pub const BM25Partition = struct {
 
             outer_loop: while (true) {
                 if (self.II[col_idx].doc_sizes[doc_id] >= MAX_NUM_TERMS) {
-                    buffer_idx = 0;
-                    try token_stream.iterFieldCSV(&buffer_idx);
-                    byte_idx.* += buffer_idx;
+                    csv._iterFieldCSV(buffer, byte_idx);
                     return;
                 }
 
@@ -775,7 +782,8 @@ pub const BM25Partition = struct {
             );
         }
 
-        byte_idx.* += buffer_idx;
+        // byte_idx.* += buffer_idx;
+        byte_idx.* = buffer_idx;
     }
 
 

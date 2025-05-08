@@ -165,7 +165,7 @@ pub const DoubleBufferedReader = struct {
         ) !DoubleBufferedReader {
 
         const buffer_size = 1 << 22;
-        const overflow_size = 16384;
+        const overflow_size = 1 << 14;
         const buffers = try allocator.alloc(u8, 2 * buffer_size);
         const overflow_buffer = try allocator.alloc(u8, 2 * overflow_size);
         const bytes_read = try file.read(buffers);
@@ -211,7 +211,7 @@ pub const DoubleBufferedReader = struct {
         };
         if (bytes_read != buffer.len) buffer[bytes_read] = self.end_token;
         if (self.uppercase) {
-            string_utils.stringToUpper(self.buffers.ptr, bytes_read);
+            string_utils.stringToUpper(buffer.ptr, bytes_read);
         }
 
         const start_idx = (buffer.len - overflow_size) * (1 - current_buffer);
@@ -224,7 +224,7 @@ pub const DoubleBufferedReader = struct {
 
     pub fn getBuffer(
         self: *DoubleBufferedReader, 
-        file_pos: usize,
+        file_pos: u64,
     ) ![]u8 {
         const index = file_pos % self.buffers.len;
         const new_buffer = @intFromBool(index >= self.single_buffer_size);

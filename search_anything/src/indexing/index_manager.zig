@@ -100,7 +100,9 @@ pub const IndexManager = struct {
             .index_partitions = undefined,
 
             .allocators = Allocators{
-                .gpa           = try allocator.create(std.heap.GeneralPurposeAllocator(.{.thread_safe = true})),
+                .gpa           = try allocator.create(
+                    std.heap.GeneralPurposeAllocator(.{.thread_safe = true})
+                    ),
                 .string_arena  = try allocator.create(std.heap.ArenaAllocator),
                 .scratch_arena = try allocator.create(std.heap.ArenaAllocator),
             },
@@ -464,7 +466,7 @@ pub const IndexManager = struct {
         const interval_ns: u64 = 1_000_000_000 / 30;
 
         const current_chunk_size = switch (partition_idx != num_partitions - 1) {
-            true => chunk_size,
+            true  => chunk_size,
             false => final_chunk_size,
         };
 
@@ -488,6 +490,30 @@ pub const IndexManager = struct {
         const start_byte = current_IP.line_offsets[0];
         const end_byte = current_IP.line_offsets[current_IP.line_offsets.len - 1];
 
+
+        const file = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
+        defer file.close();
+
+        const offset = std.mem.alignBackward(
+            usize,
+            start_byte,
+            4096,
+        );
+        const align_offset = start_byte - offset;
+
+        const mmap_buffer = try std.posix.mmap(
+            null,
+            // (4096 + end_byte - start_byte),
+            (16384 + end_byte - start_byte),
+            std.posix.PROT.READ,
+            .{ .TYPE = .PRIVATE },
+            file.handle,
+            offset,
+            // 0,
+        );
+        defer std.posix.munmap(mmap_buffer);
+
+
         var token_stream = try fu.TokenStream(fu.token_32t).init(
             self.file_data.inputFilename(),
             output_filename,
@@ -495,7 +521,8 @@ pub const IndexManager = struct {
             self.search_col_idxs.items.len,
             start_byte,
             end_token,
-            false,
+            // false,
+            true,
         );
         defer token_stream.deinit();
 
@@ -504,7 +531,8 @@ pub const IndexManager = struct {
 
         switch (self.file_data.file_type) {
             fu.FileType.CSV, fu.FileType.JSON => {
-                const buffer = try token_stream.getBuffer(0);
+                // const buffer = try token_stream.getBuffer(0);
+                const buffer = mmap_buffer;
                 const num_bytes = @min(buffer.len, 1 << 14);
                 for (0..num_bytes) |idx| {
                     freq_table[buffer[idx]] += 1;
@@ -539,30 +567,10 @@ pub const IndexManager = struct {
             &freq_table,
         );
 
-        const file = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
-        defer file.close();
-
-        const offset = std.mem.alignBackward(
-            usize,
-            start_byte,
-            4096,
-        );
-        const align_offset = start_byte - offset;
-
-        const mmap_buffer = try std.posix.mmap(
-            null,
-            (align_offset + end_byte - start_byte),
-            std.posix.PROT.READ,
-            .{ .TYPE = .PRIVATE },
-            file.handle,
-            offset,
-            // 0,
-        );
-        defer std.posix.munmap(mmap_buffer);
-
         var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
 
-        var byte_idx: usize = 0;
+        // var byte_idx: usize = 0;
+        var byte_idx: usize = align_offset;
 
         var prev_doc_id: usize = 0;
         for (0.., start_doc..end_doc) |doc_id, _| {
@@ -594,7 +602,8 @@ pub const IndexManager = struct {
                         for (prev_col..self.search_col_idxs.items[search_col_idx]) |col_idx| {
                             const init_byte_idx = byte_idx;
 
-                            try token_stream.iterFieldCSV(&byte_idx);
+                            // try token_stream.iterFieldCSV(&byte_idx);
+                            csv._iterFieldCSV(mmap_buffer, &byte_idx);
 
                             self.query_state.result_positions[partition_idx][col_idx] = TermPos{
                                 .start_pos = @truncate(row_byte_idx),
@@ -606,6 +615,7 @@ pub const IndexManager = struct {
 
                         try current_IP.processDocRfc4180(
                             &token_stream,
+                            mmap_buffer,
                             &byte_idx,
                             @intCast(doc_id), 
                             search_col_idx,
@@ -626,7 +636,8 @@ pub const IndexManager = struct {
                     for (prev_col..self.columns.num_keys) |col_idx| {
                         const init_byte_idx = byte_idx;
 
-                        try token_stream.iterFieldCSV(&byte_idx);
+                        // try token_stream.iterFieldCSV(&byte_idx);
+                        csv._iterFieldCSV(mmap_buffer, &byte_idx);
 
                         self.query_state.result_positions[partition_idx][col_idx] = TermPos{
                             .start_pos = @truncate(row_byte_idx),
@@ -636,7 +647,9 @@ pub const IndexManager = struct {
                     }
                 },
                 fu.FileType.JSON => {
-                    const buffer = try token_stream.getBuffer(byte_idx);
+                    std.debug.print("JSON: {d}\n", .{doc_id});
+                    @breakpoint();
+                    const buffer = mmap_buffer;
                     byte_idx += string_utils.simdFindCharIdxEscapedFull(
                         buffer,
                         '"',
@@ -980,6 +993,7 @@ pub const IndexManager = struct {
     // }
 
     pub fn scanFile(self: *IndexManager) !void {
+        std.debug.print("Filetype: {any}\n", .{self.file_data.file_type});
         switch (self.file_data.file_type) {
             fu.FileType.CSV => try self.scanCSVFile(),
             fu.FileType.JSON => try self.scanJSONFile(),
@@ -1004,7 +1018,7 @@ pub const IndexManager = struct {
         var line_offsets = std.ArrayList(usize).init(self.gpa());
         defer line_offsets.deinit();
 
-        var file_pos: usize = self.file_data.header_bytes.?;
+        var file_pos: u64 = @intCast(self.file_data.header_bytes.?);
 
         // Time read.
         const start_time = std.time.microTimestamp();
@@ -1013,7 +1027,10 @@ pub const IndexManager = struct {
 
         while (file_pos < file_size - 1) {
             try line_offsets.append(file_pos);
-            const buffer = try buffered_reader.getBuffer(file_pos);
+            const buffer = buffered_reader.getBuffer(@intCast(file_pos)) catch {
+                std.debug.print("Error reading buffer at {d}\n", .{file_pos});
+                return error.BufferError;
+            };
 
             if (line_offsets.items.len == 16384) {
                 const estimated_lines = @divFloor(file_size, file_pos);

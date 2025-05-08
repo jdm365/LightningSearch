@@ -16,10 +16,7 @@ pub fn StaticIntegerSet(comptime n: u32) type {
             self.count = 0;
         }
 
-        pub fn checkOrInsert(self: *Self, new_value: u32) bool {
-            // TODO: Explore SIMD implementation. Expand copy new value into simd register LANE_WIDTH / 32 times. 
-            //
-            //
+        pub inline fn checkOrInsert(self: *Self, new_value: u32) bool {
             // Don't allow new insertions if full.
             if (self.count == n) return true;
 

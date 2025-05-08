@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) void {
     shared_lib.addObjectFile(b.path("lib/libparquet_bindings.a"));
     shared_lib.installHeader(b.path("lib/parquet_bindings.h"), "parquet_bindings.h");
 
+
     const shared_install = b.addInstallArtifact(shared_lib, .{});
     b.installArtifact(shared_lib);
 
