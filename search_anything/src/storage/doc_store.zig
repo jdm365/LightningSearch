@@ -50,7 +50,7 @@ pub const DocStore = struct {
                 "{s}/huffman_row_offsets_{d}.bin", .{doc_store.dir, partition_idx}
                 );
             const huffman_row_offsets_file = try std.fs.cwd().createFile(
-                huffman_row_data_filename,
+                huffman_row_offsets_filename,
                 .{ .read = true }
                 );
             defer doc_store.gpa.allocator().free(huffman_row_offsets_filename);
@@ -324,7 +324,6 @@ pub const DocStore = struct {
             "FLUSH TIME: {d}ms\nBuffer size: {d}MB\n\n", 
             .{execution_time_ms, buffer_size / (1 << 20)}
             );
-
     }
 
 

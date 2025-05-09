@@ -56,6 +56,7 @@ pub inline fn iterLineCSV(buffer: []const u8, byte_idx: *usize) !void {
     var quote_idx: usize = 0;
     var newline_idx: usize = 0;
 
+    // std.debug.print("Line: {s}\n", .{buffer[byte_idx.*..][0..128]});
     while (true) {
         quote_idx   = string_utils.simdFindCharIdx(buffer[byte_idx.*..], '"');
         newline_idx = string_utils.simdFindCharIdx(buffer[byte_idx.*..], '\n');

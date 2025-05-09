@@ -229,22 +229,22 @@ pub const DoubleBufferedReader = struct {
         const index = file_pos % self.buffers.len;
         const new_buffer = @intFromBool(index >= self.single_buffer_size);
 
+        const overflow_size = @divFloor(self.overflow_buffer.len, 2);
+
         const bytes_from_end = self.buffers.len - index;
-        if (bytes_from_end <= 16384) {
+        if (bytes_from_end <= overflow_size) {
             if (self.thread) |thread| {
                 self.semaphore.wait();
                 thread.join();
                 self.thread = null;
             }
-            return self.overflow_buffer[16384 - bytes_from_end..];
+            return self.overflow_buffer[overflow_size - bytes_from_end..];
         }
 
         if (new_buffer == self.current_buffer) {
             return self.buffers[index..];
         }
 
-        const overflow_size = @divFloor(self.overflow_buffer.len, 2);
-        
         const overflow_start_idx = overflow_size * new_buffer;
         const overflow_end_idx   = overflow_start_idx + overflow_size;
 

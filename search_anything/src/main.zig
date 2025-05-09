@@ -55,10 +55,13 @@ fn bench(filename: []const u8) !void {
 
     var query_map = std.StringHashMap([]const u8).init(allocator);
     defer query_map.deinit();
+    @breakpoint();
 
-    try query_map.put("TITLE", "UNDER MY SKIN");
-    try query_map.put("ARTIST", "FRANK SINATRA");
-    try query_map.put("ALBUM", "LIGHTNING");
+    // try query_map.put("TITLE", "UNDER MY SKIN");
+    // try query_map.put("ARTIST", "FRANK SINATRA");
+    // try query_map.put("ALBUM", "LIGHTNING");
+    try query_map.put("story_text", "zig");
+    try query_map.put("comment_text", "gotta go fast");
 
     const num_queries: usize = 1_000;
 
@@ -149,6 +152,7 @@ pub fn main() !void {
 
     // const filename = "../data/mb.csv";
     // const filename = "../data/mb.parquet";
-    const filename = "../data/hn.csv";
+    // const filename = "../data/hn.csv";
+    const filename = "../data/hn_half.csv";
     try bench(filename);
 }

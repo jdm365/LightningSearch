@@ -94,6 +94,7 @@ pub const IndexManager = struct {
     };
 
     const IndexingState = struct {
+        partition_is_indexing: []bool,
         last_progress: usize,
     };
 
@@ -126,6 +127,7 @@ pub const IndexManager = struct {
 
             .indexing_state = IndexingState{
                 .last_progress = 0,
+                .partition_is_indexing = undefined,
             },
 
             .columns         = undefined,
@@ -561,9 +563,11 @@ pub const IndexManager = struct {
 
                 self.indexing_state.last_progress = current_docs_read;
 
-                if (partition_idx == 0) {
-                    progress_bar.update(current_docs_read, null);
-                    self.indexing_state.last_progress = current_docs_read;
+                for (0..self.index_partitions.len) |idx| {
+                    if (self.indexing_state.partition_is_indexing[idx]) {
+                        progress_bar.update(current_docs_read, null);
+                        break;
+                    }
                 }
             }
 
@@ -648,6 +652,7 @@ pub const IndexManager = struct {
                 mmap_buffer[0..byte_idx],
             );
         }
+        self.indexing_state.partition_is_indexing[partition_idx] = false;
 
         // Flush remaining tokens.
         for (0..token_stream.num_terms.len) |search_col_idx| {
@@ -843,129 +848,6 @@ pub const IndexManager = struct {
         try current_IP.constructFromTokenStream(&token_stream);
     }
 
-
-
-    // fn readPartitionParquet(
-        // self: *IndexManager,
-        // partition_idx: usize,
-        // min_row_group: usize,
-        // max_row_group: usize,
-        // total_docs_read: *AtomicCounter,
-        // progress_bar: *progress.ProgressBar,
-    // ) !void {
-        // std.debug.assert(self.file_data.file_type == .PARQUET);
-// 
-        // defer {
-            // _ = self.allocators.scratch_arena.reset(.retain_capacity);
-        // }
-// 
-        // var timer = try std.time.Timer.start();
-        // const interval_ns: u64 = 1_000_000_000 / 30;
-// 
-        // const output_filename = try std.fmt.allocPrint(
-            // self.scratchArena(), 
-            // "{s}/output_{d}", 
-            // .{self.file_data.tmp_dir, partition_idx}
-            // );
-// 
-        // var token_stream = try fu.ParquetTokenStream(fu.token_32t).init(
-            // self.file_data.input_filename_c,
-            // output_filename,
-            // self.gpa(),
-            // self.search_col_idxs.items,
-            // min_row_group,
-            // max_row_group,
-        // );
-        // defer token_stream.deinit();
-// 
-        // var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
-// 
-        // var first = true;
-        // var docs_read: usize = 0;
-        // while (token_stream.getNextBuffer(first)) {
-            // first = false;
-// 
-            // var row_idx: u32 = 0;
-            // while (token_stream.current_idx < token_stream.buffer_len) {
-// 
-                // if (timer.read() >= interval_ns) {
-                    // const current_docs_read = total_docs_read.fetchAdd(
-                        // docs_read,
-                        // .monotonic
-                        // );
-                    // docs_read = 0;
-                    // timer.reset();
-// 
-                    // self.indexing_state.last_progress = current_docs_read;
-// 
-                    // if (partition_idx == 0) {
-                        // progress_bar.update(current_docs_read, null);
-                        // self.indexing_state.last_progress = current_docs_read;
-                    // }
-                // }
-// 
-                // try self.index_partitions[partition_idx].processDocVbyte(
-                    // &token_stream,
-                    // row_idx, 
-                    // &terms_seen_bitset,
-                    // );
-                // row_idx += 1;
-                // if (token_stream.current_col_idx == 0) {
-                    // docs_read += 1;
-                // }
-            // }
-        // }
-// 
-        // // Flush remaining tokens.
-        // for (0..token_stream.num_terms.len) |search_col_idx| {
-            // try token_stream.flushTokenStream(search_col_idx);
-        // }
-        // _ = total_docs_read.fetchAdd(docs_read, .monotonic);
-// 
-        // // Construct II
-        // // TODO: Make all ***Pq functions unioned on token stream, instead of duplicated.
-        // try self.index_partitions[partition_idx].constructFromTokenStreamPq(&token_stream);
-// 
-// 
-        // // TODO: Implement type inference to allow literal types.
-        // var literal_byte_idxs = std.ArrayListUnmanaged(usize){};
-        // var literal_col_idxs  = std.ArrayListUnmanaged(usize){};
-        // var huffman_col_idxs  = std.ArrayListUnmanaged(usize){};
-        // defer literal_byte_idxs.deinit(self.gpa());
-        // defer literal_col_idxs.deinit(self.gpa());
-        // defer huffman_col_idxs.deinit(self.gpa());
-// 
-        // for (0..self.columns.num_keys) |idx| {
-            // try huffman_col_idxs.append(self.gpa(), idx);
-        // }
-// 
-        // self.index_partitions[partition_idx].doc_store = try DocStore.init(
-        //    self.file_data.tmp_dir,
-            // &literal_byte_idxs,
-            // &literal_col_idxs,
-            // &huffman_col_idxs,
-            // partition_idx,
-        // );
-// 
-        // var freq_table: [256]u32 = undefined;
-        // @memset(freq_table[0..], 1);
-// 
-        // const num_bytes = @min(token_stream.buffer_len, 1 << 14);
-        // for (token_stream.column_buffer[0..num_bytes]) |byte| {
-            // freq_table[byte] += 1;
-        // }
-// 
-        // try self.index_partitions[partition_idx].doc_store.huffman_compressor.buildHuffmanTreeGivenFreqs(
-            // self.gpa(),
-            // &freq_table,
-        // );
-// 
-        // try token_stream.writeDocStore(
-            // &self.index_partitions[partition_idx].doc_store,
-            // self.columns.num_keys,
-        // );
-    // }
-
     pub fn scanFile(self: *IndexManager) !void {
         std.debug.print("Filetype: {any}\n", .{self.file_data.file_type});
         switch (self.file_data.file_type) {
@@ -1001,11 +883,11 @@ pub const IndexManager = struct {
 
         while (file_pos < file_size - 1) {
             try line_offsets.append(file_pos);
-            // const buffer = buffered_reader.getBuffer(@intCast(file_pos)) catch {
-                // std.debug.print("Error reading buffer at {d}\n", .{file_pos});
-                // return error.BufferError;
-            // };
-            const buffer = self.file_data.mmap_buffer[file_pos..];
+            const buffer = buffered_reader.getBuffer(@intCast(file_pos)) catch {
+                std.debug.print("Error reading buffer at {d}\n", .{file_pos});
+                return error.BufferError;
+            };
+            // const buffer = self.file_data.mmap_buffer[file_pos..];
 
             if (line_offsets.items.len == 16384) {
                 const estimated_lines = @divFloor(file_size, file_pos);
@@ -1130,6 +1012,11 @@ pub const IndexManager = struct {
         defer {
             _ = self.allocators.scratch_arena.reset(.retain_capacity);
         }
+        self.indexing_state.partition_is_indexing = try self.scratchArena().alloc(
+            bool, 
+            self.index_partitions.len,
+            );
+        @memset(self.indexing_state.partition_is_indexing[0..], true);
 
         const num_partitions = self.index_partitions.len;
         std.debug.print("Indexing {d} partitions\n", .{num_partitions});
