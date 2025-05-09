@@ -79,9 +79,6 @@ pub inline fn iterLineCSV(buffer: []const u8, byte_idx: *usize) !void {
                 if (quote_idx == string_utils.VEC_SIZE) continue;
 
                 byte_idx.* += 1;
-                std.debug.assert(
-                    byte_idx.* < buffer.len,
-                    );
                 if (buffer[byte_idx.*] == '"') {
                     byte_idx.* += 1;
                     continue;

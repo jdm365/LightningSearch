@@ -371,8 +371,7 @@ pub const BM25Partition = struct {
         }
     }
 
-    // inline fn addTerm(
-    fn addTerm(
+    inline fn addTerm(
         self: *BM25Partition,
         term: []u8,
         term_len: usize,
@@ -425,7 +424,6 @@ pub const BM25Partition = struct {
         new_doc.* = false;
     }
 
-    // inline fn addToken(
     inline fn addToken(
         self: *BM25Partition,
         term: []u8,

@@ -308,8 +308,7 @@ pub const HuffmanCompressor = struct {
             @branchHint(.cold);
             return error.HuffmanTreeNotBuilt;
         }
-
-        @memset(output_buffer, 0);
+        // @memset(output_buffer, 0);
 
         var output_buffer_bit_idx: usize = 0;
 

@@ -164,8 +164,8 @@ pub const DoubleBufferedReader = struct {
         uppercase: bool,
         ) !DoubleBufferedReader {
 
-        const buffer_size = 1 << 22;
-        const overflow_size = 1 << 14;
+        const buffer_size = 1 << 24;
+        const overflow_size = 1 << 18;
         const buffers = try allocator.alloc(u8, 2 * buffer_size);
         const overflow_buffer = try allocator.alloc(u8, 2 * overflow_size);
         const bytes_read = try file.read(buffers);

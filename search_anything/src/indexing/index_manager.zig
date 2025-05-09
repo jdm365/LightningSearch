@@ -79,6 +79,8 @@ pub const IndexManager = struct {
         pq_data: ?PQData = null,
         header_bytes: ?usize = null,
 
+        mmap_buffer: []u8,
+
         inline fn inputFilename(self: *FileData) []const u8 {
             return std.mem.span(self.input_filename_c);
         }
@@ -112,6 +114,7 @@ pub const IndexManager = struct {
                 .tmp_dir          = undefined,
                 .file_handles     = undefined,
                 .file_type        = undefined,
+                .mmap_buffer      = undefined,
             },
 
             .query_state = QueryState{
@@ -133,11 +136,11 @@ pub const IndexManager = struct {
         manager.allocators.scratch_arena.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
         try manager.search_col_idxs.ensureTotalCapacity(
-            manager.allocators.gpa.allocator(), 
+            manager.gpa(), 
             4,
             );
         manager.columns = try rt.RadixTrie(u32).initCapacity(
-            manager.allocators.gpa.allocator(),
+            manager.gpa(),
             32,
             );
 
@@ -166,6 +169,7 @@ pub const IndexManager = struct {
         self.gpa().free(self.file_data.file_handles);
         self.gpa().free(self.index_partitions);
         self.gpa().free(self.query_state.results_arrays);
+        std.posix.munmap(self.file_data.mmap_buffer);
 
         try std.fs.cwd().deleteTree(self.file_data.tmp_dir);
 
@@ -319,7 +323,7 @@ pub const IndexManager = struct {
 
         const file_size = try file.getEndPos();
 
-        const f_data = try std.posix.mmap(
+        self.file_data.mmap_buffer = try std.posix.mmap(
             null,
             file_size,
             std.posix.PROT.READ,
@@ -327,17 +331,16 @@ pub const IndexManager = struct {
             file.handle,
             0
         );
-        defer std.posix.munmap(f_data);
 
         var term: [MAX_TERM_LENGTH]u8 = undefined;
 
         var byte_idx: usize = 0;
         while (true) {
             const prev_byte_idx = byte_idx;
-            csv._iterFieldCSV(f_data, &byte_idx);
+            csv._iterFieldCSV(self.file_data.mmap_buffer, &byte_idx);
             const field_len = byte_idx - 1 - prev_byte_idx;
 
-            @memcpy(term[0..field_len], f_data[prev_byte_idx..byte_idx-1]);
+            @memcpy(term[0..field_len], self.file_data.mmap_buffer[prev_byte_idx..byte_idx-1]);
             std.debug.assert(field_len < MAX_TERM_LENGTH);
 
             string_utils.stringToUpper(term[0..], field_len);
@@ -346,7 +349,7 @@ pub const IndexManager = struct {
                 @truncate(self.columns.num_keys),
                 );
 
-            if (f_data[byte_idx - 1] == '\n') break;
+            if (self.file_data.mmap_buffer[byte_idx - 1] == '\n') break;
         }
         self.file_data.header_bytes = byte_idx;
     }
@@ -490,29 +493,7 @@ pub const IndexManager = struct {
         const start_byte = current_IP.line_offsets[0];
         const end_byte = current_IP.line_offsets[current_IP.line_offsets.len - 1];
 
-
-        const file = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
-        defer file.close();
-
-        const offset = std.mem.alignBackward(
-            usize,
-            start_byte,
-            4096,
-        );
-        const align_offset = start_byte - offset;
-
-        const mmap_buffer = try std.posix.mmap(
-            null,
-            // (4096 + end_byte - start_byte),
-            (16384 + end_byte - start_byte),
-            std.posix.PROT.READ,
-            .{ .TYPE = .PRIVATE },
-            file.handle,
-            offset,
-            // 0,
-        );
-        defer std.posix.munmap(mmap_buffer);
-
+        const mmap_buffer = self.file_data.mmap_buffer[start_byte..end_byte];
 
         var token_stream = try fu.TokenStream(fu.token_32t).init(
             self.file_data.inputFilename(),
@@ -531,11 +512,9 @@ pub const IndexManager = struct {
 
         switch (self.file_data.file_type) {
             fu.FileType.CSV, fu.FileType.JSON => {
-                // const buffer = try token_stream.getBuffer(0);
-                const buffer = mmap_buffer;
-                const num_bytes = @min(buffer.len, 1 << 14);
+                const num_bytes = @min(mmap_buffer.len, 1 << 14);
                 for (0..num_bytes) |idx| {
-                    freq_table[buffer[idx]] += 1;
+                    freq_table[mmap_buffer[idx]] += 1;
                 }
             },
             fu.FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
@@ -569,9 +548,6 @@ pub const IndexManager = struct {
 
         var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
 
-        // var byte_idx: usize = 0;
-        var byte_idx: usize = align_offset;
-
         var prev_doc_id: usize = 0;
         for (0.., start_doc..end_doc) |doc_id, _| {
 
@@ -591,7 +567,7 @@ pub const IndexManager = struct {
                 }
             }
 
-            const start_byte_idx = byte_idx;
+        var byte_idx: usize = 0;
             switch (self.file_data.file_type) {
                 fu.FileType.CSV => {
                     var search_col_idx: usize = 0;
@@ -602,7 +578,6 @@ pub const IndexManager = struct {
                         for (prev_col..self.search_col_idxs.items[search_col_idx]) |col_idx| {
                             const init_byte_idx = byte_idx;
 
-                            // try token_stream.iterFieldCSV(&byte_idx);
                             csv._iterFieldCSV(mmap_buffer, &byte_idx);
 
                             self.query_state.result_positions[partition_idx][col_idx] = TermPos{
@@ -636,7 +611,6 @@ pub const IndexManager = struct {
                     for (prev_col..self.columns.num_keys) |col_idx| {
                         const init_byte_idx = byte_idx;
 
-                        // try token_stream.iterFieldCSV(&byte_idx);
                         csv._iterFieldCSV(mmap_buffer, &byte_idx);
 
                         self.query_state.result_positions[partition_idx][col_idx] = TermPos{
@@ -671,7 +645,7 @@ pub const IndexManager = struct {
 
             try current_IP.doc_store.addRow(
                 self.query_state.result_positions[partition_idx],
-                mmap_buffer[(align_offset + start_byte_idx)..][0..(byte_idx - start_byte_idx)],
+                mmap_buffer[0..byte_idx],
             );
         }
 
@@ -1027,10 +1001,11 @@ pub const IndexManager = struct {
 
         while (file_pos < file_size - 1) {
             try line_offsets.append(file_pos);
-            const buffer = buffered_reader.getBuffer(@intCast(file_pos)) catch {
-                std.debug.print("Error reading buffer at {d}\n", .{file_pos});
-                return error.BufferError;
-            };
+            // const buffer = buffered_reader.getBuffer(@intCast(file_pos)) catch {
+                // std.debug.print("Error reading buffer at {d}\n", .{file_pos});
+                // return error.BufferError;
+            // };
+            const buffer = self.file_data.mmap_buffer[file_pos..];
 
             if (line_offsets.items.len == 16384) {
                 const estimated_lines = @divFloor(file_size, file_pos);
@@ -1039,8 +1014,7 @@ pub const IndexManager = struct {
 
             var index: usize = 0;
             try csv.iterLineCSV(buffer, &index);
-
-            file_pos += index;
+            file_pos += @intCast(index);
         }
         try line_offsets.append(file_size);
 

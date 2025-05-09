@@ -13,8 +13,11 @@ pub const DocStore = struct {
     literal_col_idxs: std.ArrayListUnmanaged(usize),
     huffman_col_idxs: std.ArrayListUnmanaged(usize),
 
-    huffman_rows: std.ArrayListUnmanaged([]u8),
+    // huffman_rows: std.ArrayListUnmanaged([]u8),
     literal_rows: std.ArrayListUnmanaged([]u8),
+
+    huffman_row_data: std.ArrayListUnmanaged(u8),
+    huffman_row_offsets: std.ArrayListUnmanaged(u64),
 
     huffman_field_sizes: std.ArrayListUnmanaged(u16),
     huffman_field_rem_bits: std.ArrayListUnmanaged(u3),
@@ -25,21 +28,32 @@ pub const DocStore = struct {
     gpa: *std.heap.GeneralPurposeAllocator(.{ .thread_safe = true }),
 
     const FileHandles = struct {
-        huffman_rows_file: std.fs.File,
+        huffman_row_data_file: std.fs.File,
+        huffman_row_offsets_file: std.fs.File,
         literal_rows_file: std.fs.File,
         huffman_field_sizes_file: std.fs.File,
 
         pub fn init(doc_store: *DocStore, partition_idx: usize) !FileHandles {
 
-            const huffman_rows_filename = try std.fmt.allocPrint(
+            const huffman_row_data_filename = try std.fmt.allocPrint(
                 doc_store.gpa.allocator(), 
-                "{s}/huffman_rows_{d}.bin", .{doc_store.dir, partition_idx}
+                "{s}/huffman_row_data_{d}.bin", .{doc_store.dir, partition_idx}
                 );
-            const huffman_rows_file = try std.fs.cwd().createFile(
-                huffman_rows_filename,
+            const huffman_row_data_file = try std.fs.cwd().createFile(
+                huffman_row_data_filename,
                 .{ .read = true }
                 );
-            defer doc_store.gpa.allocator().free(huffman_rows_filename);
+            defer doc_store.gpa.allocator().free(huffman_row_data_filename);
+
+            const huffman_row_offsets_filename = try std.fmt.allocPrint(
+                doc_store.gpa.allocator(), 
+                "{s}/huffman_row_offsets_{d}.bin", .{doc_store.dir, partition_idx}
+                );
+            const huffman_row_offsets_file = try std.fs.cwd().createFile(
+                huffman_row_data_filename,
+                .{ .read = true }
+                );
+            defer doc_store.gpa.allocator().free(huffman_row_offsets_filename);
 
             const literal_rows_filename = try std.fmt.allocPrint(
                 doc_store.gpa.allocator(), 
@@ -62,14 +76,16 @@ pub const DocStore = struct {
             defer doc_store.gpa.allocator().free(huffman_field_sizes_filename);
 
             return FileHandles{
-                .huffman_rows_file = huffman_rows_file,
+                .huffman_row_data_file = huffman_row_data_file,
+                .huffman_row_offsets_file = huffman_row_offsets_file,
                 .literal_rows_file = literal_rows_file,
                 .huffman_field_sizes_file = huffman_field_sizes_file,
             };
         }
 
         pub fn deinit(self: *FileHandles) void {
-            self.huffman_rows_file.close();
+            self.huffman_row_data_file.close();
+            self.huffman_row_offsets_file.close();
             self.literal_rows_file.close();
             self.huffman_field_sizes_file.close();
         }
@@ -96,7 +112,9 @@ pub const DocStore = struct {
             .literal_col_idxs = std.ArrayListUnmanaged(usize){},
             .huffman_col_idxs = std.ArrayListUnmanaged(usize){},
 
-            .huffman_rows = std.ArrayListUnmanaged([]u8){},
+            // .huffman_rows = std.ArrayListUnmanaged([]u8){},
+            .huffman_row_data = std.ArrayListUnmanaged(u8){},
+            .huffman_row_offsets = std.ArrayListUnmanaged(u64){},
             .literal_rows = std.ArrayListUnmanaged([]u8){},
 
             .huffman_field_sizes = std.ArrayListUnmanaged(u16){},
@@ -108,28 +126,33 @@ pub const DocStore = struct {
             .dir = dir,
 
             .file_handles = FileHandles{
-                .huffman_rows_file = undefined,
+                .huffman_row_data_file = undefined,
+                .huffman_row_offsets_file = undefined,
                 .literal_rows_file = undefined,
                 .huffman_field_sizes_file = undefined,
             },
         };
-        // store.literal_byte_sizes = try literal_byte_sizes.clone(store.arena.allocator());
-        // store.literal_col_idxs   = try literal_col_idxs.clone(store.arena.allocator());
-        // store.huffman_col_idxs   = try huffman_col_idxs.clone(store.arena.allocator());
         store.literal_byte_sizes = try literal_byte_sizes.clone(store.gpa.allocator());
         store.literal_col_idxs   = try literal_col_idxs.clone(store.gpa.allocator());
         store.huffman_col_idxs   = try huffman_col_idxs.clone(store.gpa.allocator());
 
         store.file_handles = try FileHandles.init(&store, partition_idx);
 
+        try store.huffman_row_data.resize(
+            store.arena.allocator(), 
+            1 << 20,
+            );
+        @memset(store.huffman_row_data.items[0..], 0);
+
+        try store.huffman_row_offsets.append(
+            store.arena.allocator(), 
+            0,
+            );
+
         return store;
     }
 
-    // pub fn deinit(self: *DocStore, allocator: std.mem.Allocator) void {
     pub fn deinit(self: *DocStore) void {
-        // self.huffman_rows.deinit(allocator);
-        // self.literal_rows.deinit(allocator);
-        // self.huffman_field_sizes.deinit(allocator);
         self.arena.deinit();
     }
 
@@ -139,9 +162,10 @@ pub const DocStore = struct {
         var literal_rows_sum: usize = 0;
         var huffman_field_sizes_sum: usize = 0;
 
-        for (self.huffman_rows.items) |row| {
-            huffman_rows_sum += row.len;
-        }
+        // for (self.huffman_rows.items) |row| {
+        huffman_rows_sum = self.huffman_row_data.items.len;
+        huffman_rows_sum += self.huffman_row_offsets.items.len * 8;
+
         for (self.literal_rows.items) |row| {
             literal_rows_sum += row.len;
         }
@@ -170,10 +194,6 @@ pub const DocStore = struct {
         byte_positions: []TermPos,
         row_data: []u8,
     ) !void {
-        // TODO: Make member to retain allocation.
-        var huffman_row = std.ArrayListUnmanaged(u8){};
-        try huffman_row.ensureUnusedCapacity(self.arena.allocator(), 128);
-
         if (self.literal_byte_size_sum > 0) {
             var literal_row = try self.arena.allocator().alloc(
                 u8, 
@@ -195,14 +215,15 @@ pub const DocStore = struct {
             val.* = literal_row[0..literal_row_offset];
         }
 
-        try huffman_row.resize(
-            self.arena.allocator(), 
-            2 * (
-                byte_positions[byte_positions.len - 1].start_pos + 
-                byte_positions[byte_positions.len - 1].field_len + 
-                8
-                ),
-            );
+        const last_offset = self.huffman_row_offsets.getLast();
+        if (self.huffman_row_data.items.len - last_offset < 65536) {
+            @branchHint(.unlikely);
+            try self.huffman_row_data.resize(
+                self.arena.allocator(), 
+                self.huffman_row_data.items.len * 2,
+                );
+            @memset(self.huffman_row_data.items[last_offset..], 0);
+        }
 
         var row_size: usize = 0;
         for (self.huffman_col_idxs.items) |col_idx| {
@@ -223,7 +244,7 @@ pub const DocStore = struct {
 
             const compressed_bit_size = try self.huffman_compressor.compress(
                     row_data[start_pos..][0..field_len],
-                    huffman_row.items[row_size..],
+                    self.huffman_row_data.items[last_offset..][row_size..],
                     );
             const compressed_byte_size: u16 = @truncate(
                 try std.math.divCeil(u64, compressed_bit_size, 8)
@@ -241,23 +262,26 @@ pub const DocStore = struct {
                 );
             row_size += compressed_byte_size;
         }
-        try huffman_row.resize(self.arena.allocator(), row_size);
+        try self.huffman_row_offsets.append(
+            self.arena.allocator(), 
+            last_offset + row_size,
+            );
 
-        const val = try self.huffman_rows.addOne(self.arena.allocator());
-        val.* = (try huffman_row.toOwnedSlice(self.arena.allocator()))[0..row_size];
-
-        if (self.huffman_rows.items.len % 1_000_000 == 0) {
+        if (self.huffman_row_offsets.items.len % 1_000_000 == 0) {
             @branchHint(.cold);
-            if (self.huffman_rows.items.len > 0) {
-                try self.flush();
-            }
+            std.debug.print("Flushing\n", .{});
+            try self.flush();
         }
     }
 
     pub fn flush(self: *DocStore) !void {
-        for (self.huffman_rows.items) |row| {
-            try self.file_handles.huffman_rows_file.writeAll(row);
-        }
+        try self.file_handles.huffman_row_data_file.writeAll(
+            self.huffman_row_data.items,
+            );
+        try self.file_handles.huffman_row_offsets_file.writeAll(
+            std.mem.sliceAsBytes(self.huffman_row_offsets.items),
+            );
+
         for (self.literal_rows.items) |row| {
             try self.file_handles.literal_rows_file.writeAll(row);
         }
@@ -265,21 +289,18 @@ pub const DocStore = struct {
             std.mem.sliceAsBytes(self.huffman_field_sizes.items)
         );
 
-        self.huffman_rows.deinit(self.arena.allocator());
-        self.literal_rows.deinit(self.arena.allocator());
-        self.huffman_field_sizes.deinit(self.arena.allocator());
-        self.huffman_field_rem_bits.deinit(self.arena.allocator());
-
-        self.huffman_rows = std.ArrayListUnmanaged([]u8){};
-        self.literal_rows = std.ArrayListUnmanaged([]u8){};
-        self.huffman_field_sizes = std.ArrayListUnmanaged(u16){};
-        self.huffman_field_rem_bits = std.ArrayListUnmanaged(u3){};
-
         const success = self.arena.reset(.retain_capacity);
         if (!success) {
             std.debug.print("Arena reset failed.\n", .{});
             return error.ArenaResetFailed;
         }
+
+        @memset(self.huffman_row_data.items[0..1048576], 0);
+        self.huffman_row_data.items.len = 1 << 20;
+        self.huffman_row_offsets.items.len = 1;
+        self.literal_rows.clearRetainingCapacity();
+        self.huffman_field_sizes.clearRetainingCapacity();
+        self.huffman_field_rem_bits.clearRetainingCapacity();
     }
 
 
@@ -292,8 +313,10 @@ pub const DocStore = struct {
         // Assume all huffman for now.
         std.debug.assert(self.literal_col_idxs.items.len == 0);
 
-        const huffman_row = self.huffman_rows.items[row_idx];
+        const start_byte  = self.huffman_row_offsets.items[row_idx];
+        const end_byte    = self.huffman_row_offsets.items[row_idx + 1];
 
+        const huffman_row = self.huffman_row_data.items[start_byte..end_byte];
         const huffman_idx_offset  = self.huffman_col_idxs.items.len * row_idx;
 
         const huffman_field_sizes = self.huffman_field_sizes.items[
