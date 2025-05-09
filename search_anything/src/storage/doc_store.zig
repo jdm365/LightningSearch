@@ -139,13 +139,15 @@ pub const DocStore = struct {
         store.file_handles = try FileHandles.init(&store, partition_idx);
 
         try store.huffman_row_data.resize(
-            store.arena.allocator(), 
+            // store.arena.allocator(), 
+            store.gpa.allocator(), 
             1 << 20,
             );
         @memset(store.huffman_row_data.items[0..], 0);
 
         try store.huffman_row_offsets.append(
-            store.arena.allocator(), 
+            // store.arena.allocator(), 
+            store.gpa.allocator(), 
             0,
             );
 
@@ -154,6 +156,15 @@ pub const DocStore = struct {
 
     pub fn deinit(self: *DocStore) void {
         self.arena.deinit();
+        self.file_handles.deinit();
+        self.huffman_row_data.deinit(self.gpa.allocator());
+        self.huffman_row_offsets.deinit(self.gpa.allocator());
+        self.literal_rows.deinit(self.gpa.allocator());
+        self.huffman_field_sizes.deinit(self.gpa.allocator());
+        self.huffman_field_rem_bits.deinit(self.gpa.allocator());
+        self.literal_byte_sizes.deinit(self.gpa.allocator());
+        self.literal_col_idxs.deinit(self.gpa.allocator());
+        self.huffman_col_idxs.deinit(self.gpa.allocator());
     }
 
     pub fn printMemoryUsage(self: *const DocStore) void {
@@ -195,7 +206,8 @@ pub const DocStore = struct {
         row_data: []u8,
     ) !void {
         if (self.literal_byte_size_sum > 0) {
-            var literal_row = try self.arena.allocator().alloc(
+            // var literal_row = try self.arena.allocator().alloc(
+            var literal_row = try self.gpa.allocator().alloc(
                 u8, 
                 self.literal_byte_size_sum,
                 );
@@ -211,7 +223,8 @@ pub const DocStore = struct {
                     );
                 literal_row_offset += field_len;
             }
-            const val = try self.literal_rows.addOne(self.arena.allocator());
+            // const val = try self.literal_rows.addOne(self.arena.allocator());
+            const val = try self.literal_rows.addOne(self.gpa.allocator());
             val.* = literal_row[0..literal_row_offset];
         }
 
@@ -219,7 +232,8 @@ pub const DocStore = struct {
         if (self.huffman_row_data.items.len - last_offset < 65536) {
             @branchHint(.unlikely);
             try self.huffman_row_data.resize(
-                self.arena.allocator(), 
+                // self.arena.allocator(), 
+                self.gpa.allocator(), 
                 self.huffman_row_data.items.len * 2,
                 );
             @memset(self.huffman_row_data.items[last_offset..], 0);
@@ -232,11 +246,13 @@ pub const DocStore = struct {
 
             if (field_len == 0) {
                 try self.huffman_field_sizes.append(
-                    self.arena.allocator(), 
+                    // self.arena.allocator(), 
+                    self.gpa.allocator(), 
                     0,
                     );
                 try self.huffman_field_rem_bits.append(
-                    self.arena.allocator(), 
+                    // self.arena.allocator(), 
+                    self.gpa.allocator(), 
                     0,
                     );
                 continue;
@@ -253,54 +269,62 @@ pub const DocStore = struct {
             std.debug.assert(compressed_byte_size > 0);
 
             try self.huffman_field_sizes.append(
-                self.arena.allocator(), 
+                // self.arena.allocator(), 
+                self.gpa.allocator(), 
                 compressed_byte_size,
                 );
             try self.huffman_field_rem_bits.append(
-                self.arena.allocator(), 
+                // self.arena.allocator(), 
+                self.gpa.allocator(), 
                 rem_bits,
                 );
             row_size += compressed_byte_size;
         }
         try self.huffman_row_offsets.append(
-            self.arena.allocator(), 
+            // self.arena.allocator(), 
+            self.gpa.allocator(), 
             last_offset + row_size,
             );
 
         if (self.huffman_row_offsets.items.len % 1_000_000 == 0) {
             @branchHint(.cold);
-            std.debug.print("Flushing\n", .{});
             try self.flush();
         }
     }
 
     pub fn flush(self: *DocStore) !void {
-        try self.file_handles.huffman_row_data_file.writeAll(
-            self.huffman_row_data.items,
+        const start_time = std.time.milliTimestamp();
+
+        const buffer_size = self.huffman_row_offsets.getLast();
+        _ = try self.file_handles.huffman_row_data_file.write(
+            self.huffman_row_data.items[0..buffer_size],
             );
-        try self.file_handles.huffman_row_offsets_file.writeAll(
+        _ = try self.file_handles.huffman_row_offsets_file.write(
             std.mem.sliceAsBytes(self.huffman_row_offsets.items),
             );
 
         for (self.literal_rows.items) |row| {
-            try self.file_handles.literal_rows_file.writeAll(row);
+            _ = try self.file_handles.literal_rows_file.write(row);
         }
-        try self.file_handles.huffman_field_sizes_file.writeAll(
+        _ = try self.file_handles.huffman_field_sizes_file.write(
             std.mem.sliceAsBytes(self.huffman_field_sizes.items)
         );
 
-        const success = self.arena.reset(.retain_capacity);
-        if (!success) {
-            std.debug.print("Arena reset failed.\n", .{});
-            return error.ArenaResetFailed;
-        }
 
-        @memset(self.huffman_row_data.items[0..1048576], 0);
         self.huffman_row_data.items.len = 1 << 20;
+        @memset(self.huffman_row_data.items[0..(1 << 20)], 0);
         self.huffman_row_offsets.items.len = 1;
         self.literal_rows.clearRetainingCapacity();
         self.huffman_field_sizes.clearRetainingCapacity();
         self.huffman_field_rem_bits.clearRetainingCapacity();
+
+        const end_time = std.time.milliTimestamp();
+        const execution_time_ms: usize = @intCast(end_time - start_time);
+        std.debug.print(
+            "FLUSH TIME: {d}ms\nBuffer size: {d}MB\n\n", 
+            .{execution_time_ms, buffer_size / (1 << 20)}
+            );
+
     }
 
 
