@@ -7,7 +7,7 @@
             .hash = "zap-0.9.1-GoeB84M8JACjZKDNq2LA5hB24Z-ZrZ_HUKRXd8qxL2JW",
         },
     },
-    .fingerprint = 0x3fe64d611939a1e,
+    .fingerprint = 0x6d48538d58082a00,
     .paths = .{
         "build.zig",
         "build.zig.zon",
