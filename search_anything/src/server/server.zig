@@ -777,11 +777,9 @@ pub export fn getIndexingProgress(
 pub export fn getNumDocs(
     query_handler: *const QueryHandlerLocal, 
     ) u64 {
-    var num_docs: usize = 0;
-    for (query_handler.index_manager.index_partitions) |*p| {
-        num_docs += p.line_offsets.len - 1;
-    }
-    return @intCast(num_docs);
+    return @intCast(query_handler.index_manager.partitions.row_offsets[
+        query_handler.index_manager.partitions.row_offsets.len - 1
+    ]);
 }
 
 

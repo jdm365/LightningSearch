@@ -312,7 +312,6 @@ pub const InvertedIndexV2 = struct {
 
 pub const BM25Partition = struct {
     II: []InvertedIndexV2,
-    line_offsets: []usize,
     num_records: usize,
     allocator: std.mem.Allocator,
     doc_score_map: std.AutoHashMap(u32, ScoringInfo),
@@ -322,7 +321,6 @@ pub const BM25Partition = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         num_search_cols: usize,
-        line_offsets: []usize,
         num_records: usize,
     ) !BM25Partition {
         var doc_score_map = std.AutoHashMap(u32, ScoringInfo).init(allocator);
@@ -330,7 +328,6 @@ pub const BM25Partition = struct {
 
         const partition = BM25Partition{
             .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
-            .line_offsets = line_offsets,
             .num_records = num_records,
             .allocator = allocator,
             .doc_score_map = doc_score_map,
@@ -414,7 +411,7 @@ pub const BM25Partition = struct {
         } else {
 
             const val = gop.value_ptr.*;
-            if (!terms_seen.checkOrInsert(val)) {
+            if (!terms_seen.checkOrInsertSIMD(val)) {
                 self.II[col_idx].doc_freqs.items[val] += 1;
                 try token_stream.addToken(new_doc.*, term_pos, val, col_idx);
             }
@@ -491,7 +488,7 @@ pub const BM25Partition = struct {
         } else {
 
             const val = gop.value_ptr.*;
-            if (!terms_seen.checkOrInsert(val)) {
+            if (!terms_seen.checkOrInsertSIMD(val)) {
                 self.II[col_idx].doc_freqs.items[val] += 1;
                 try token_stream.addToken(new_doc.*, term_pos, val, col_idx);
             }
@@ -629,6 +626,7 @@ pub const BM25Partition = struct {
                 }
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
+                    @branchHint(.cold);
                     try self.flushLargeToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
@@ -705,6 +703,7 @@ pub const BM25Partition = struct {
                 std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
+                    @branchHint(.cold);
                     try self.flushLargeToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
@@ -822,6 +821,7 @@ pub const BM25Partition = struct {
                 );
 
             if (cntr > MAX_TERM_LENGTH - 4) {
+                @branchHint(.cold);
                 try self.flushLargeToken(
                     buffer[buffer_idx - cntr..], 
                     &cntr, 
@@ -1002,6 +1002,7 @@ pub const BM25Partition = struct {
                 }
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
+                    @branchHint(.cold);
                     try self.flushLargeToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
@@ -1054,6 +1055,7 @@ pub const BM25Partition = struct {
                 std.debug.assert(self.II[II_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
+                    @branchHint(.cold);
                     try self.flushLargeToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
@@ -1364,77 +1366,45 @@ pub const BM25Partition = struct {
         };
     }
 
-    pub fn fetchRecords(
-        self: *BM25Partition,
-        result_positions: []TermPos,
-        file_handle: *std.fs.File,
-        query_result: QueryResult,
-        record_string: *std.ArrayListUnmanaged(u8),
-        file_type: file_utils.FileType,
-        reference_dict: *const RadixTrie(u32),
-    ) !void {
-        const doc_id:    usize = @intCast(query_result.doc_id);
-        const byte_offset      = self.line_offsets[doc_id];
-        const next_byte_offset = self.line_offsets[doc_id + 1];
-        const bytes_to_read    = next_byte_offset - byte_offset;
-
-        std.debug.assert(bytes_to_read < MAX_LINE_LENGTH);
-
-        try file_handle.seekTo(byte_offset);
-        if (bytes_to_read > record_string.capacity) {
-            try record_string.resize(self.allocator, bytes_to_read);
-        }
-        _ = try file_handle.read(record_string.items[0..bytes_to_read]);
-
-        switch (file_type) {
-            file_utils.FileType.CSV => {
-                record_string.items[bytes_to_read - 1] = '\n';
-                try csv.parseRecordCSV(
-                    record_string.items[0..bytes_to_read], 
-                    result_positions,
-                    );
-            },
-            file_utils.FileType.JSON => {
-                record_string.items[bytes_to_read - 1] = '{';
-                try json.parseRecordJSON(
-                    record_string.items[0..bytes_to_read], 
-                    result_positions,
-                    reference_dict,
-                    );
-            },
-            file_utils.FileType.PARQUET => unreachable,
-        }
-    }
-
-    pub fn fetchRecordsParquet(
-        self: *BM25Partition,
-        result_positions: []TermPos,
-        pq_file_handle: *anyopaque,
-        query_result: QueryResult,
-        record_string: *std.ArrayListUnmanaged(u8),
-    ) !void {
-        // TODO: Batch together all requests to a particular row group.
-        var row_count_rem: usize = @intCast(query_result.doc_id);
-
-        var local_row_num: usize = 0;
-        var rg_idx: usize = 0;
-        while (true) {
-            // Currently when parquet, line_offsets is actually row_group sizes.
-            if (row_count_rem <= self.line_offsets[rg_idx]) {
-                local_row_num = row_count_rem;
-                break;
-            }
-            row_count_rem -= self.line_offsets[rg_idx];
-            local_row_num += self.line_offsets[rg_idx];
-            rg_idx += 1;
-        }
-
-        pq.fetchRowFromRowGroup(
-            pq_file_handle,
-            rg_idx,
-            local_row_num,
-            record_string.items.ptr,
-            @alignCast(@ptrCast(result_positions.ptr)),
-        );
-    }
+    // pub fn fetchRecords(
+        // self: *BM25Partition,
+        // result_positions: []TermPos,
+        // file_handle: *std.fs.File,
+        // query_result: QueryResult,
+        // record_string: *std.ArrayListUnmanaged(u8),
+        // file_type: file_utils.FileType,
+        // reference_dict: *const RadixTrie(u32),
+    // ) !void {
+        // const doc_id:    usize = @intCast(query_result.doc_id);
+        // const byte_offset      = self.line_offsets[doc_id];
+        // const next_byte_offset = self.line_offsets[doc_id + 1];
+        // const bytes_to_read    = next_byte_offset - byte_offset;
+// 
+        // std.debug.assert(bytes_to_read < MAX_LINE_LENGTH);
+// 
+        // try file_handle.seekTo(byte_offset);
+        // if (bytes_to_read > record_string.capacity) {
+            // try record_string.resize(self.allocator, bytes_to_read);
+        // }
+        // _ = try file_handle.read(record_string.items[0..bytes_to_read]);
+// 
+        // switch (file_type) {
+            // file_utils.FileType.CSV => {
+                // record_string.items[bytes_to_read - 1] = '\n';
+                // try csv.parseRecordCSV(
+                    // record_string.items[0..bytes_to_read], 
+                    // result_positions,
+                    // );
+            // },
+            // file_utils.FileType.JSON => {
+                // record_string.items[bytes_to_read - 1] = '{';
+                // try json.parseRecordJSON(
+                    // record_string.items[0..bytes_to_read], 
+                    // result_positions,
+                    // reference_dict,
+                    // );
+            // },
+            // file_utils.FileType.PARQUET => unreachable,
+        // }
+    // }
 };

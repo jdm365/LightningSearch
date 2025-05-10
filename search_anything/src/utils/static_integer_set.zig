@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const VEC_SIZE = std.simd.suggestVectorLength(u32) orelse 4;
+pub const VEC = @Vector(VEC_SIZE, u32);
 pub const VEC128 = @Vector(4, u32);
 
 pub fn StaticIntegerSet(comptime n: u32) type {
@@ -42,21 +44,24 @@ pub fn StaticIntegerSet(comptime n: u32) type {
 
             // If element already exists return true, else return false.
             // If element doesn't exist also insert.
-            const floor_loop_idx = self.count - (self.count % 4);
+            const floor_loop_idx = self.count - (self.count % VEC_SIZE);
 
-            const valueSIMD: VEC128 = @splat(new_value);
+            const valueSIMD: VEC= @splat(new_value);
 
             var idx: usize = 0;
             while (idx < floor_loop_idx) {
-                if (std.simd.countTrues(@as(VEC128, self.values[idx..idx+4][0..4].*) == valueSIMD) > 0) {
+                if (
+                    std.simd.countTrues(
+                        @as(VEC, self.values[idx..idx+VEC_SIZE][0..VEC_SIZE].*) == valueSIMD
+                        ) > 0
+                    ) {
                     return true;
                 }
-                idx += 4;
+                idx += VEC_SIZE;
             }
 
-            while (floor_loop_idx < self.count) {
-                if (self.values[idx] == new_value) return true;
-                idx += 1;
+            for (floor_loop_idx..self.count) |final_idx| {
+                if (self.values[final_idx] == new_value) return true;
             }
 
             self.values[self.count] = new_value;

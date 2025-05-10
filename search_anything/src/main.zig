@@ -152,7 +152,7 @@ pub fn main() !void {
 
     // const filename = "../data/mb.csv";
     // const filename = "../data/mb.parquet";
-    // const filename = "../data/hn.csv";
-    const filename = "../data/hn_half.csv";
+    const filename = "../data/hn.csv";
+    // const filename = "../data/hn_half.csv";
     try bench(filename);
 }
