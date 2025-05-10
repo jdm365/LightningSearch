@@ -13,7 +13,6 @@ pub const DocStore = struct {
     literal_col_idxs: std.ArrayListUnmanaged(usize),
     huffman_col_idxs: std.ArrayListUnmanaged(usize),
 
-    // huffman_rows: std.ArrayListUnmanaged([]u8),
     literal_rows: std.ArrayListUnmanaged([]u8),
 
     huffman_row_data: std.ArrayListUnmanaged(u8),
@@ -206,7 +205,6 @@ pub const DocStore = struct {
         row_data: []u8,
     ) !void {
         if (self.literal_byte_size_sum > 0) {
-            // var literal_row = try self.arena.allocator().alloc(
             var literal_row = try self.gpa.allocator().alloc(
                 u8, 
                 self.literal_byte_size_sum,
@@ -223,7 +221,6 @@ pub const DocStore = struct {
                     );
                 literal_row_offset += field_len;
             }
-            // const val = try self.literal_rows.addOne(self.arena.allocator());
             const val = try self.literal_rows.addOne(self.gpa.allocator());
             val.* = literal_row[0..literal_row_offset];
         }
@@ -232,7 +229,6 @@ pub const DocStore = struct {
         if (self.huffman_row_data.items.len - last_offset < 65536) {
             @branchHint(.unlikely);
             try self.huffman_row_data.resize(
-                // self.arena.allocator(), 
                 self.gpa.allocator(), 
                 self.huffman_row_data.items.len * 2,
                 );
@@ -246,12 +242,10 @@ pub const DocStore = struct {
 
             if (field_len == 0) {
                 try self.huffman_field_sizes.append(
-                    // self.arena.allocator(), 
                     self.gpa.allocator(), 
                     0,
                     );
                 try self.huffman_field_rem_bits.append(
-                    // self.arena.allocator(), 
                     self.gpa.allocator(), 
                     0,
                     );
@@ -263,25 +257,23 @@ pub const DocStore = struct {
                     self.huffman_row_data.items[last_offset..][row_size..],
                     );
             const compressed_byte_size: u16 = @truncate(
-                try std.math.divCeil(u64, compressed_bit_size, 8)
+                // try std.math.divCeil(u64, compressed_bit_size, 8)
+                (compressed_bit_size >> 3) + @intFromBool((compressed_bit_size & 0x111) == 0)
                 );
             const rem_bits: u3 = @truncate(compressed_bit_size % 8);
             std.debug.assert(compressed_byte_size > 0);
 
             try self.huffman_field_sizes.append(
-                // self.arena.allocator(), 
                 self.gpa.allocator(), 
                 compressed_byte_size,
                 );
             try self.huffman_field_rem_bits.append(
-                // self.arena.allocator(), 
                 self.gpa.allocator(), 
                 rem_bits,
                 );
             row_size += compressed_byte_size;
         }
         try self.huffman_row_offsets.append(
-            // self.arena.allocator(), 
             self.gpa.allocator(), 
             last_offset + row_size,
             );
@@ -294,6 +286,19 @@ pub const DocStore = struct {
 
     pub fn flush(self: *DocStore) !void {
         const start_time = std.time.milliTimestamp();
+
+        // TODO: Needed
+        // 1. Offsets need to be true file byte offsets.
+        // 2. Assess what field sizes/field rem bits actually need to be stored.
+        // 3. Build direct IO seeking getRow.
+        // 4. Look at mmapping for both writes and reads.
+        // 5. Consider using bit field lengths, allowing variable byte fields
+        //    and better huffman compression. Then in flush, store all field
+        //    bit lengths as vbyte prefix values. Would need to have row
+        //    offsets account for this. Could do with field size tracking,
+        //    accumulating eventual vbyte field size values and adding to
+        //    row_size in addRow. (I think this would remove the need
+        //    for rem_bits array too).
 
         const buffer_size = self.huffman_row_offsets.getLast();
         _ = try self.file_handles.huffman_row_data_file.write(

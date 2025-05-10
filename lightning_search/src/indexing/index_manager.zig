@@ -681,6 +681,9 @@ pub const IndexManager = struct {
         }
         _ = total_docs_read.fetchAdd(end_doc - (start_doc + prev_doc_id), .monotonic);
 
+        // Flush remaining doc storage.
+        try current_IP.doc_store.flush();
+
         // Construct II
         try current_IP.constructFromTokenStream(&token_stream);
     }
