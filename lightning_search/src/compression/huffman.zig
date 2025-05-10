@@ -7,15 +7,6 @@ var SCRATCH_BUFFER: [1 << 14]u8 = undefined;
 const endianness = builtin.cpu.arch.endian();
 const big_endian = std.builtin.Endian.big;
 
-inline fn readValFromFile(
-    comptime T: type,
-    file: *std.fs.File,
-) !T {
-    var _val: [@sizeOf(T)]u8 = undefined;
-    _ = try file.read(std.mem.asBytes(&_val));
-    return std.mem.readInt(T, &_val, endianness);
-}
-
 pub fn printBits(comptime T: type, value: T) void {
     var num_bits: T = @sizeOf(T) * 8;
     num_bits += @divFloor(num_bits, 8) - 1;
@@ -326,6 +317,36 @@ pub const HuffmanCompressor = struct {
         }
 
         return output_buffer_bit_idx;
+    }
+
+    pub fn compressOffset(
+        self: *HuffmanCompressor,
+        input_buffer: []u8,
+        output_buffer: []u8,
+        start_bit: usize,
+    ) !u64 {
+        if (self.root_node_idx == 0) {
+            @branchHint(.cold);
+            return error.HuffmanTreeNotBuilt;
+        }
+        // @memset(output_buffer, 0);
+
+        var output_buffer_bit_idx: usize = start_bit;
+
+        for (input_buffer) |byte| {
+            const nbits = self.code_lengths[byte];
+            std.debug.assert(nbits > 0);
+
+            try writeBits(
+                output_buffer[@divFloor(output_buffer_bit_idx, 8)..].ptr,
+                output_buffer_bit_idx % 8,
+                self.codes[byte],
+            );
+
+            output_buffer_bit_idx += nbits;
+        }
+
+        return output_buffer_bit_idx - start_bit;
     }
 
     pub inline fn iterDecompressBitwise(

@@ -571,7 +571,12 @@ pub const IndexManager = struct {
 
         var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
 
+        var byte_idx: usize = 0;
         var prev_doc_id: usize = 0;
+        var search_col_idx: usize = 0;
+        var prev_col:       usize = 0;
+        var row_byte_idx:   usize = 0;
+
         for (0.., start_doc..end_doc) |doc_id, _| {
 
             if (timer.read() >= interval_ns) {
@@ -592,12 +597,11 @@ pub const IndexManager = struct {
                 }
             }
 
-            var byte_idx: usize = 0;
             switch (self.file_data.file_type) {
                 fu.FileType.CSV => {
-                    var search_col_idx: usize = 0;
-                    var prev_col:       usize = 0;
-                    var row_byte_idx:   usize = 0;
+                    search_col_idx = 0;
+                    prev_col       = 0;
+                    row_byte_idx   = 0;
 
                     while (search_col_idx < num_search_cols) {
                         for (prev_col..self.search_col_idxs.items[search_col_idx]) |col_idx| {
@@ -670,14 +674,14 @@ pub const IndexManager = struct {
 
             try current_IP.doc_store.addRow(
                 self.query_state.result_positions[partition_idx],
-                mmap_buffer[0..byte_idx],
+                mmap_buffer[(byte_idx - row_byte_idx)..],
             );
         }
         self.indexing_state.partition_is_indexing[partition_idx] = false;
 
         // Flush remaining tokens.
-        for (0..token_stream.num_terms.len) |search_col_idx| {
-            try token_stream.flushTokenStream(search_col_idx);
+        for (0..token_stream.num_terms.len) |_search_col_idx| {
+            try token_stream.flushTokenStream(_search_col_idx);
         }
         _ = total_docs_read.fetchAdd(end_doc - (start_doc + prev_doc_id), .monotonic);
 

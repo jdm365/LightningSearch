@@ -55,6 +55,22 @@ pub fn readParquetRowGroupColumnUtf8Vbyte(
     );
 }
 
+pub inline fn encodeVbyte(buffer: [*]u8, idx: *usize, _value: u64) void {
+    var value = _value;
+    while (true) {
+        const byte = @as(u8, @truncate(value)) & 0b01111111;
+        if (value >= 128) {
+            buffer[idx.*] = byte | 0b10000000;
+            value >>= 7;
+        } else {
+            buffer[idx.*] = byte;
+            break;
+        }
+        idx.* += 1;
+    }
+    idx.* += 1;
+}
+
 pub inline fn decodeVbyte(buffer: [*]u8, idx: *usize) u64 {
     var value: u64 = 0;
     var shift: u6 = 0;
@@ -66,6 +82,15 @@ pub inline fn decodeVbyte(buffer: [*]u8, idx: *usize) u64 {
         shift += 7;
     }
     return value;
+}
+
+pub inline fn getVbyteSize(value: u64) usize {
+    if (value == 0) return 1;
+
+    const num_bits = 64 - @clz(value);
+    const num_bytes = @divFloor((num_bits + 6), 7);
+
+    return num_bytes;
 }
 
 pub fn getParquetCols(
