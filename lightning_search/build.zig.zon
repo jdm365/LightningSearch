@@ -1,5 +1,5 @@
 .{
-    .name = .search_anything,
+    .name = .lightning_search,
     .version = "0.0.0",
     .dependencies = .{
         .zap = .{
