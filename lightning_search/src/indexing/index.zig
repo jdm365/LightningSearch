@@ -345,14 +345,14 @@ pub const BM25Partition = struct {
         return partition;
     }
 
-    pub fn deinit(self: *BM25Partition) void {
+    pub fn deinit(self: *BM25Partition) !void {
         for (0..self.II.len) |i| {
             self.II[i].deinit(self.allocator);
         }
         self.allocator.free(self.II);
         self.doc_score_map.deinit();
 
-        self.doc_store.deinit();
+        try self.doc_store.deinit();
     }
 
     pub fn resizeNumSearchCols(self: *BM25Partition, num_search_cols: usize) !void {

@@ -176,7 +176,7 @@ pub const IndexManager = struct {
     pub fn deinit(self: *IndexManager, allocator: std.mem.Allocator) !void {
         for (0..self.partitions.index_partitions.len) |idx| {
             self.query_state.results_arrays[idx].deinit();
-            self.partitions.index_partitions[idx].deinit();
+            try self.partitions.index_partitions[idx].deinit();
             self.file_data.file_handles[idx].close();
         }
         self.gpa().free(self.partitions.row_offsets);
@@ -346,6 +346,11 @@ pub const IndexManager = struct {
             .{ .TYPE = .PRIVATE },
             file.handle,
             0
+        );
+        try std.posix.madvise(
+            @alignCast(self.file_data.mmap_buffer.ptr),
+            file_size,
+            std.posix.MADV.SEQUENTIAL,
         );
 
         var term: [MAX_TERM_LENGTH]u8 = undefined;
@@ -576,6 +581,7 @@ pub const IndexManager = struct {
         var search_col_idx: usize = 0;
         var prev_col:       usize = 0;
         var row_byte_idx:   usize = 0;
+        var bytes_read_since_flush: usize = 0;
 
         for (0.., start_doc..end_doc) |doc_id, _| {
 
@@ -676,6 +682,21 @@ pub const IndexManager = struct {
                 self.query_state.result_positions[partition_idx],
                 mmap_buffer[(byte_idx - row_byte_idx)..],
             );
+            bytes_read_since_flush += row_byte_idx;
+
+            if (bytes_read_since_flush > (comptime 1 << 20)) {
+                const _start_byte = std.mem.alignBackward(
+                    u64,
+                    byte_idx - bytes_read_since_flush,
+                    4096,
+                );
+                try std.posix.madvise(
+                    @alignCast(self.file_data.mmap_buffer[_start_byte..].ptr),
+                    bytes_read_since_flush - 4096,
+                    std.posix.MADV.DONTNEED,
+                );
+                bytes_read_since_flush = 0;
+            }
         }
         self.indexing_state.partition_is_indexing[partition_idx] = false;
 
