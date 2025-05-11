@@ -41,8 +41,8 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         start_byte: usize,
         end_token: u8,
         ) !SingleThreadedDoubleBufferedReader {
-        const buffer_size = 1 << 22;
-        const overflow_size = 16384;
+        const buffer_size = 1 << 24;
+        const overflow_size = 1 << 18;
 
         // Make buffers larger to accommodate overlap
         const buffers = try allocator.alloc(u8, 2 * buffer_size);
@@ -87,6 +87,7 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         uppercase: bool,
         ) ![]u8 {
         const index = file_pos % self.buffers.len;
+        const overflow_size = @divFloor(self.overflow_buffer.len, 2);
 
         if (index >= self.single_buffer_size) {
             if (self.current_buffer == 0) {
@@ -105,7 +106,6 @@ pub const SingleThreadedDoubleBufferedReader = struct {
                         );
                 }
 
-                const overflow_size = @divFloor(self.overflow_buffer.len, 2);
                 @memcpy(
                     self.overflow_buffer[overflow_size..], 
                     self.buffers[0..overflow_size],
@@ -128,7 +128,6 @@ pub const SingleThreadedDoubleBufferedReader = struct {
                         );
                 }
 
-                const overflow_size = @divFloor(self.overflow_buffer.len, 2);
                 @memcpy(
                     self.overflow_buffer[0..overflow_size], 
                     self.buffers[self.buffers.len - overflow_size..],
@@ -136,8 +135,8 @@ pub const SingleThreadedDoubleBufferedReader = struct {
             }
         }
         const bytes_from_end = self.buffers.len - index;
-        if (bytes_from_end <= 16384) {
-            return self.overflow_buffer[16384 - bytes_from_end..];
+        if (bytes_from_end <= overflow_size) {
+            return self.overflow_buffer[overflow_size - bytes_from_end..];
         }
         return self.buffers[index..];
     }

@@ -339,29 +339,34 @@ pub const IndexManager = struct {
 
         const file_size = try file.getEndPos();
 
-        self.file_data.mmap_buffer = try std.posix.mmap(
-            null,
-            file_size,
-            std.posix.PROT.READ,
-            .{ .TYPE = .PRIVATE },
-            file.handle,
-            0
-        );
-        try std.posix.madvise(
-            @alignCast(self.file_data.mmap_buffer.ptr),
-            file_size,
-            std.posix.MADV.SEQUENTIAL,
-        );
+        const buffer = try self.gpa().alloc(u8, @min(file_size, 1 << 14));
+        defer self.gpa().free(buffer);
+
+        _ = try file.read(buffer);
+
+        // self.file_data.mmap_buffer = try std.posix.mmap(
+            // null,
+            // file_size,
+            // std.posix.PROT.READ,
+            // .{ .TYPE = .PRIVATE },
+            // file.handle,
+            // 0
+        // );
+        // try std.posix.madvise(
+            // @alignCast(self.file_data.mmap_buffer.ptr),
+            // file_size,
+            // std.posix.MADV.SEQUENTIAL,
+        // );
 
         var term: [MAX_TERM_LENGTH]u8 = undefined;
 
         var byte_idx: usize = 0;
         while (true) {
             const prev_byte_idx = byte_idx;
-            csv._iterFieldCSV(self.file_data.mmap_buffer, &byte_idx);
+            csv._iterFieldCSV(buffer, &byte_idx);
             const field_len = byte_idx - 1 - prev_byte_idx;
 
-            @memcpy(term[0..field_len], self.file_data.mmap_buffer[prev_byte_idx..byte_idx-1]);
+            @memcpy(term[0..field_len], buffer[prev_byte_idx..byte_idx-1]);
             std.debug.assert(field_len < MAX_TERM_LENGTH);
 
             string_utils.stringToUpper(term[0..], field_len);
@@ -370,7 +375,7 @@ pub const IndexManager = struct {
                 @truncate(self.columns.num_keys),
                 );
 
-            if (self.file_data.mmap_buffer[byte_idx - 1] == '\n') break;
+            if (buffer[byte_idx - 1] == '\n') break;
         }
         self.file_data.header_bytes = byte_idx;
     }
@@ -506,7 +511,7 @@ pub const IndexManager = struct {
         const start_doc  = self.partitions.row_offsets[partition_idx];
         const end_doc    = self.partitions.row_offsets[partition_idx + 1];
         const start_byte = self.partitions.byte_offsets[partition_idx];
-        const end_byte   = self.partitions.byte_offsets[partition_idx + 1];
+        // const end_byte   = self.partitions.byte_offsets[partition_idx + 1];
 
         const output_filename = try std.fmt.allocPrint(
             self.scratchArena(), 
@@ -521,7 +526,18 @@ pub const IndexManager = struct {
         };
         const current_IP = &self.partitions.index_partitions[partition_idx];
 
-        const mmap_buffer = self.file_data.mmap_buffer[start_byte..end_byte];
+        // const mmap_buffer = self.file_data.mmap_buffer[start_byte..end_byte];
+        const file = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
+        defer file.close();
+
+        var reader = try fu.SingleThreadedDoubleBufferedReader.init(
+            self.gpa(),
+            file,
+            start_byte,
+            end_token,
+        );
+        defer reader.deinit(self.gpa());
+
 
         var token_stream = try fu.TokenStream(fu.token_32t).init(
             self.file_data.inputFilename(),
@@ -538,11 +554,14 @@ pub const IndexManager = struct {
         var freq_table: [256]u32 = undefined;
         @memset(freq_table[0..], 0);
 
+        var buffer = try reader.getBuffer(start_byte, true);
         switch (self.file_data.file_type) {
             fu.FileType.CSV, fu.FileType.JSON => {
-                const num_bytes = @min(mmap_buffer.len, 1 << 14);
+                // const num_bytes = @min(mmap_buffer.len, 1 << 14);
+                const num_bytes = @min(buffer.len, 1 << 14);
                 for (0..num_bytes) |idx| {
-                    freq_table[mmap_buffer[idx]] += 1;
+                    // freq_table[mmap_buffer[idx]] += 1;
+                    freq_table[buffer[idx]] += 1;
                 }
             },
             fu.FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
@@ -581,9 +600,11 @@ pub const IndexManager = struct {
         var search_col_idx: usize = 0;
         var prev_col:       usize = 0;
         var row_byte_idx:   usize = 0;
-        var bytes_read_since_flush: usize = 0;
+        // var bytes_read_since_flush: usize = 0;
 
         for (0.., start_doc..end_doc) |doc_id, _| {
+            buffer = try reader.getBuffer(byte_idx, true);
+            row_byte_idx = 0;
 
             if (timer.read() >= interval_ns) {
                 const current_docs_read = total_docs_read.fetchAdd(
@@ -607,36 +628,40 @@ pub const IndexManager = struct {
                 fu.FileType.CSV => {
                     search_col_idx = 0;
                     prev_col       = 0;
-                    row_byte_idx   = 0;
 
                     while (search_col_idx < num_search_cols) {
                         for (prev_col..self.search_col_idxs.items[search_col_idx]) |col_idx| {
-                            const init_byte_idx = byte_idx;
+                            // const init_byte_idx = byte_idx;
+                            const init_byte_idx = row_byte_idx;
 
-                            csv._iterFieldCSV(mmap_buffer, &byte_idx);
+                            // csv._iterFieldCSV(mmap_buffer, &byte_idx);
+                            csv._iterFieldCSV(buffer, &row_byte_idx);
 
                             self.query_state.result_positions[partition_idx][col_idx] = TermPos{
-                                .start_pos = @truncate(row_byte_idx),
-                                .field_len = @truncate(byte_idx - init_byte_idx - 1),
+                                .start_pos = @truncate(init_byte_idx),
+                                .field_len = @truncate(row_byte_idx - init_byte_idx - 1),
                             };
-                            row_byte_idx += byte_idx - init_byte_idx;
+                            // row_byte_idx += byte_idx - init_byte_idx;
                         }
-                        const init_byte_idx = byte_idx;
+                        // const init_byte_idx = byte_idx;
+                        const init_byte_idx = row_byte_idx;
 
                         try current_IP.processDocRfc4180(
                             &token_stream,
-                            mmap_buffer,
-                            &byte_idx,
+                            // mmap_buffer,
+                            buffer,
+                            // &byte_idx,
+                            &row_byte_idx,
                             @intCast(doc_id), 
                             search_col_idx,
                             &terms_seen_bitset,
                             );
 
                         self.query_state.result_positions[partition_idx][self.search_col_idxs.items[search_col_idx]] = TermPos{
-                            .start_pos = @truncate(row_byte_idx),
-                            .field_len = @truncate(byte_idx - init_byte_idx - 1),
+                            .start_pos = @truncate(init_byte_idx),
+                            .field_len = @truncate(row_byte_idx - init_byte_idx - 1),
                         };
-                        row_byte_idx += byte_idx - init_byte_idx;
+                        // row_byte_idx += byte_idx - init_byte_idx;
 
                         // Add one because we just iterated over the last field.
                         prev_col = self.search_col_idxs.items[search_col_idx] + 1;
@@ -644,21 +669,22 @@ pub const IndexManager = struct {
                     }
 
                     for (prev_col..self.columns.num_keys) |col_idx| {
-                        const init_byte_idx = byte_idx;
+                        const init_byte_idx = row_byte_idx;
 
-                        csv._iterFieldCSV(mmap_buffer, &byte_idx);
+                        // csv._iterFieldCSV(mmap_buffer, &byte_idx);
+                        csv._iterFieldCSV(buffer, &row_byte_idx);
 
                         self.query_state.result_positions[partition_idx][col_idx] = TermPos{
-                            .start_pos = @truncate(row_byte_idx),
-                            .field_len = @truncate(byte_idx - init_byte_idx - 1),
+                            .start_pos = @truncate(init_byte_idx),
+                            .field_len = @truncate(row_byte_idx - init_byte_idx - 1),
                         };
-                        row_byte_idx += byte_idx - init_byte_idx;
+                        // row_byte_idx += byte_idx - init_byte_idx;
                     }
                 },
                 fu.FileType.JSON => {
                     std.debug.print("JSON: {d}\n", .{doc_id});
                     @breakpoint();
-                    const buffer = mmap_buffer;
+                    // const buffer = mmap_buffer;
                     byte_idx += string_utils.simdFindCharIdxEscapedFull(
                         buffer,
                         '"',
@@ -680,23 +706,24 @@ pub const IndexManager = struct {
 
             try current_IP.doc_store.addRow(
                 self.query_state.result_positions[partition_idx],
-                mmap_buffer[(byte_idx - row_byte_idx)..],
+                // mmap_buffer[(byte_idx - row_byte_idx)..],
+                buffer[0..],
             );
-            bytes_read_since_flush += row_byte_idx;
-
-            if (bytes_read_since_flush > (comptime 1 << 20)) {
-                const _start_byte = std.mem.alignBackward(
-                    u64,
-                    byte_idx - bytes_read_since_flush,
-                    4096,
-                );
-                try std.posix.madvise(
-                    @alignCast(self.file_data.mmap_buffer[_start_byte..].ptr),
-                    bytes_read_since_flush - 4096,
-                    std.posix.MADV.DONTNEED,
-                );
-                bytes_read_since_flush = 0;
-            }
+            byte_idx += row_byte_idx;
+            // bytes_read_since_flush += row_byte_idx;
+            // if (bytes_read_since_flush > (comptime 1 << 20)) {
+                // const _start_byte = std.mem.alignBackward(
+                    // u64,
+                    // byte_idx - bytes_read_since_flush,
+                    // 4096,
+                // );
+                // try std.posix.madvise(
+                    // @alignCast(self.file_data.mmap_buffer[_start_byte..].ptr),
+                    // bytes_read_since_flush - 4096,
+                    // std.posix.MADV.DONTNEED,
+                // );
+                // bytes_read_since_flush = 0;
+            // }
         }
         self.indexing_state.partition_is_indexing[partition_idx] = false;
 
