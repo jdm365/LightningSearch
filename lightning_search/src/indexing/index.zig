@@ -896,13 +896,13 @@ pub const BM25Partition = struct {
     pub fn processDocRfc8259(
         self: *BM25Partition,
         token_stream: *file_utils.TokenStream(file_utils.token_32t),
+        buffer: []u8,
         trie: *const RadixTrie(u32),
         search_col_idxs: *const std.ArrayListUnmanaged(u32),
         byte_idx: *usize,
         doc_id: u32,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
-        const buffer = try token_stream.getBuffer(byte_idx.*);
         var buffer_idx: usize = 0;
         // std.debug.print("BUFFER: {s}\n", .{buffer[buffer_idx..][0..64]});
 
@@ -996,7 +996,7 @@ pub const BM25Partition = struct {
             outer_loop: while (true) {
                 if (self.II[II_idx].doc_sizes[doc_id] >= MAX_NUM_TERMS) {
                     buffer_idx = 0;
-                    try token_stream.iterFieldJSON(&buffer_idx);
+                    try json._iterFieldJSON(buffer, &buffer_idx);
                     byte_idx.* += buffer_idx;
                     return;
                 }

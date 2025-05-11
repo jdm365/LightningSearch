@@ -540,14 +540,9 @@ pub const IndexManager = struct {
 
 
         var token_stream = try fu.TokenStream(fu.token_32t).init(
-            self.file_data.inputFilename(),
             output_filename,
             self.gpa(),
             self.search_col_idxs.items.len,
-            start_byte,
-            end_token,
-            // false,
-            true,
         );
         defer token_stream.deinit();
 
@@ -557,10 +552,8 @@ pub const IndexManager = struct {
         var buffer = try reader.getBuffer(start_byte, true);
         switch (self.file_data.file_type) {
             fu.FileType.CSV, fu.FileType.JSON => {
-                // const num_bytes = @min(mmap_buffer.len, 1 << 14);
                 const num_bytes = @min(buffer.len, 1 << 14);
                 for (0..num_bytes) |idx| {
-                    // freq_table[mmap_buffer[idx]] += 1;
                     freq_table[buffer[idx]] += 1;
                 }
             },
@@ -600,7 +593,6 @@ pub const IndexManager = struct {
         var search_col_idx: usize = 0;
         var prev_col:       usize = 0;
         var row_byte_idx:   usize = 0;
-        // var bytes_read_since_flush: usize = 0;
 
         for (0.., start_doc..end_doc) |doc_id, _| {
             buffer = try reader.getBuffer(byte_idx, true);
@@ -631,26 +623,20 @@ pub const IndexManager = struct {
 
                     while (search_col_idx < num_search_cols) {
                         for (prev_col..self.search_col_idxs.items[search_col_idx]) |col_idx| {
-                            // const init_byte_idx = byte_idx;
                             const init_byte_idx = row_byte_idx;
 
-                            // csv._iterFieldCSV(mmap_buffer, &byte_idx);
                             csv._iterFieldCSV(buffer, &row_byte_idx);
 
                             self.query_state.result_positions[partition_idx][col_idx] = TermPos{
                                 .start_pos = @truncate(init_byte_idx),
                                 .field_len = @truncate(row_byte_idx - init_byte_idx - 1),
                             };
-                            // row_byte_idx += byte_idx - init_byte_idx;
                         }
-                        // const init_byte_idx = byte_idx;
                         const init_byte_idx = row_byte_idx;
 
                         try current_IP.processDocRfc4180(
                             &token_stream,
-                            // mmap_buffer,
                             buffer,
-                            // &byte_idx,
                             &row_byte_idx,
                             @intCast(doc_id), 
                             search_col_idx,
@@ -661,7 +647,6 @@ pub const IndexManager = struct {
                             .start_pos = @truncate(init_byte_idx),
                             .field_len = @truncate(row_byte_idx - init_byte_idx - 1),
                         };
-                        // row_byte_idx += byte_idx - init_byte_idx;
 
                         // Add one because we just iterated over the last field.
                         prev_col = self.search_col_idxs.items[search_col_idx] + 1;
@@ -671,21 +656,16 @@ pub const IndexManager = struct {
                     for (prev_col..self.columns.num_keys) |col_idx| {
                         const init_byte_idx = row_byte_idx;
 
-                        // csv._iterFieldCSV(mmap_buffer, &byte_idx);
                         csv._iterFieldCSV(buffer, &row_byte_idx);
 
                         self.query_state.result_positions[partition_idx][col_idx] = TermPos{
                             .start_pos = @truncate(init_byte_idx),
                             .field_len = @truncate(row_byte_idx - init_byte_idx - 1),
                         };
-                        // row_byte_idx += byte_idx - init_byte_idx;
                     }
                 },
                 fu.FileType.JSON => {
-                    std.debug.print("JSON: {d}\n", .{doc_id});
-                    @breakpoint();
-                    // const buffer = mmap_buffer;
-                    byte_idx += string_utils.simdFindCharIdxEscapedFull(
+                    row_byte_idx += string_utils.simdFindCharIdxEscapedFull(
                         buffer,
                         '"',
                     );
@@ -693,37 +673,25 @@ pub const IndexManager = struct {
                     while (true) {
                         current_IP.processDocRfc8259(
                             &token_stream,
+                            buffer,
                             &self.columns,
                             &self.search_col_idxs,
-                            &byte_idx,
+                            &row_byte_idx,
                             @intCast(doc_id), 
                             &terms_seen_bitset,
                             ) catch break;
                     }
+
+                    byte_idx += row_byte_idx;
                 },
                 fu.FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
             }
 
             try current_IP.doc_store.addRow(
                 self.query_state.result_positions[partition_idx],
-                // mmap_buffer[(byte_idx - row_byte_idx)..],
                 buffer[0..],
             );
             byte_idx += row_byte_idx;
-            // bytes_read_since_flush += row_byte_idx;
-            // if (bytes_read_since_flush > (comptime 1 << 20)) {
-                // const _start_byte = std.mem.alignBackward(
-                    // u64,
-                    // byte_idx - bytes_read_since_flush,
-                    // 4096,
-                // );
-                // try std.posix.madvise(
-                    // @alignCast(self.file_data.mmap_buffer[_start_byte..].ptr),
-                    // bytes_read_since_flush - 4096,
-                    // std.posix.MADV.DONTNEED,
-                // );
-                // bytes_read_since_flush = 0;
-            // }
         }
         self.indexing_state.partition_is_indexing[partition_idx] = false;
 
@@ -765,13 +733,9 @@ pub const IndexManager = struct {
         const current_IP = &self.partitions.index_partitions[partition_idx];
 
         var token_stream = try fu.TokenStream(fu.token_32t).init(
-            self.file_data.inputFilename(),
             output_filename,
             self.gpa(),
             self.search_col_idxs.items.len,
-            0,
-            0,
-            true,
         );
         defer token_stream.deinit();
 

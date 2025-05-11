@@ -281,25 +281,16 @@ pub fn TokenStream(comptime token_t: type) type {
         const Self = @This();
 
         tokens: [][]token_t,
-        double_buffer: ?SingleThreadedDoubleBufferedReader = null,
         num_terms: []u32,
         allocator: std.mem.Allocator,
         output_files: []std.fs.File,
-        input_file: std.fs.File,
         buffer_idx: usize,
 
         pub fn init(
-            filename: []const u8,
             output_filename: []const u8,
             allocator: std.mem.Allocator,
             num_search_cols: usize,
-            start_byte: usize,
-            end_token: u8,
-
-            is_parquet: bool,
         ) !Self {
-
-            const input_file = try std.fs.cwd().openFile(filename, .{});
 
             var output_files = try allocator.alloc(std.fs.File, num_search_cols);
             for (0..num_search_cols) |idx| {
@@ -327,37 +318,16 @@ pub fn TokenStream(comptime token_t: type) type {
                     );
             }
 
-            if (is_parquet) {
                 return Self{
-                    .tokens = token_buffers,
-                    .num_terms = num_terms,
-                    .allocator = allocator,
-                    .output_files = output_files,
-                    .input_file = input_file,
-                    .buffer_idx = 0,
-                };
-            } else {
-                return Self{
-                    .tokens = token_buffers,
-                    .double_buffer = try SingleThreadedDoubleBufferedReader.init(
-                        allocator,
-                        input_file,
-                        start_byte,
-                        end_token,
-                    ),
-                    .num_terms = num_terms,
-                    .allocator = allocator,
-                    .output_files = output_files,
-                    .input_file = input_file,
-                    .buffer_idx = 0,
-                };
-            }
+                .tokens = token_buffers,
+                .num_terms = num_terms,
+                .allocator = allocator,
+                .output_files = output_files,
+                .buffer_idx = 0,
+            };
         }
 
         pub fn deinit(self: *Self) void {
-            if (self.double_buffer) |*db| {
-                db.deinit(self.allocator);
-            }
             for (0.., self.output_files) |col_idx, *file| {
                 self.allocator.free(self.tokens[col_idx]);
                 file.close();
@@ -421,26 +391,6 @@ pub fn TokenStream(comptime token_t: type) type {
             std.debug.assert(bytes_written == bytes_to_write);
 
             self.num_terms[search_col_idx] = 0;
-        }
-
-        pub inline fn getBuffer(self: *Self, file_pos: usize) ![]u8 {
-            return try self.double_buffer.?.getBuffer(file_pos, true);
-        }
-
-        pub inline fn iterFieldCSV(self: *Self, byte_idx: *usize) !void {
-            // Iterate to next field in compliance with RFC 4180.
-            const buffer = try self.getBuffer(byte_idx.*);
-            var buffer_idx: usize = 0;
-            csv._iterFieldCSV(buffer, &buffer_idx);
-            byte_idx.* += buffer_idx;
-        }
-
-        pub inline fn iterFieldJSON(self: *Self, byte_idx: *usize) !void {
-            // Iterate to next field in compliance with RFC 4180.
-            const buffer = try self.getBuffer(byte_idx.*);
-            var buffer_idx: usize = 0;
-            try json._iterFieldJSON(buffer, &buffer_idx);
-            byte_idx.* += buffer_idx;
         }
     };
 }
