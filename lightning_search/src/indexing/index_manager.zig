@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const string_utils = @import("../utils/string_utils.zig");
 const fu           = @import("../storage/file_utils.zig");
@@ -162,11 +163,15 @@ pub const IndexManager = struct {
         return manager;
     }
 
-    // pub inline fn gpa(self: *IndexManager) std.mem.Allocator {
-        // return self.allocators.gpa.allocator();
-    // }
-    pub inline fn gpa(_: *IndexManager) std.mem.Allocator {
-        return std.heap.smp_allocator;
+    pub inline fn gpa(self: *IndexManager) std.mem.Allocator {
+        switch (builtin.mode) {
+            .ReleaseFast => {
+                return std.heap.smp_allocator;
+            },
+            else => {
+                return self.allocators.gpa.allocator();
+            },
+        }
     }
 
     pub inline fn scratchArena(self: *IndexManager) std.mem.Allocator {

@@ -165,7 +165,7 @@ pub const DocStore = struct {
             .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
             .gpa = gpa,
 
-            .row_idx = 1,
+            .row_idx = 0,
             .zeroed_range = 0,
 
             .dir = dir,
@@ -191,7 +191,7 @@ pub const DocStore = struct {
         );
         store.zeroed_range = 1 << 20;
 
-        store.file_handles.huffman_row_offsets_mmap_buffer[0] = 0;
+        // store.file_handles.huffman_row_offsets_mmap_buffer[0] = 0;
 
         return store;
     }
@@ -373,68 +373,68 @@ pub const DocStore = struct {
             // );
     // }
 
-    pub inline fn getRow(
-        _: *DocStore,
-        _: usize,
-        _: []u8,
-        _: []TermPos,
-    ) !void {
-        @breakpoint();
-    }
-
-
     // pub inline fn getRow(
-        // self: *DocStore,
-        // row_idx: usize,
-        // row_data: []u8,
-        // offsets: []TermPos,
+        // _: *DocStore,
+        // _: usize,
+        // _: []u8,
+        // _: []TermPos,
     // ) !void {
-        // // Assume all huffman for now.
-        // std.debug.assert(self.literal_col_idxs.items.len == 0);
-// 
-        // try self.file_handles.huffman_row_offsets_file.seekTo(row_idx * 8);
-        // const huffman_buffer_byte_offset = try readValFromFile(
-            // u64,
-            // &self.file_handles.huffman_row_offsets_file,
-        // );
-// 
-        // var col_idx: usize = 0;
-        // while (col_idx < self.huffman_col_idxs.items.len) {
-            // self.huffman_col_bit_sizes[col_idx] = try readValFromFile(
-                // u64,
-                // &self.file_handles.huffman_row_data_file,
-            // );
-            // col_idx += 1;
-        // }
-// 
-        // const start_byte  = self.huffman_row_offsets.items[row_idx];
-        // const end_byte    = self.huffman_row_offsets.items[row_idx + 1];
-// 
-        // const huffman_row = self.huffman_row_data.items[start_byte..end_byte];
-        // const huffman_idx_offset  = self.huffman_col_idxs.items.len * row_idx;
-// 
-        // var input_pos:  usize = 0;
-        // var output_pos: usize = 0;
-        // for (0..huffman_field_sizes.len) |idx| {
-            // offsets[idx].start_pos = @truncate(output_pos);
-// 
-            // const compressed_len = huffman_field_sizes[idx];
-            // if (compressed_len == 0) {
-                // offsets[idx].field_len = 0;
-                // continue;
-            // }
-// 
-            // const rem_bits = huffman_field_rem_bits[idx];
-            // offsets[idx].field_len = @truncate(
-                // try self.huffman_compressor.decompress(
-                    // huffman_row[input_pos..][0..compressed_len],
-                    // row_data[output_pos..],
-                    // rem_bits,
-                // )
-            // );
-// 
-            // input_pos  += compressed_len;
-            // output_pos += offsets[idx].field_len;
-        // }
+        // @breakpoint();
     // }
+// 
+
+    pub inline fn getRow(
+        self: *DocStore,
+        row_idx: usize,
+        row_data: []u8,
+        offsets: []TermPos,
+    ) !void {
+        // Assume all huffman for now.
+        std.debug.assert(self.literal_col_idxs.items.len == 0);
+
+        const RO_u64_mmap_buf: [*]const u64 = @ptrCast(
+            self.file_handles.huffman_row_offsets_mmap_buffer.ptr
+            );
+        const init_byte_idx = RO_u64_mmap_buf[row_idx];
+        var current_byte_idx = init_byte_idx;
+
+        var bits_total: usize = 0;
+        const data_buf = self.file_handles.huffman_row_data_mmap_buffer;
+        for (0..self.huffman_col_idxs.items.len) |col_idx| {
+            self.huffman_col_bit_sizes[col_idx] = pq.decodeVbyte(
+                data_buf.ptr,
+                &current_byte_idx,
+            );
+            bits_total += self.huffman_col_bit_sizes[col_idx];
+        }
+
+        current_byte_idx = init_byte_idx - try std.math.divCeil(usize, bits_total, 8);
+
+        var compressed_row_bit_pos: usize = 0;
+        var decompressed_row_byte_idx: usize = 0;
+        for (0.., self.huffman_col_bit_sizes) |col_idx, nbits| {
+
+            const start_byte = @divFloor(compressed_row_bit_pos, 8);
+            const start_bit  = compressed_row_bit_pos % 8;
+
+            compressed_row_bit_pos += nbits;
+
+            const num_bytes  = @divFloor(nbits, 8);
+            const bits_rem: u3  = @truncate(compressed_row_bit_pos % 8);
+
+            const huffman_row = self.file_handles.huffman_row_data_mmap_buffer[current_byte_idx..][
+                start_byte..(start_byte + num_bytes + 1)
+            ];
+
+            offsets[col_idx].start_pos = @truncate(decompressed_row_byte_idx);
+            const field_len = try self.huffman_compressor.decompressOffset(
+                huffman_row,
+                row_data,
+                bits_rem,
+                start_bit,
+            );
+            offsets[col_idx].field_len = @truncate(field_len);
+            decompressed_row_byte_idx += field_len;
+        }
+    }
 };

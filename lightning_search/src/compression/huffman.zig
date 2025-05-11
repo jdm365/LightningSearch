@@ -450,9 +450,6 @@ pub const HuffmanCompressor = struct {
                 &compressed_buffer_bit_idx,
                 &decompressed_buffer_idx,
             ) catch {
-                // if (@divFloor(compressed_buffer_bit_idx, 8) == compressed_buffer.len) {
-                    // return decompressed_buffer_idx;
-                // }
                 return error.DecompressionError;
             };
         }
@@ -460,6 +457,61 @@ pub const HuffmanCompressor = struct {
         return decompressed_buffer_idx;
     }
 
+
+    pub fn decompressOffset(
+        self: *HuffmanCompressor,
+        compressed_buffer: []u8,
+        decompressed_buffer: []u8,
+        bits_rem: u3,
+        bit_offset: usize,
+    ) !usize {
+        if (self.root_node_idx == 0) {
+            @branchHint(.cold);
+            return error.HuffmanTreeNotBuilt;
+        }
+
+        var decompressed_buffer_idx:   usize = 0;
+        var compressed_buffer_bit_idx: usize = bit_offset;
+
+        const total_compressed_bits = ((compressed_buffer.len - 1) * 8) + 
+                                      @as(usize, @intCast(bits_rem));
+
+        while (compressed_buffer_bit_idx < total_compressed_bits) {
+            const byte_idx = @divFloor(compressed_buffer_bit_idx, 8);
+            const bit_idx  = compressed_buffer_bit_idx % 8;
+
+            const u64_val = std.mem.readInt(
+                u64,
+                @ptrCast(@as([*]u8, @ptrCast(compressed_buffer))[byte_idx..(byte_idx+8)]),
+                std.builtin.Endian.big,
+            ) >> @truncate((comptime 64 - 12) - bit_idx);
+
+            const length = self.lookup_table_lengths[@as(u12, @truncate(u64_val))];
+            const symbol = self.lookup_table[@as(u12, @truncate(u64_val))];
+
+            if (length > 0) {
+                @branchHint(.likely);
+
+                decompressed_buffer[decompressed_buffer_idx] = symbol;
+                decompressed_buffer_idx += 1;
+
+                compressed_buffer_bit_idx += length;
+                continue;
+            }
+            std.debug.assert(length == 0);
+
+            self.iterDecompressBitwise(
+                compressed_buffer,
+                decompressed_buffer,
+                &compressed_buffer_bit_idx,
+                &decompressed_buffer_idx,
+            ) catch {
+                return error.DecompressionError;
+            };
+        }
+
+        return decompressed_buffer_idx;
+    }
 };
 
 
