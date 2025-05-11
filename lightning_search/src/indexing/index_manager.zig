@@ -51,6 +51,7 @@ const ColTokenPair = struct {
     shallow_query: bool,
 };
 
+
 pub const IndexManager = struct {
     partitions: Partitions,
     allocators: Allocators,
@@ -161,8 +162,11 @@ pub const IndexManager = struct {
         return manager;
     }
 
-    pub inline fn gpa(self: *IndexManager) std.mem.Allocator {
-        return self.allocators.gpa.allocator();
+    // pub inline fn gpa(self: *IndexManager) std.mem.Allocator {
+        // return self.allocators.gpa.allocator();
+    // }
+    pub inline fn gpa(_: *IndexManager) std.mem.Allocator {
+        return std.heap.smp_allocator;
     }
 
     pub inline fn scratchArena(self: *IndexManager) std.mem.Allocator {
