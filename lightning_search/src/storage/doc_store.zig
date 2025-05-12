@@ -92,10 +92,10 @@ pub const DocStore = struct {
             try huffman_row_offsets_file.setEndPos(MMAP_MAX_SIZE_HUFFMAN_BUFFER);
             const huffman_row_offsets_mmap_buffer = try std.posix.mmap(
                 null,
-                MMAP_MAX_SIZE_HUFFMAN_BUFFER,
+                MMAP_MAX_SIZE_HUFFMAN_ROW_OFFSETS,
                 std.posix.PROT.WRITE | std.posix.PROT.READ,
                 .{ .TYPE = .SHARED },
-                huffman_row_data_file.handle,
+                huffman_row_offsets_file.handle,
                 0,
             );
 
@@ -186,10 +186,10 @@ pub const DocStore = struct {
         store.file_handles = try FileHandles.init(&store, partition_idx);
 
         @memset(
-            store.file_handles.huffman_row_data_mmap_buffer[0..(1 << 20)],
+            store.file_handles.huffman_row_data_mmap_buffer[0..(comptime 1 << 20)],
             0,
         );
-        store.zeroed_range = 1 << 20;
+        store.zeroed_range = (comptime 1 << 20);
 
         // store.file_handles.huffman_row_offsets_mmap_buffer[0] = 0;
 
@@ -258,8 +258,7 @@ pub const DocStore = struct {
             val.* = literal_row[0..literal_row_offset];
         }
 
-        const prev_offset = self.huffman_buffer_pos;
-        const buf_rem = self.zeroed_range - prev_offset;
+        const buf_rem = self.zeroed_range - self.huffman_buffer_pos;
         if (buf_rem < 65536) {
             @branchHint(.unlikely);
             @memset(
@@ -268,15 +267,19 @@ pub const DocStore = struct {
                 ][0..(comptime 1 << 20)],
                 0,
             );
-            try std.posix.madvise(
-                @alignCast(self.file_handles.huffman_row_data_mmap_buffer[self.zeroed_range..].ptr),
-                (comptime 1 << 20),
-                std.posix.MADV.DONTNEED,
-            );
+            // try std.posix.madvise(
+                // @alignCast(
+                    // self.file_handles.huffman_row_data_mmap_buffer[self.zeroed_range..].ptr
+                    // ),
+                // (comptime 1 << 20),
+                // std.posix.MADV.DONTNEED,
+            // );
 
             self.zeroed_range += (comptime 1 << 20);
         }
 
+        // TODO: Need to rethink this. Not correct currently.
+        // | -- data -- |<offset>| -- bit sizes -- |.| -- data -- | ...
         var row_bit_size: usize = 0;
         for (self.huffman_col_idxs.items) |col_idx| {
             const start_pos = byte_positions[col_idx].start_pos;
@@ -289,26 +292,29 @@ pub const DocStore = struct {
 
             const compressed_bit_size = try self.huffman_compressor.compressOffset(
                     row_data[start_pos..][0..field_len],
-                    self.file_handles.huffman_row_data_mmap_buffer[prev_offset..][@divFloor(row_bit_size, 8)..],
+                    self.file_handles.huffman_row_data_mmap_buffer[
+                        self.huffman_buffer_pos..
+                    ][@divFloor(row_bit_size, 8)..],
                     row_bit_size % 8,
                     );
             self.huffman_col_bit_sizes[col_idx] = compressed_bit_size;
             row_bit_size += compressed_bit_size;
         }
-        var row_byte_size = try std.math.divCeil(usize, row_bit_size, 8);
+        self.huffman_buffer_pos += try std.math.divCeil(usize, row_bit_size, 8);
 
-        var RO_u64_mmap_buf: [*]u64 = @ptrCast(self.file_handles.huffman_row_offsets_mmap_buffer.ptr);
-        RO_u64_mmap_buf[self.row_idx] = prev_offset + row_byte_size;
+        var RO_u64_mmap_buf: [*]u64 = @ptrCast(
+            self.file_handles.huffman_row_offsets_mmap_buffer.ptr
+            );
+        RO_u64_mmap_buf[self.row_idx] = self.huffman_buffer_pos;
         self.row_idx += 1;
 
         for (self.huffman_col_bit_sizes) |nbits| {
             pq.encodeVbyte(
-                self.file_handles.huffman_row_data_mmap_buffer[prev_offset..].ptr,
-                &row_byte_size,
+                self.file_handles.huffman_row_data_mmap_buffer.ptr,
+                &self.huffman_buffer_pos,
                 nbits,
             );
         }
-        self.huffman_buffer_pos += row_byte_size;
     }
     
     pub fn flush(self: *DocStore) !void {
@@ -319,69 +325,6 @@ pub const DocStore = struct {
             self.row_idx * 8
             );
     }
-
-    // pub fn flush(self: *DocStore) !void {
-        // const start_time = std.time.milliTimestamp();
-// 
-        // // TODO: Needed
-        // // 1. DONE - Offsets need to be true file byte offsets.
-        // // 2. Assess what field sizes/field rem bits actually need to be stored.
-        // // 3. Build direct IO seeking getRow.
-        // // 4. Look at mmapping for both writes and reads.
-        // // 5. Consider using bit field lengths, allowing variable byte fields
-        // //    and better huffman compression. Then in flush, store all field
-        // //    bit lengths as vbyte prefix values. Would need to have row
-        // //    offsets account for this. Could do with field size tracking,
-        // //    accumulating eventual vbyte field size values and adding to
-        // //    row_size in addRow. (I think this would remove the need
-        // //    for rem_bits array too).
-// 
-        // const buffer_size = self.huffman_buffer_pos;
-        // self.huffman_buffer_pos = 0;
-// 
-        // _ = try self.file_handles.huffman_row_data_file.write(
-            // self.huffman_row_data.items[0..buffer_size],
-            // );
-        // std.debug.print("Buffer: {any}\n", .{self.huffman_row_data.items[0..128]});
-        // std.debug.print("Buffer: {any}\n", .{self.huffman_row_data.items[buffer_size - 128..][0..128]});
-// 
-        // for (0..self.huffman_row_offsets.items.len) |idx| {
-            // self.huffman_row_offsets.items[idx] += self.huffman_prev_buffer_offset;
-        // }
-        // _ = try self.file_handles.huffman_row_offsets_file.write(
-            // std.mem.sliceAsBytes(self.huffman_row_offsets.items),
-            // );
-// 
-        // for (self.literal_rows.items) |row| {
-            // _ = try self.file_handles.literal_rows_file.write(row);
-        // }
-// 
-        // self.huffman_prev_buffer_offset += buffer_size;
-// 
-// 
-        // self.huffman_row_data.items.len = 1 << 20;
-        // @memset(self.huffman_row_data.items[0..(1 << 20)], 0);
-        // self.huffman_row_offsets.items.len = 1;
-        // self.huffman_row_offsets.items[0] = 0;
-        // self.literal_rows.clearRetainingCapacity();
-// 
-        // const end_time = std.time.milliTimestamp();
-        // const execution_time_ms: usize = @intCast(end_time - start_time);
-        // std.debug.print(
-            // "FLUSH TIME: {d}ms\nBuffer size: {d}MB\n\n", 
-            // .{execution_time_ms, buffer_size / (1 << 20)}
-            // );
-    // }
-
-    // pub inline fn getRow(
-        // _: *DocStore,
-        // _: usize,
-        // _: []u8,
-        // _: []TermPos,
-    // ) !void {
-        // @breakpoint();
-    // }
-// 
 
     pub inline fn getRow(
         self: *DocStore,
@@ -398,19 +341,23 @@ pub const DocStore = struct {
         const init_byte_idx = RO_u64_mmap_buf[row_idx];
         var current_byte_idx = init_byte_idx;
 
+        std.debug.print("current_byte_idx: {d}\n", .{current_byte_idx});
+
         var bits_total: usize = 0;
         const data_buf = self.file_handles.huffman_row_data_mmap_buffer;
+        std.debug.print("data_buf: {s}\n", .{data_buf[current_byte_idx..][0..128]});
         for (0..self.huffman_col_idxs.items.len) |col_idx| {
             self.huffman_col_bit_sizes[col_idx] = pq.decodeVbyte(
                 data_buf.ptr,
                 &current_byte_idx,
             );
             bits_total += self.huffman_col_bit_sizes[col_idx];
+            std.debug.print("bits_total: {d}\n", .{bits_total});
         }
 
         current_byte_idx = init_byte_idx - try std.math.divCeil(usize, bits_total, 8);
 
-        var compressed_row_bit_pos: usize = 0;
+        var compressed_row_bit_pos:    usize = 0;
         var decompressed_row_byte_idx: usize = 0;
         for (0.., self.huffman_col_bit_sizes) |col_idx, nbits| {
 
@@ -419,17 +366,19 @@ pub const DocStore = struct {
 
             compressed_row_bit_pos += nbits;
 
-            const num_bytes  = @divFloor(nbits, 8);
+            // const num_bytes  = try std.math.divCeil(u64, nbits, 8);
+            const num_bytes  = @divFloor(nbits, 8) + 1 - 
+                               @intFromBool(start_bit + compressed_row_bit_pos == 0);
             const bits_rem: u3  = @truncate(compressed_row_bit_pos % 8);
 
-            const huffman_row = self.file_handles.huffman_row_data_mmap_buffer[current_byte_idx..][
-                start_byte..(start_byte + num_bytes + 1)
+            const huffman_row = data_buf[current_byte_idx..][
+                start_byte..(start_byte + num_bytes)
             ];
 
             offsets[col_idx].start_pos = @truncate(decompressed_row_byte_idx);
             const field_len = try self.huffman_compressor.decompressOffset(
                 huffman_row,
-                row_data,
+                row_data[decompressed_row_byte_idx..][0..num_bytes],
                 bits_rem,
                 start_bit,
             );

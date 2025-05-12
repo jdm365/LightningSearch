@@ -55,7 +55,6 @@ fn bench(filename: []const u8) !void {
 
     var query_map = std.StringHashMap([]const u8).init(allocator);
     defer query_map.deinit();
-    @breakpoint();
 
     try query_map.put("TITLE", "UNDER MY SKIN");
     try query_map.put("ARTIST", "FRANK SINATRA");
@@ -150,7 +149,8 @@ pub fn main() !void {
     // const filename = args[1];
     // try serveHTML(filename);
 
-    const filename = "../data/mb.csv";
+    const filename = "../data/mb_small.csv";
+    // const filename = "../data/mb.csv";
     // const filename = "../data/mb.parquet";
     // const filename = "../data/hn.csv";
     // const filename = "../data/hn_half.csv";
