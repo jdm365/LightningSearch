@@ -462,8 +462,8 @@ pub const HuffmanCompressor = struct {
         self: *HuffmanCompressor,
         compressed_buffer: []u8,
         decompressed_buffer: []u8,
-        bits_rem: u3,
         bit_offset: usize,
+        nbits: usize,
     ) !usize {
         if (self.root_node_idx == 0) {
             @branchHint(.cold);
@@ -473,13 +473,7 @@ pub const HuffmanCompressor = struct {
         var decompressed_buffer_idx:   usize = 0;
         var compressed_buffer_bit_idx: usize = bit_offset;
 
-        const total_compressed_bits = (compressed_buffer.len * 8) - 
-                                      (8 - @as(usize, @intCast(bits_rem))) -
-                                      bit_offset;
-        const end_bit = total_compressed_bits + bit_offset;
-        std.debug.print("End bit: {d}\n", .{end_bit});
-
-
+        const end_bit = bit_offset + nbits;
         while (compressed_buffer_bit_idx < end_bit) {
             const byte_idx = @divFloor(compressed_buffer_bit_idx, 8);
             const bit_idx  = compressed_buffer_bit_idx % 8;

@@ -920,7 +920,7 @@ pub const IndexManager = struct {
         );
         defer buffered_reader.deinit(self.gpa());
 
-        const num_partitions =  if (file_size > (1 << 24)) 
+        const num_partitions: usize =  if (file_size > (1 << 24)) 
             @min(
             try std.Thread.getCpuCount(), 
             MAX_NUM_THREADS,

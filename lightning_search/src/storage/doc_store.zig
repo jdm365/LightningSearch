@@ -341,18 +341,14 @@ pub const DocStore = struct {
         const init_byte_idx = RO_u64_mmap_buf[row_idx];
         var current_byte_idx = init_byte_idx;
 
-        std.debug.print("current_byte_idx: {d}\n", .{current_byte_idx});
-
         var bits_total: usize = 0;
         const data_buf = self.file_handles.huffman_row_data_mmap_buffer;
-        std.debug.print("data_buf: {s}\n", .{data_buf[current_byte_idx..][0..128]});
         for (0..self.huffman_col_idxs.items.len) |col_idx| {
             self.huffman_col_bit_sizes[col_idx] = pq.decodeVbyte(
                 data_buf.ptr,
                 &current_byte_idx,
             );
             bits_total += self.huffman_col_bit_sizes[col_idx];
-            std.debug.print("bits_total: {d}\n", .{bits_total});
         }
 
         current_byte_idx = init_byte_idx - try std.math.divCeil(usize, bits_total, 8);
@@ -361,26 +357,15 @@ pub const DocStore = struct {
         var decompressed_row_byte_idx: usize = 0;
         for (0.., self.huffman_col_bit_sizes) |col_idx, nbits| {
 
-            const start_byte = @divFloor(compressed_row_bit_pos, 8);
             const start_bit  = compressed_row_bit_pos % 8;
-
             compressed_row_bit_pos += nbits;
-
-            // const num_bytes  = try std.math.divCeil(u64, nbits, 8);
-            const num_bytes  = @divFloor(nbits, 8) + 1 - 
-                               @intFromBool(start_bit + compressed_row_bit_pos == 0);
-            const bits_rem: u3  = @truncate(compressed_row_bit_pos % 8);
-
-            const huffman_row = data_buf[current_byte_idx..][
-                start_byte..(start_byte + num_bytes)
-            ];
 
             offsets[col_idx].start_pos = @truncate(decompressed_row_byte_idx);
             const field_len = try self.huffman_compressor.decompressOffset(
-                huffman_row,
-                row_data[decompressed_row_byte_idx..][0..num_bytes],
-                bits_rem,
+                data_buf[current_byte_idx..],
+                row_data[decompressed_row_byte_idx..],
                 start_bit,
+                nbits,
             );
             offsets[col_idx].field_len = @truncate(field_len);
             decompressed_row_byte_idx += field_len;
