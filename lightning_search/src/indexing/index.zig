@@ -1343,11 +1343,11 @@ pub const BM25Partition = struct {
             }
             // std.debug.print("\n\ncurrent_doc_id: {d}\n", .{current_doc_id});
             // std.debug.print("II.num_docs:    {d}\n", .{II.num_docs});
-            // std.debug.assert(
-                // (current_doc_id == II.num_docs - 1)
-                    // or
-                // (current_doc_id == II.num_docs)
-            // );
+            std.debug.assert(
+                (current_doc_id == II.num_docs - 1)
+                    or
+                (current_doc_id == II.num_docs)
+            );
         }
     }
 

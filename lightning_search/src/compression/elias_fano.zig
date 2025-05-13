@@ -230,7 +230,7 @@ const EFBuffer = struct {
 test "elias_fano" {
     std.debug.print("\n",  .{});
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer {
         _ = gpa.deinit();
     }

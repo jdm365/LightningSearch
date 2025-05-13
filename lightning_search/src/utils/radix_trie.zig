@@ -1306,7 +1306,7 @@ test "insertion" {
     // var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     // // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     // defer arena.deinit();
-    var gpa = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){};
+    var gpa = std.heap.DebugAllocator(.{.thread_safe = true}){};
     defer {
         _ = gpa.deinit();
     }
@@ -1373,7 +1373,7 @@ test "bench" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // var gpa = std.heap.DebugAllocator(.{}){};
     // defer {
         // _ = gpa.deinit();
     // }

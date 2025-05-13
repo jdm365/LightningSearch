@@ -761,7 +761,7 @@ test "bench" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // var gpa = std.heap.DebugAllocator(.{}){};
     // defer {
         // _ = gpa.deinit();
     // }

@@ -39,7 +39,7 @@ pub const DocStore = struct {
     file_handles: FileHandles,
 
     arena: std.heap.ArenaAllocator,
-    gpa: *std.heap.GeneralPurposeAllocator(.{ .thread_safe = true }),
+    gpa: *std.heap.DebugAllocator(.{ .thread_safe = true }),
 
     row_idx: usize,
     zeroed_range: u64,
@@ -133,7 +133,7 @@ pub const DocStore = struct {
     };
 
     pub fn init(
-        gpa: *std.heap.GeneralPurposeAllocator(.{ .thread_safe = true }),
+        gpa: *std.heap.DebugAllocator(.{ .thread_safe = true }),
         literal_byte_sizes: *const std.ArrayListUnmanaged(usize),
         literal_col_idxs: *const std.ArrayListUnmanaged(usize),
         huffman_col_idxs: *const std.ArrayListUnmanaged(usize),
@@ -357,17 +357,19 @@ pub const DocStore = struct {
         var decompressed_row_byte_idx: usize = 0;
         for (0.., self.huffman_col_bit_sizes) |col_idx, nbits| {
 
+            const start_byte = current_byte_idx + @divFloor(compressed_row_bit_pos, 8);
             const start_bit  = compressed_row_bit_pos % 8;
             compressed_row_bit_pos += nbits;
 
             offsets[col_idx].start_pos = @truncate(decompressed_row_byte_idx);
             const field_len = try self.huffman_compressor.decompressOffset(
-                data_buf[current_byte_idx..],
+                data_buf[start_byte..],
                 row_data[decompressed_row_byte_idx..],
                 start_bit,
                 nbits,
             );
             offsets[col_idx].field_len = @truncate(field_len);
+
             decompressed_row_byte_idx += field_len;
         }
     }

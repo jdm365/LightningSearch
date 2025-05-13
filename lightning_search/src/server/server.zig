@@ -404,6 +404,7 @@ pub const QueryHandlerZap = struct {
             // json_cols.items[col_idx] = json_cols.items[idx];
             // json_cols.items[idx]     = tmp;
         // }
+        // TODO: Need to keep original order of columns.
         json_cols.append(
             self.index_manager.stringArena(),
             std.json.Value{

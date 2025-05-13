@@ -70,7 +70,7 @@ pub const IndexManager = struct {
     };
 
     const Allocators = struct {
-        gpa: *std.heap.GeneralPurposeAllocator(.{.thread_safe = true}),
+        gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
         string_arena: *std.heap.ArenaAllocator,
         scratch_arena: *std.heap.ArenaAllocator,
     };
@@ -117,7 +117,7 @@ pub const IndexManager = struct {
 
             .allocators = Allocators{
                 .gpa           = try allocator.create(
-                    std.heap.GeneralPurposeAllocator(.{.thread_safe = true})
+                    std.heap.DebugAllocator(.{.thread_safe = true})
                     ),
                 .string_arena  = try allocator.create(std.heap.ArenaAllocator),
                 .scratch_arena = try allocator.create(std.heap.ArenaAllocator),
@@ -146,7 +146,7 @@ pub const IndexManager = struct {
             .columns         = undefined,
             .search_col_idxs = std.ArrayListUnmanaged(u32){},
         };
-        manager.allocators.gpa.*           = std.heap.GeneralPurposeAllocator(.{.thread_safe = true}){};
+        manager.allocators.gpa.*           = std.heap.DebugAllocator(.{.thread_safe = true}){};
         manager.allocators.string_arena.*  = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         manager.allocators.scratch_arena.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 

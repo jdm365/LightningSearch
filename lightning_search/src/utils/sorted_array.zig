@@ -353,7 +353,7 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
 }
 
 test "sorted_arr" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
@@ -387,7 +387,7 @@ test "sorted_arr" {
 }
 
 test "sorted_multi_arr" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
@@ -416,7 +416,7 @@ test "sorted_multi_arr" {
 }
 
 test "bench" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
