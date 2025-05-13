@@ -149,9 +149,9 @@ pub fn main() !void {
     // const filename = args[1];
     // try serveHTML(filename);
 
-    const filename = "../data/mb_small.csv";
+    // const filename = "../data/mb_small.csv";
     // const filename = "../data/mb.csv";
-    // const filename = "../data/mb.parquet";
+    const filename = "../data/mb.parquet";
     // const filename = "../data/hn.csv";
     // const filename = "../data/hn_half.csv";
     try bench(filename);

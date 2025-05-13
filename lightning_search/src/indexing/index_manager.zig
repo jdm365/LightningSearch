@@ -873,9 +873,11 @@ pub const IndexManager = struct {
 
                     self.indexing_state.last_progress = current_docs_read;
 
-                    if (partition_idx == 0) {
-                        progress_bar.update(current_docs_read, null);
-                        self.indexing_state.last_progress = current_docs_read;
+                    for (0..self.partitions.index_partitions.len) |_idx| {
+                        if (self.indexing_state.partition_is_indexing[_idx]) {
+                            progress_bar.update(current_docs_read, null);
+                            break;
+                        }
                     }
                 }
 
@@ -983,16 +985,16 @@ pub const IndexManager = struct {
         );
         const num_rg = self.file_data.pq_data.?.num_row_groups;
 
-        const num_partitions = @min(
+        const num_partitions: usize = @min(
             try std.Thread.getCpuCount(), 
             MAX_NUM_THREADS,
             num_rg,
             );
         // const num_partitions = 1;
 
-        self.file_data.file_handles     = try self.gpa().alloc(std.fs.File, num_partitions);
-        self.partitions.index_partitions           = try self.gpa().alloc(BM25Partition, num_partitions);
-        self.query_state.results_arrays = try self.gpa().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
+        self.file_data.file_handles      = try self.gpa().alloc(std.fs.File, num_partitions);
+        self.partitions.index_partitions = try self.gpa().alloc(BM25Partition, num_partitions);
+        self.query_state.results_arrays  = try self.gpa().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
 
         for (0..num_partitions) |idx| {
             self.file_data.file_handles[idx]     = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
@@ -1070,7 +1072,10 @@ pub const IndexManager = struct {
         const num_partitions = self.partitions.index_partitions.len;
         std.debug.print("Indexing {d} partitions\n", .{num_partitions});
 
-        const num_lines = self.partitions.row_offsets[self.partitions.row_offsets.len - 1];
+        const num_lines = if (self.file_data.file_type == .PARQUET)
+            pq.getNumRowsParquet(self.file_data.input_filename_c)
+            else self.partitions.row_offsets[self.partitions.row_offsets.len - 1];
+
         var num_rg: usize = 0;
         if (self.file_data.file_type == .PARQUET) {
             num_rg = self.file_data.pq_data.?.num_row_groups;
