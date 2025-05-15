@@ -3,6 +3,7 @@ const { spawn } = require('child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 
+
 let backendProcess = null;
 
 function createWindow () {
@@ -18,13 +19,13 @@ function createWindow () {
 
   mainWindow.loadFile('index.html')
 
-  // mainWindow.webContents.openDevTools()
+  mainWindow.webContents.openDevTools()
 }
 
 app.whenReady().then(() => {
   const binaryPath = path.join(__dirname, 'lightning_search');
-  // const dataFilePath = path.join(__dirname, '../../data/mb_small.csv');
-  const dataFilePath = path.join(__dirname, '../../data/mb.csv');
+  const dataFilePath = path.join(__dirname, '../../data/mb_small.csv');
+  // const dataFilePath = path.join(__dirname, '../../data/mb.csv');
   // const dataFilePath = path.join(__dirname, '../../data/mb.parquet');
   const args = [dataFilePath];
 

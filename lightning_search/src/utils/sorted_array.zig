@@ -416,8 +416,7 @@ test "sorted_multi_arr" {
 }
 
 test "bench" {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa = std.heap.DebugAllocator(.{}){}; defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
 

@@ -275,6 +275,7 @@ function search() {
 	fetch(`http://localhost:${PORT}/search?${query}`)
 		.then(response => response.json())
 		.then(data => {
+			console.log("Search results:", data);
 			updateGrid(data);
 		});
 }

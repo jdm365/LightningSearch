@@ -271,8 +271,12 @@ function search() {
 	let query = `${text_string}`;
 
 	fetch(`http://localhost:${PORT}/search?${query}`)
-		.then(response => response.json())
+		.then(response => {
+			console.log("Reponse: ", response);
+			response.json()
+		})
 		.then(data => {
+			console.log("Search results: ", data);
 			updateGrid(data);
 		});
 }
