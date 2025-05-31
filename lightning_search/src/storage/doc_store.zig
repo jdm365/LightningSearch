@@ -331,6 +331,8 @@ pub const DocStore = struct {
         row_idx: usize,
         row_data: []u8,
         offsets: []TermPos,
+
+        bit_sizes: []u32,
     ) !void {
         // Assume all huffman for now.
         std.debug.assert(self.literal_col_idxs.items.len == 0);
@@ -344,18 +346,21 @@ pub const DocStore = struct {
         var bits_total: usize = 0;
         const data_buf = self.file_handles.huffman_row_data_mmap_buffer;
         for (0..self.huffman_col_idxs.items.len) |col_idx| {
-            self.huffman_col_bit_sizes[col_idx] = pq.decodeVbyte(
+            // self.huffman_col_bit_sizes[col_idx] = pq.decodeVbyte(
+            bit_sizes[col_idx] = @truncate(pq.decodeVbyte(
                 data_buf.ptr,
                 &current_byte_idx,
-            );
-            bits_total += self.huffman_col_bit_sizes[col_idx];
+            ));
+            // bits_total += self.huffman_col_bit_sizes[col_idx];
+            bits_total += bit_sizes[col_idx];
         }
 
         current_byte_idx = init_byte_idx - try std.math.divCeil(usize, bits_total, 8);
 
         var compressed_row_bit_pos:    usize = 0;
         var decompressed_row_byte_idx: usize = 0;
-        for (0.., self.huffman_col_bit_sizes) |col_idx, nbits| {
+        // for (0.., self.huffman_col_bit_sizes) |col_idx, nbits| {
+        for (0.., bit_sizes) |col_idx, nbits| {
 
             const start_byte = current_byte_idx + @divFloor(compressed_row_bit_pos, 8);
             const start_bit  = compressed_row_bit_pos % 8;

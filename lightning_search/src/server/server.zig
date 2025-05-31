@@ -4,12 +4,14 @@ const zap = @import("zap");
 const csv          = @import("../parsing/csv.zig");
 const string_utils = @import("../utils/string_utils.zig");
 
+const MAX_NUM_RESULTS = @import("../indexing/index.zig").MAX_NUM_RESULTS;
 const IndexManager    = @import("../indexing/index_manager.zig").IndexManager;
-const MAX_NUM_RESULTS = @import("../indexing/index_manager.zig").MAX_NUM_RESULTS;
 const FileType        = @import("../storage/file_utils.zig").FileType;
 
 var FLOAT_BUF: [1000][64]u8 = undefined;
 var URL_BUFFER: [4096]u8 = undefined;
+
+const K: usize = 100;
 
 pub const TermPos = struct {
     start_pos: u32,
@@ -308,7 +310,7 @@ pub const QueryHandlerZap = struct {
             // Do search.
             try self.index_manager.query(
                 self.query_map,
-                25,
+                K,
                 self.boost_factors,
                 );
 
@@ -641,7 +643,7 @@ pub const QueryHandlerLocal = struct {
         try self.parseQueryString(std.mem.span(query_string));
         try self.index_manager.query(
             self.query_map,
-            25,
+            K,
             self.boost_factors,
             );
         std.debug.print("Finished query\n", .{});

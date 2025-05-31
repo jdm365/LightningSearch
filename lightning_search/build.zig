@@ -46,17 +46,6 @@ pub fn build(b: *std.Build) void {
 
     const run_cmd = b.addRunArtifact(exe);
 
-     const test_exe = b.addTest(.{
-        .root_source_file = b.path("src/storage/doc_store.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    test_exe.root_module.addImport("zap", zap.module("zap"));
-    b.installArtifact(test_exe);
-
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&test_exe.step);
-
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }

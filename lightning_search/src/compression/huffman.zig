@@ -2,34 +2,8 @@ const std     = @import("std");
 const builtin = @import("builtin");
 
 
-const BUFFER_SIZE: usize = (1 << 20);
-var SCRATCH_BUFFER: [1 << 14]u8 = undefined;
 const endianness = builtin.cpu.arch.endian();
 const big_endian = std.builtin.Endian.big;
-
-pub fn printBits(comptime T: type, value: T) void {
-    var num_bits: T = @sizeOf(T) * 8;
-    num_bits += @divFloor(num_bits, 8) - 1;
-    var cntr: usize = 0;
-
-    for (0..num_bits) |_idx| {
-        const idx = num_bits - _idx - 1;
-
-        if (cntr == 8) {
-            SCRATCH_BUFFER[idx] = ' ';
-            cntr = 0;
-            continue;
-        }
-
-        if ((value & (@as(T, @intCast(1)) << @truncate(idx))) != 0) {
-            SCRATCH_BUFFER[idx] = '1';
-        } else {
-            SCRATCH_BUFFER[idx] = '0';
-        }
-        cntr += 1;
-    }
-    std.debug.print("{s}\n", .{SCRATCH_BUFFER[0..num_bits]});
-}
 
 const HuffmanNode = packed struct(u64) {
     freq: u32,
@@ -43,6 +17,8 @@ const HuffmanNode = packed struct(u64) {
         current_idx: usize,
         huffman_nodes: [512]HuffmanNode,
         ) void {
+        var SCRATCH_BUFFER: [1 << 14]u8 = undefined;
+
         var null_count: usize = 0;
 
         if (self.left_idx != 0) {

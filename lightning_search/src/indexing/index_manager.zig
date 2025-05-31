@@ -33,11 +33,11 @@ const printPercentiles      = @import("../utils/misc_utils.zig").printPercentile
 
 const AtomicCounter = std.atomic.Value(u64);
 
-pub const MAX_NUM_RESULTS = 1000;
+pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
-// const MAX_NUM_THREADS: usize = 1;
-const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+const MAX_NUM_THREADS: usize = 2;
+// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -96,6 +96,8 @@ pub const IndexManager = struct {
     };
 
     const QueryState = struct {
+        bit_sizes: [MAX_NUM_RESULTS][]u32,
+
         result_positions: [MAX_NUM_RESULTS][]TermPos,
         result_strings: [MAX_NUM_RESULTS]std.ArrayListUnmanaged(u8),
         results_arrays: []SortedScoreMultiArray(QueryResult),
@@ -132,6 +134,8 @@ pub const IndexManager = struct {
             },
 
             .query_state = QueryState{
+                .bit_sizes = undefined,
+
                 .result_positions = undefined,
                 .result_strings   = undefined,
                 .results_arrays   = undefined,
@@ -270,6 +274,10 @@ pub const IndexManager = struct {
         std.debug.assert(self.columns.num_keys > 0);
 
         for (0..MAX_NUM_RESULTS) |idx| {
+            self.query_state.bit_sizes[idx] = try self.gpa().alloc(
+                u32, 
+                self.columns.num_keys,
+                );
             self.query_state.result_positions[idx] = try self.gpa().alloc(
                 TermPos, 
                 self.columns.num_keys,
@@ -519,6 +527,7 @@ pub const IndexManager = struct {
 
         const start_doc  = self.partitions.row_offsets[partition_idx];
         const end_doc    = self.partitions.row_offsets[partition_idx + 1];
+
         const start_byte = self.partitions.byte_offsets[partition_idx];
         // const end_byte   = self.partitions.byte_offsets[partition_idx + 1];
 
@@ -597,14 +606,15 @@ pub const IndexManager = struct {
 
         var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
 
-        var byte_idx: usize = 0;
-        var prev_doc_id: usize = 0;
+        var file_pos:       usize = start_byte;
+        var prev_doc_id:    usize = 0;
         var search_col_idx: usize = 0;
         var prev_col:       usize = 0;
         var row_byte_idx:   usize = 0;
+        var is_quoted:      bool  = false;
 
         for (0.., start_doc..end_doc) |doc_id, _| {
-            buffer = try reader.getBuffer(byte_idx, true);
+            buffer = try reader.getBuffer(file_pos, true);
             row_byte_idx = 0;
 
             if (timer.read() >= interval_ns) {
@@ -633,15 +643,17 @@ pub const IndexManager = struct {
                     while (search_col_idx < num_search_cols) {
                         for (prev_col..self.search_col_idxs.items[search_col_idx]) |col_idx| {
                             const init_byte_idx = row_byte_idx;
+                            is_quoted = buffer[init_byte_idx] == '"';
 
                             csv._iterFieldCSV(buffer, &row_byte_idx);
 
                             self.query_state.result_positions[partition_idx][col_idx] = TermPos{
-                                .start_pos = @truncate(init_byte_idx),
-                                .field_len = @truncate(row_byte_idx - init_byte_idx - 1),
+                                .start_pos = @truncate(init_byte_idx + @as(u32, @intFromBool(is_quoted))),
+                                .field_len = @truncate(row_byte_idx - init_byte_idx - 1 - 2 * @as(u32, @intFromBool(is_quoted))),
                             };
                         }
                         const init_byte_idx = row_byte_idx;
+                        is_quoted = buffer[init_byte_idx] == '"';
 
                         try current_IP.processDocRfc4180(
                             &token_stream,
@@ -653,8 +665,8 @@ pub const IndexManager = struct {
                             );
 
                         self.query_state.result_positions[partition_idx][self.search_col_idxs.items[search_col_idx]] = TermPos{
-                            .start_pos = @truncate(init_byte_idx),
-                            .field_len = @truncate(row_byte_idx - init_byte_idx - 1),
+                            .start_pos = @truncate(init_byte_idx + @as(u32, @intFromBool(is_quoted))),
+                            .field_len = @truncate(row_byte_idx - init_byte_idx - 1 - 2 * @as(u32, @intFromBool(is_quoted))),
                         };
 
                         // Add one because we just iterated over the last field.
@@ -664,12 +676,13 @@ pub const IndexManager = struct {
 
                     for (prev_col..self.columns.num_keys) |col_idx| {
                         const init_byte_idx = row_byte_idx;
+                        is_quoted = buffer[init_byte_idx] == '"';
 
                         csv._iterFieldCSV(buffer, &row_byte_idx);
 
                         self.query_state.result_positions[partition_idx][col_idx] = TermPos{
-                            .start_pos = @truncate(init_byte_idx),
-                            .field_len = @truncate(row_byte_idx - init_byte_idx - 1),
+                            .start_pos = @truncate(init_byte_idx + @as(u32, @intFromBool(is_quoted))),
+                            .field_len = @truncate(row_byte_idx - init_byte_idx - 1 - 2 * @as(u32, @intFromBool(is_quoted))),
                         };
                     }
                 },
@@ -691,7 +704,7 @@ pub const IndexManager = struct {
                             ) catch break;
                     }
 
-                    byte_idx += row_byte_idx;
+                    file_pos += row_byte_idx;
                 },
                 fu.FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
             }
@@ -700,7 +713,7 @@ pub const IndexManager = struct {
                 self.query_state.result_positions[partition_idx],
                 buffer[0..],
             );
-            byte_idx += row_byte_idx;
+            file_pos += row_byte_idx;
         }
         self.indexing_state.partition_is_indexing[partition_idx] = false;
 
@@ -1367,14 +1380,13 @@ pub const IndexManager = struct {
 
                     // Phrase boost.
                     const last_term_pos = result.*.term_pos;
-                    const do_phrase_boost = (term_pos == last_term_pos + 1) and 
+                    const do_phrase_boost = (term_pos == (last_term_pos + 1)) and 
                                             (II_idx == last_II_idx) and 
                                             (doc_id == prev_doc_id);
                     result.*.score += @as(f32, @floatFromInt(@intFromBool(do_phrase_boost))) * score * 0.75;
 
                     // Does tf scoring effectively.
                     result.*.score += score;
-
                     result.*.term_pos = term_pos;
 
                     const score_copy = result.*.score;
@@ -1478,25 +1490,7 @@ pub const IndexManager = struct {
             const result = self.query_state.results_arrays[0].items[idx];
 
             std.debug.assert(self.query_state.result_strings[idx].capacity > 0);
-            // if (self.file_data.file_type == .PARQUET) {
-                // try self.partitions.index_partitions[result.partition_idx].fetchRecordsParquet(
-                    // self.query_state.result_positions[idx],
-                    // self.file_data.pq_data.?.pq_file_handle,
-                    // result,
-                    // &self.query_state.result_strings[idx],
-                // );
-            // } else {
-                // self.query_state.thread_pool.spawnWg(
-                    // &wg2,
-                    // fetchRecordsDocStore,
-                    // .{
-                        // &self.partitions.index_partitions[result.partition_idx],
-                        // self.query_state.result_positions[idx],
-                        // result,
-                        // &self.query_state.result_strings[idx],
-                    // },
-                // );
-            // }
+            std.debug.print("Partition idx: {d}\n", .{result.partition_idx});
             self.query_state.thread_pool.spawnWg(
                 &wg2,
                 fetchRecordsDocStore,
@@ -1505,6 +1499,8 @@ pub const IndexManager = struct {
                     self.query_state.result_positions[idx],
                     result,
                     &self.query_state.result_strings[idx],
+
+                    self.query_state.bit_sizes[idx],
                 },
             );
         }

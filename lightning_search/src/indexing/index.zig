@@ -15,6 +15,7 @@ const PruningRadixTrie = @import("../utils/pruning_radix_trie.zig").PruningRadix
 const RadixTrie        = @import("../utils/radix_trie.zig").RadixTrie;
 const DocStore         = @import("../storage/doc_store.zig").DocStore;
 
+pub const MAX_NUM_RESULTS = 1000;
 pub const MAX_TERM_LENGTH = 256;
 pub const MAX_NUM_TERMS   = 16_384;
 pub const MAX_LINE_LENGTH = 1_048_576;
@@ -1356,11 +1357,15 @@ pub const BM25Partition = struct {
         result_positions: []TermPos,
         query_result: QueryResult,
         record_string: *std.ArrayListUnmanaged(u8),
+
+        bit_sizes: []u32,
     ) void {
         self.doc_store.getRow(
             @intCast(query_result.doc_id),
             record_string.items[0..],
             result_positions,
+
+            bit_sizes,
         ) catch {
             @panic("Error fetching document.");
         };
