@@ -33,14 +33,14 @@ fn bench(filename: []const u8) !void {
     try index_manager.readHeader(filename, filetype);
     try index_manager.scanFile();
 
-    try index_manager.addSearchCol("title");
-    try index_manager.addSearchCol("artist");
-    try index_manager.addSearchCol("album");
-    // try index_manager.addSearchCol("story_url");
-    // try index_manager.addSearchCol("story_text");
-    // try index_manager.addSearchCol("story_author");
-    // try index_manager.addSearchCol("comment_text");
-    // try index_manager.addSearchCol("comment_author");
+    // try index_manager.addSearchCol("title");
+    // try index_manager.addSearchCol("artist");
+    // try index_manager.addSearchCol("album");
+    try index_manager.addSearchCol("story_url");
+    try index_manager.addSearchCol("story_text");
+    try index_manager.addSearchCol("story_author");
+    try index_manager.addSearchCol("comment_text");
+    try index_manager.addSearchCol("comment_author");
 
     try index_manager.indexFile();
 
@@ -56,11 +56,11 @@ fn bench(filename: []const u8) !void {
     var query_map = std.StringHashMap([]const u8).init(allocator);
     defer query_map.deinit();
 
-    try query_map.put("TITLE", "UNDER MY SKIN");
-    try query_map.put("ARTIST", "FRANK SINATRA");
-    try query_map.put("ALBUM", "LIGHTNING");
-    // try query_map.put("story_text", "zig");
-    // try query_map.put("comment_text", "gotta go fast");
+    // try query_map.put("TITLE", "UNDER MY SKIN");
+    // try query_map.put("ARTIST", "FRANK SINATRA");
+    // try query_map.put("ALBUM", "LIGHTNING");
+    try query_map.put("STORY_TEXT", "zig");
+    try query_map.put("COMMENT_TEXT", "gotta go fast");
 
     const num_queries: usize = 1_000;
 
@@ -107,9 +107,12 @@ fn serveHTML(filename: []const u8) !void {
     try index_manager.readHeader(filename, filetype);
     try index_manager.scanFile();
 
-    try index_manager.addSearchCol("title");
-    try index_manager.addSearchCol("artist");
-    try index_manager.addSearchCol("album");
+    // try index_manager.addSearchCol("title");
+    // try index_manager.addSearchCol("artist");
+    // try index_manager.addSearchCol("album");
+    try index_manager.addSearchCol("story_text");
+    try index_manager.addSearchCol("story_author");
+    try index_manager.addSearchCol("comment_text");
 
     try index_manager.indexFile();
 
@@ -151,8 +154,8 @@ pub fn main() !void {
 
     // // const filename = "../data/mb_small.csv";
     // // const filename = "../data/mb.csv";
-    // const filename = "../data/mb.parquet";
+    // // const filename = "../data/mb.parquet";
     // // const filename = "../data/hn.csv";
-    // // const filename = "../data/hn_half.csv";
+    // const filename = "../data/hn_half.csv";
     // try bench(filename);
 }

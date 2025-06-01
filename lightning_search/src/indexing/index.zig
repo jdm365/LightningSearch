@@ -1362,7 +1362,9 @@ pub const BM25Partition = struct {
     ) void {
         self.doc_store.getRow(
             @intCast(query_result.doc_id),
-            record_string.items[0..],
+            // record_string.items[0..],
+            record_string,
+            self.allocator,
             result_positions,
 
             bit_sizes,

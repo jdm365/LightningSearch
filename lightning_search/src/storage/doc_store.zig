@@ -8,7 +8,8 @@ const pq = @import("../parsing/parquet.zig");
 
 
 const MMAP_MAX_SIZE_HUFFMAN_BUFFER: u64 = 1 << 36;
-const MMAP_MAX_SIZE_HUFFMAN_ROW_OFFSETS: u64 = 1 << 24;
+const MMAP_MAX_SIZE_HUFFMAN_ROW_OFFSETS: u64 = 1 << 27;
+// Num rows (1 << 27) bytes / 8 bytes per row = (1 << 24) rows = ~16 million rows.
 
 
 inline fn readValFromFile(
@@ -329,7 +330,9 @@ pub const DocStore = struct {
     pub inline fn getRow(
         self: *DocStore,
         row_idx: usize,
-        row_data: []u8,
+        // row_data: []u8,
+        row_data: *std.ArrayListUnmanaged(u8),
+        allocator: std.mem.Allocator,
         offsets: []TermPos,
 
         bit_sizes: []u32,
@@ -346,20 +349,21 @@ pub const DocStore = struct {
         var bits_total: usize = 0;
         const data_buf = self.file_handles.huffman_row_data_mmap_buffer;
         for (0..self.huffman_col_idxs.items.len) |col_idx| {
-            // self.huffman_col_bit_sizes[col_idx] = pq.decodeVbyte(
             bit_sizes[col_idx] = @truncate(pq.decodeVbyte(
                 data_buf.ptr,
                 &current_byte_idx,
             ));
-            // bits_total += self.huffman_col_bit_sizes[col_idx];
             bits_total += bit_sizes[col_idx];
         }
+        const bytes_total = try std.math.divCeil(usize, bits_total, 8);
+        if (bytes_total * 2 > row_data.items.len) {
+            try row_data.resize(allocator, bytes_total * 2);
+        }
 
-        current_byte_idx = init_byte_idx - try std.math.divCeil(usize, bits_total, 8);
+        current_byte_idx = init_byte_idx - bytes_total;
 
         var compressed_row_bit_pos:    usize = 0;
         var decompressed_row_byte_idx: usize = 0;
-        // for (0.., self.huffman_col_bit_sizes) |col_idx, nbits| {
         for (0.., bit_sizes) |col_idx, nbits| {
 
             const start_byte = current_byte_idx + @divFloor(compressed_row_bit_pos, 8);
@@ -369,7 +373,7 @@ pub const DocStore = struct {
             offsets[col_idx].start_pos = @truncate(decompressed_row_byte_idx);
             const field_len = try self.huffman_compressor.decompressOffset(
                 data_buf[start_byte..],
-                row_data[decompressed_row_byte_idx..],
+                row_data.items[decompressed_row_byte_idx..],
                 start_bit,
                 nbits,
             );

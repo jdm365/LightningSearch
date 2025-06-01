@@ -36,8 +36,8 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
-const MAX_NUM_THREADS: usize = 2;
-// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+// const MAX_NUM_THREADS: usize = 4;
+const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -284,6 +284,7 @@ pub const IndexManager = struct {
                 );
             self.query_state.result_strings[idx] = std.ArrayListUnmanaged(u8){};
             try self.query_state.result_strings[idx].resize(self.gpa(), 4096);
+            // try self.query_state.result_strings[idx].resize(self.gpa(), 65_536);
         }
     }
 
@@ -1490,7 +1491,6 @@ pub const IndexManager = struct {
             const result = self.query_state.results_arrays[0].items[idx];
 
             std.debug.assert(self.query_state.result_strings[idx].capacity > 0);
-            std.debug.print("Partition idx: {d}\n", .{result.partition_idx});
             self.query_state.thread_pool.spawnWg(
                 &wg2,
                 fetchRecordsDocStore,

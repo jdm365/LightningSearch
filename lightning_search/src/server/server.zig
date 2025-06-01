@@ -400,26 +400,11 @@ pub const QueryHandlerZap = struct {
             };
         }
 
-        // Swap search_cols to be first.
-        // for (0.., self.index_manager.search_col_idxs.items) |idx, col_idx| {
-            // const tmp                = json_cols.items[col_idx];
-            // json_cols.items[col_idx] = json_cols.items[idx];
-            // json_cols.items[idx]     = tmp;
-        // }
-        // TODO: Need to keep original order of columns.
         json_cols.append(
             self.index_manager.stringArena(),
             std.json.Value{
                 .string = "SCORE",
         }) catch return;
-
-        // const csv_idx = json_cols.items.len - 1;
-        // const tmp = json_cols.items[csv_idx];
-        // json_cols.items[csv_idx] = json_cols.items[
-            // self.index_manager.search_col_idxs.items.len
-        // ];
-        // json_cols.items[self.index_manager.search_col_idxs.items.len] = tmp;
-        
 
         for (json_cols.items) |*json| {
             self.column_names.append(
@@ -430,7 +415,9 @@ pub const QueryHandlerZap = struct {
 
         response.object.put(
             "columns",
-            std.json.Value{ .array = json_cols.toManaged(self.index_manager.stringArena()) },
+            std.json.Value{ 
+                .array=json_cols.toManaged(self.index_manager.stringArena()) 
+            },
         ) catch return;
 
         std.json.stringify(
@@ -478,8 +465,9 @@ pub const QueryHandlerZap = struct {
 
         response.object.put(
             "columns",
-            // std.json.Value{ .array = json_cols.toManaged(self.index_manager.scratchArena()) },
-            std.json.Value{ .array = json_cols.toManaged(self.index_manager.stringArena()) },
+            std.json.Value{ 
+                .array = json_cols.toManaged(self.index_manager.stringArena()) 
+            },
         ) catch @panic("put failed");
 
         std.json.stringify(
@@ -513,8 +501,10 @@ pub const QueryHandlerZap = struct {
                 idx += 1;
 
                 const result = query_map.getPtr(
-                    urlDecode(allocator, URL_BUFFER[0..count]) catch @panic("Failed to copy input string.\n")
-                    );
+                    urlDecode(allocator, URL_BUFFER[0..count]) catch {
+                        @panic("Failed to copy input string.\n");
+                    }
+                );
 
                 count = 0;
                 while ((idx < raw_string.len) and (raw_string[idx] != '&')) {
@@ -531,8 +521,10 @@ pub const QueryHandlerZap = struct {
                 if (result != null) {
                     const value_copy = allocator.dupe(
                         u8, 
-                        urlDecode(allocator, URL_BUFFER[0..count]) catch @panic("Failed to copy input string.\n"),
-                        ) catch @panic("Failed to copy input string.\n");
+                        urlDecode(allocator, URL_BUFFER[0..count]) catch {
+                            @panic("Failed to copy input string.\n");
+                        }
+                    ) catch @panic("Failed to copy input string.\n");
                     result.?.* = value_copy;
                 }
                 count = 0;
