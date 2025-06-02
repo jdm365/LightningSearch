@@ -212,6 +212,10 @@ pub const QueryHandlerZap = struct {
             .log = true,
         });
         try self.zap_listener.listen();
+        std.debug.print(
+            "LightningSearch listening on http://localhost:5000/\n",
+            .{},
+        );
 
         // self.openIndexHTML();
 

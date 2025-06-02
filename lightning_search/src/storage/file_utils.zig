@@ -88,10 +88,9 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         self: *SingleThreadedDoubleBufferedReader, 
         file_pos: usize,
         uppercase: bool,
-        ) ![]u8 {
-        const relative_pos = file_pos - self.buffer_start_pos;
-        const index = relative_pos % self.buffers.len;
+    ) ![]u8 {
         const overflow_size = @divFloor(self.overflow_buffer.len, 2);
+        const index = (file_pos - self.buffer_start_pos) % self.buffers.len;
 
         if (index >= self.single_buffer_size) {
             if (self.current_buffer == 0) {
@@ -102,8 +101,6 @@ pub const SingleThreadedDoubleBufferedReader = struct {
                     self.buffers[bytes_read] = self.end_token;
                 }
                 self.current_buffer = 1;
-
-                self.buffer_start_pos += self.single_buffer_size;
 
                 if (uppercase) {
                     string_utils.stringToUpper(
@@ -119,6 +116,8 @@ pub const SingleThreadedDoubleBufferedReader = struct {
             }
         } else {
             if (self.current_buffer == 1) {
+                self.buffer_start_pos += self.buffers.len;
+
                 const bytes_read = try self.file.read(
                     self.buffers[self.single_buffer_size..],
                     );
@@ -126,8 +125,6 @@ pub const SingleThreadedDoubleBufferedReader = struct {
                     self.buffers[self.single_buffer_size + bytes_read] = self.end_token;
                 }
                 self.current_buffer = 0;
-
-                self.buffer_start_pos += self.single_buffer_size;
 
                 if (uppercase) {
                     string_utils.stringToUpper(
@@ -144,8 +141,7 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         }
         const bytes_from_end = self.buffers.len - index;
         if (bytes_from_end <= overflow_size) {
-            @panic("SHOULD NOT BE REACHABLE\n");
-            // return self.overflow_buffer[overflow_size - bytes_from_end..];
+            return self.overflow_buffer[overflow_size - bytes_from_end..];
         }
         return self.buffers[index..];
     }
