@@ -17,7 +17,8 @@ const DocStore         = @import("../storage/doc_store.zig").DocStore;
 
 pub const MAX_NUM_RESULTS = 1000;
 pub const MAX_TERM_LENGTH = 256;
-pub const MAX_NUM_TERMS   = 16_384;
+// pub const MAX_NUM_TERMS   = 16_384;
+pub const MAX_NUM_TERMS   = 65_536;
 pub const MAX_LINE_LENGTH = 1_048_576;
 
 pub const ENDIANESS = builtin.cpu.arch.endian();
@@ -591,7 +592,6 @@ pub const BM25Partition = struct {
         col_idx: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
-        // const buffer = try token_stream.getBuffer(byte_idx.*);
         var buffer_idx: usize = byte_idx.*;
 
         if (

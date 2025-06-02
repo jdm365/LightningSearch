@@ -260,7 +260,7 @@ pub const DocStore = struct {
         }
 
         const buf_rem = self.zeroed_range - self.huffman_buffer_pos;
-        if (buf_rem < 65536) {
+        if (buf_rem < (comptime 1 << 18)) {
             @branchHint(.unlikely);
             @memset(
                 self.file_handles.huffman_row_data_mmap_buffer[

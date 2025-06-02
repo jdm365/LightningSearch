@@ -986,8 +986,6 @@ pub const IndexManager = struct {
         self.partitions.byte_offsets[partition_idx + 1] = file_pos;
         self.partitions.row_offsets[partition_idx + 1]  = line_count;
 
-        std.debug.print("row_offsets: {any} | byte_offsets: {any}\n", .{self.partitions.row_offsets, self.partitions.byte_offsets});
-
         const end_time = std.time.microTimestamp();
         const execution_time_us: usize = @intCast(end_time - start_time);
         const mb_s = @divFloor(file_size, execution_time_us);

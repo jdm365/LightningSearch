@@ -43,8 +43,8 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         start_byte: usize,
         end_token: u8,
         ) !SingleThreadedDoubleBufferedReader {
-        const buffer_size = 1 << 22;
-        const overflow_size = 1 << 16;
+        const buffer_size = 1 << 24;
+        const overflow_size = 1 << 18;
 
         // Make buffers larger to accommodate overlap
         const buffers         = try allocator.alloc(u8, 2 * buffer_size);

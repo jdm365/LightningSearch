@@ -33,9 +33,10 @@ fn bench(filename: []const u8) !void {
     try index_manager.readHeader(filename, filetype);
     try index_manager.scanFile();
 
-    try index_manager.addSearchCol("title");
-    try index_manager.addSearchCol("artist");
-    try index_manager.addSearchCol("album");
+    try index_manager.addSearchCol("text");
+    // try index_manager.addSearchCol("title");
+    // try index_manager.addSearchCol("artist");
+    // try index_manager.addSearchCol("album");
     // try index_manager.addSearchCol("story_url");
     // try index_manager.addSearchCol("story_text");
     // try index_manager.addSearchCol("story_author");
@@ -56,9 +57,9 @@ fn bench(filename: []const u8) !void {
     var query_map = std.StringHashMap([]const u8).init(allocator);
     defer query_map.deinit();
 
-    try query_map.put("TITLE", "UNDER MY SKIN");
-    try query_map.put("ARTIST", "FRANK SINATRA");
-    try query_map.put("ALBUM", "LIGHTNING");
+    try query_map.put("TEXT", "UNDER MY SKIN");
+    // try query_map.put("ARTIST", "FRANK SINATRA");
+    // try query_map.put("ALBUM", "LIGHTNING");
     // try query_map.put("STORY_TEXT", "zig");
     // try query_map.put("COMMENT_TEXT", "gotta go fast");
 
@@ -133,29 +134,30 @@ fn serveHTML(filename: []const u8) !void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    // var gpa = std.heap.DebugAllocator(.{}){};
+    // const allocator = gpa.allocator();
+    // defer _ = gpa.deinit();
+// 
+    // const args = try std.process.argsAlloc(allocator);
+    // defer std.process.argsFree(allocator, args);
+// 
+    // if (args.len != 2) {
+        // std.debug.print("Usage: {s} <filename>\n", .{args[0]});
+// 
+        // for (args) |arg| {
+            // std.debug.print("Arg: {s}\n", .{arg});
+        // }
+        // return error.InvalidArguments;
+    // }
+// 
+    // const filename = args[1];
+    // try serveHTML(filename);
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-
-    if (args.len != 2) {
-        std.debug.print("Usage: {s} <filename>\n", .{args[0]});
-
-        for (args) |arg| {
-            std.debug.print("Arg: {s}\n", .{arg});
-        }
-        return error.InvalidArguments;
-    }
-
-    const filename = args[1];
-    try serveHTML(filename);
-
-    // // const filename = "../data/mb_small.csv";
+    // const filename = "../data/mb_small.csv";
     // const filename = "../data/mb.csv";
-    // // const filename = "../data/mb.parquet";
-    // // const filename = "../data/hn.csv";
-    // // const filename = "../data/hn_half.csv";
-    // try bench(filename);
+    const filename = "../data/enwiki.csv";
+    // const filename = "../data/mb.parquet";
+    // const filename = "../data/hn.csv";
+    // const filename = "../data/hn_half.csv";
+    try bench(filename);
 }
