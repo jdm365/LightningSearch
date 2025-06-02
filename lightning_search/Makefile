@@ -16,15 +16,25 @@ exec:
 
 run: build exec
 
+## app:
+	## zig build
+	## mv zig-out/bin/lightning_search electron_app/
+	## cd electron_app && npm start
+
+## app_release:
+## 	zig build -Doptimize=ReleaseSafe
+## 	mv zig-out/bin/lightning_search electron_app/
+## 	cd electron_app && npm start
+
 app:
 	zig build
-	mv zig-out/bin/lightning_search electron_app/
-	cd electron_app && npm start
+	mv zig-out/bin/lightning_search web_app/
+	cd web_app && ./lightning_search ../../data/mb.csv
 
 app_release:
 	zig build -Doptimize=ReleaseSafe
-	mv zig-out/bin/lightning_search electron_app/
-	cd electron_app && npm start
+	mv zig-out/bin/lightning_search web_app/
+	cd web_app && ./lightning_search ../../data/mb.csv
 
 debug:
 	lldb $(EXEC_PATH)

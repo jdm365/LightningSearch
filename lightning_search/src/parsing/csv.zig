@@ -3,7 +3,8 @@ const string_utils = @import("../utils/string_utils.zig");
 const TermPos      = @import("../server/server.zig").TermPos;
 
 
-pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
+// pub inline fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
+pub fn _iterFieldCSV(buffer: []const u8, byte_idx: *usize) void {
     // Iterate to next field in compliance with RFC 4180.
     const is_quoted = buffer[byte_idx.*] == '"';
     byte_idx.* += @intFromBool(is_quoted);

@@ -36,7 +36,7 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
-// const MAX_NUM_THREADS: usize = 4;
+// const MAX_NUM_THREADS: usize = 5;
 const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
@@ -230,6 +230,10 @@ pub const IndexManager = struct {
         self.file_data.input_filename_c = try self.stringArena().dupeZ(u8, filename);
         self.file_data.file_type = filetype;
 
+        std.fs.cwd().makeDir("ls_data") catch {
+            std.debug.print("Dir ls_data already exists\n", .{});
+        };
+
         const file_hash = blk: {
             var hash: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
             std.crypto.hash.sha2.Sha256.hash(self.file_data.inputFilename(), &hash, .{});
@@ -237,7 +241,7 @@ pub const IndexManager = struct {
         };
         self.file_data.tmp_dir = try std.fmt.allocPrint(
             self.stringArena(),
-            ".{x:0>32}", .{std.fmt.fmtSliceHexLower(file_hash[0..16])}
+            "ls_data/{x:0>32}", .{std.fmt.fmtSliceHexLower(file_hash[0..16])}
             );
 
         std.fs.cwd().makeDir(self.file_data.tmp_dir) catch {
@@ -614,6 +618,7 @@ pub const IndexManager = struct {
         var row_byte_idx:   usize = 0;
         var is_quoted:      bool  = false;
 
+
         for (0.., start_doc..end_doc) |doc_id, _| {
             buffer = try reader.getBuffer(file_pos, true);
             row_byte_idx = 0;
@@ -936,7 +941,8 @@ pub const IndexManager = struct {
         );
         defer buffered_reader.deinit(self.gpa());
 
-        const num_partitions: usize =  if (file_size > (1 << 24)) 
+        // const num_partitions: usize =  if (file_size > (1 << 24)) 
+        const num_partitions: usize =  if (file_size > (1 << 4)) 
             @min(
             try std.Thread.getCpuCount(), 
             MAX_NUM_THREADS,
@@ -958,18 +964,18 @@ pub const IndexManager = struct {
         var partition_idx: usize = 0;
         var line_count: u64 = 0;
         while (file_pos < file_size - 1) {
+            const buffer = buffered_reader.getBuffer(@intCast(file_pos)) catch {
+                std.debug.print("Error reading buffer at {d}\n", .{file_pos});
+                return error.BufferError;
+            };
+
             if (file_pos - self.partitions.byte_offsets[partition_idx] > chunk_size) {
                 @branchHint(.unlikely);
                 partition_idx += 1;
 
                 self.partitions.byte_offsets[partition_idx] = file_pos;
                 self.partitions.row_offsets[partition_idx]  = line_count;
-
             }
-            const buffer = buffered_reader.getBuffer(@intCast(file_pos)) catch {
-                std.debug.print("Error reading buffer at {d}\n", .{file_pos});
-                return error.BufferError;
-            };
 
             var index: usize = 0;
             try csv.iterLineCSV(buffer, &index);
@@ -979,6 +985,8 @@ pub const IndexManager = struct {
 
         self.partitions.byte_offsets[partition_idx + 1] = file_pos;
         self.partitions.row_offsets[partition_idx + 1]  = line_count;
+
+        std.debug.print("row_offsets: {any} | byte_offsets: {any}\n", .{self.partitions.row_offsets, self.partitions.byte_offsets});
 
         const end_time = std.time.microTimestamp();
         const execution_time_us: usize = @intCast(end_time - start_time);

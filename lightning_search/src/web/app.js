@@ -1,3 +1,7 @@
+// import 'slickgrid/slick.grid.css';
+// import { Grid } from "./node_modules/slickgrid";
+
+
 var grid;
 
 var options = {
@@ -12,7 +16,7 @@ var data = [];
 var search_columns = [];
 var columns = [];
 
-PORT = 5000;
+const PORT = 5000;
 
 
 function moveSearchColumnsToFront(columns, search_columns) {
@@ -109,8 +113,7 @@ function setupHeaderRow() {
 	}
 }
 
-async function waitForPort(port, retryInterval = 10000, maxRetries = 60) {
-	return;
+async function waitForPort(port, retryInterval = 50, maxRetries = 20 * 60) {
     let retries = 0;
     while (retries < maxRetries) {
         try {
@@ -271,12 +274,9 @@ function search() {
 	let query = `${text_string}`;
 
 	fetch(`http://localhost:${PORT}/search?${query}`)
-		.then(response => {
-			console.log("Reponse: ", response);
-			response.json()
-		})
+		.then(response => response.json())
 		.then(data => {
-			console.log("Search results: ", data);
+			console.log("Search results:", data);
 			updateGrid(data);
 		});
 }

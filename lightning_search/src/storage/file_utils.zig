@@ -1,7 +1,5 @@
 const std = @import("std");
 
-const csv  = @import("../parsing/csv.zig");
-const json = @import("../parsing/json.zig");
 const pq   = @import("../parsing/parquet.zig");
 
 const DocStore = @import("../storage/doc_store.zig").DocStore;
@@ -25,7 +23,9 @@ pub const token_64t = packed struct(u64) {
     term_id: u32,
 };
 
-pub const TOKEN_STREAM_CAPACITY = 1_048_576;
+pub const TOKEN_STREAM_CAPACITY = 1 << 20;
+
+
 
 pub const SingleThreadedDoubleBufferedReader = struct {
     file: std.fs.File,
@@ -34,6 +34,8 @@ pub const SingleThreadedDoubleBufferedReader = struct {
     single_buffer_size: usize,
     current_buffer: usize,
     end_token: u8,
+
+    buffer_start_pos: usize,
     
     pub fn init(
         allocator: std.mem.Allocator, 
@@ -41,28 +43,27 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         start_byte: usize,
         end_token: u8,
         ) !SingleThreadedDoubleBufferedReader {
-        const buffer_size = 1 << 24;
-        const overflow_size = 1 << 18;
+        const buffer_size = 1 << 22;
+        const overflow_size = 1 << 16;
 
         // Make buffers larger to accommodate overlap
-        const buffers = try allocator.alloc(u8, 2 * buffer_size);
+        const buffers         = try allocator.alloc(u8, 2 * buffer_size);
         const overflow_buffer = try allocator.alloc(u8, 2 * overflow_size);
 
         try file.seekTo(start_byte);
         const bytes_read = try file.read(buffers);
 
-        // TODO: Make optional on parameter.
         string_utils.stringToUpper(
             buffers[0..bytes_read].ptr,
             bytes_read,
             );
 
+        if (bytes_read != buffers.len) buffers[bytes_read] = end_token;
         @memcpy(
             overflow_buffer[0..overflow_size], 
             buffers[(2 * buffer_size) - overflow_size..],
             );
-        if (bytes_read != buffers.len) buffers[bytes_read] = end_token;
-        
+
         return SingleThreadedDoubleBufferedReader{
             .file = file,
             .buffers = buffers,
@@ -70,6 +71,8 @@ pub const SingleThreadedDoubleBufferedReader = struct {
             .single_buffer_size = buffer_size,
             .current_buffer = 0,
             .end_token = end_token,
+
+            .buffer_start_pos = start_byte,
         };
     }
 
@@ -86,7 +89,8 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         file_pos: usize,
         uppercase: bool,
         ) ![]u8 {
-        const index = file_pos % self.buffers.len;
+        const relative_pos = file_pos - self.buffer_start_pos;
+        const index = relative_pos % self.buffers.len;
         const overflow_size = @divFloor(self.overflow_buffer.len, 2);
 
         if (index >= self.single_buffer_size) {
@@ -99,10 +103,12 @@ pub const SingleThreadedDoubleBufferedReader = struct {
                 }
                 self.current_buffer = 1;
 
+                self.buffer_start_pos += self.single_buffer_size;
+
                 if (uppercase) {
                     string_utils.stringToUpper(
-                        self.buffers[0..self.single_buffer_size].ptr, 
-                        self.single_buffer_size,
+                        self.buffers[0..bytes_read].ptr, 
+                        bytes_read,
                         );
                 }
 
@@ -121,10 +127,12 @@ pub const SingleThreadedDoubleBufferedReader = struct {
                 }
                 self.current_buffer = 0;
 
+                self.buffer_start_pos += self.single_buffer_size;
+
                 if (uppercase) {
                     string_utils.stringToUpper(
                         self.buffers[self.single_buffer_size..].ptr, 
-                        self.single_buffer_size,
+                        bytes_read,
                         );
                 }
 
@@ -136,7 +144,8 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         }
         const bytes_from_end = self.buffers.len - index;
         if (bytes_from_end <= overflow_size) {
-            return self.overflow_buffer[overflow_size - bytes_from_end..];
+            @panic("SHOULD NOT BE REACHABLE\n");
+            // return self.overflow_buffer[overflow_size - bytes_from_end..];
         }
         return self.buffers[index..];
     }

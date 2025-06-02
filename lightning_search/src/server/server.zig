@@ -126,6 +126,7 @@ pub const QueryHandlerZap = struct {
         index_manager: *IndexManager,
         boost_factors: std.ArrayList(f32),
     ) !QueryHandlerZap {
+        // Use scratch arena for per query requests.
 
         const handler = QueryHandlerZap{
             .index_manager = index_manager,
@@ -341,7 +342,11 @@ pub const QueryHandlerZap = struct {
             try response.object.put(
                 "results",
                 // std.json.Value{ .array = self.json_objects.toManaged(self.index_manager.scratchArena()) },
-                std.json.Value{ .array = self.json_objects.toManaged(self.index_manager.stringArena()) },
+                std.json.Value{ 
+                    .array = self.json_objects.toManaged(
+                        self.index_manager.stringArena()
+                        ) 
+                },
             );
             try response.object.put(
                 "time_taken_ms",
@@ -355,7 +360,9 @@ pub const QueryHandlerZap = struct {
                 self.output_buffer.writer(self.index_manager.stringArena()),
             );
 
-            try r.sendJson(self.output_buffer.items);
+            r.sendJson(self.output_buffer.items) catch |err| {
+                std.debug.print("ERROR SENDING JSON - {any}\n", .{err});
+            };
         }
     }
 

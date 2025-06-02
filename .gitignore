@@ -31,3 +31,6 @@ Cargo.lock
 
 ## Node
 node_modules/
+
+## LightningSearch
+ls_data/
