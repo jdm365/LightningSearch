@@ -5,6 +5,7 @@ const csv  = @import("../parsing/csv.zig");
 const json = @import("../parsing/json.zig");
 const pq   = @import("../parsing/parquet.zig");
 
+const CaseInsensitiveWyhash = @import("../utils/custom_wyhash.zig");
 const string_utils = @import("../utils/string_utils.zig");
 const file_utils   = @import("../storage/file_utils.zig");
 
@@ -133,7 +134,8 @@ pub const QueryResult = packed struct(u64){
     partition_idx: u32,
 };
 
-const SHM = std.HashMap([]const u8, u32, std.hash.XxHash64, 80);
+// const SHM = std.HashMap([]const u8, u32, std.hash.XxHash64, 80);
+const SHM = std.HashMap([]const u8, u32, CaseInsensitiveWyhash, 80);
 
 const IndexContext = struct {
     string_bytes: *const std.ArrayListUnmanaged(u8),
@@ -387,6 +389,7 @@ pub const BM25Partition = struct {
         std.debug.assert(
             terms_seen.count < MAX_NUM_TERMS
             );
+
         const gop = try self.II[col_idx].vocab.map.getOrPutContextAdapted(
             self.allocator,
             term[0..term_len],
@@ -628,6 +631,7 @@ pub const BM25Partition = struct {
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
+
                     try self.flushLargeToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
@@ -758,6 +762,7 @@ pub const BM25Partition = struct {
 
             const start_idx = buffer_idx - @intFromBool(is_quoted) 
                               - @min(buffer_idx - @intFromBool(is_quoted), cntr + 1);
+
             try self.addTerm(
                 buffer[start_idx..], 
                 cntr, 

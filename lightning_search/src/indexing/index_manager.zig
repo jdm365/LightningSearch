@@ -572,7 +572,8 @@ pub const IndexManager = struct {
         var freq_table: [256]u32 = undefined;
         @memset(freq_table[0..], 0);
 
-        var buffer = try reader.getBuffer(start_byte, true);
+        // var buffer = try reader.getBuffer(start_byte, true);
+        var buffer = try reader.getBuffer(start_byte, false);
         switch (self.file_data.file_type) {
             fu.FileType.CSV, fu.FileType.JSON => {
                 const num_bytes = @min(buffer.len, 1 << 14);
@@ -620,7 +621,8 @@ pub const IndexManager = struct {
 
 
         for (0.., start_doc..end_doc) |doc_id, _| {
-            buffer = try reader.getBuffer(file_pos, true);
+            // buffer = try reader.getBuffer(file_pos, true);
+            buffer = try reader.getBuffer(file_pos, false);
             row_byte_idx = 0;
 
             if (timer.read() >= interval_ns) {

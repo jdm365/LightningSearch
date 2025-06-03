@@ -29,12 +29,12 @@ run: build exec
 app:
 	zig build
 	mv zig-out/bin/lightning_search web_app/
-	cd web_app && ./lightning_search ../../data/mb.csv
+	cd web_app && ./lightning_search ../../data/enwiki.csv
 
 app_release:
 	zig build -Doptimize=ReleaseSafe
 	mv zig-out/bin/lightning_search web_app/
-	cd web_app && ./lightning_search ../../data/mb.csv
+	cd web_app && ./lightning_search ../../data/enwiki.csv
 
 debug:
 	lldb $(EXEC_PATH)
