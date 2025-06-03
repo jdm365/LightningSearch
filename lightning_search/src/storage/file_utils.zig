@@ -53,11 +53,6 @@ pub const SingleThreadedDoubleBufferedReader = struct {
         try file.seekTo(start_byte);
         const bytes_read = try file.read(buffers);
 
-        string_utils.stringToUpper(
-            buffers[0..bytes_read].ptr,
-            bytes_read,
-            );
-
         if (bytes_read != buffers.len) buffers[bytes_read] = end_token;
         @memcpy(
             overflow_buffer[0..overflow_size], 
@@ -87,7 +82,6 @@ pub const SingleThreadedDoubleBufferedReader = struct {
     pub inline fn getBuffer(
         self: *SingleThreadedDoubleBufferedReader, 
         file_pos: usize,
-        uppercase: bool,
     ) ![]u8 {
         const overflow_size = @divFloor(self.overflow_buffer.len, 2);
         const index = (file_pos - self.buffer_start_pos) % self.buffers.len;
@@ -101,13 +95,6 @@ pub const SingleThreadedDoubleBufferedReader = struct {
                     self.buffers[bytes_read] = self.end_token;
                 }
                 self.current_buffer = 1;
-
-                if (uppercase) {
-                    string_utils.stringToUpper(
-                        self.buffers[0..bytes_read].ptr, 
-                        bytes_read,
-                        );
-                }
 
                 @memcpy(
                     self.overflow_buffer[overflow_size..], 
@@ -125,13 +112,6 @@ pub const SingleThreadedDoubleBufferedReader = struct {
                     self.buffers[self.single_buffer_size + bytes_read] = self.end_token;
                 }
                 self.current_buffer = 0;
-
-                if (uppercase) {
-                    string_utils.stringToUpper(
-                        self.buffers[self.single_buffer_size..].ptr, 
-                        bytes_read,
-                        );
-                }
 
                 @memcpy(
                     self.overflow_buffer[0..overflow_size], 

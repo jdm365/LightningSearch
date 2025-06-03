@@ -36,5 +36,10 @@ app_release:
 	mv zig-out/bin/lightning_search web_app/
 	cd web_app && ./lightning_search ../../data/enwiki.csv
 
+app_release_fast:
+	zig build -Doptimize=ReleaseFast
+	mv zig-out/bin/lightning_search web_app/
+	cd web_app && ./lightning_search ../../data/enwiki.csv
+
 debug:
 	lldb $(EXEC_PATH)

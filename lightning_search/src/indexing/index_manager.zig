@@ -26,6 +26,7 @@ const MAX_TERM_LENGTH = @import("index.zig").MAX_TERM_LENGTH;
 const MAX_NUM_TERMS   = @import("index.zig").MAX_NUM_TERMS;
 
 
+const SHM = @import("index.zig").SHM;
 const SortedScoreMultiArray = @import("../utils/sorted_array.zig").SortedScoreMultiArray;
 const ScorePair             = @import("../utils/sorted_array.zig").ScorePair;
 const findSorted            = @import("../utils/misc_utils.zig").findSorted;
@@ -36,7 +37,7 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
-// const MAX_NUM_THREADS: usize = 5;
+// const MAX_NUM_THREADS: usize = 1;
 const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
@@ -572,8 +573,7 @@ pub const IndexManager = struct {
         var freq_table: [256]u32 = undefined;
         @memset(freq_table[0..], 0);
 
-        // var buffer = try reader.getBuffer(start_byte, true);
-        var buffer = try reader.getBuffer(start_byte, false);
+        var buffer = try reader.getBuffer(start_byte);
         switch (self.file_data.file_type) {
             fu.FileType.CSV, fu.FileType.JSON => {
                 const num_bytes = @min(buffer.len, 1 << 14);
@@ -621,8 +621,7 @@ pub const IndexManager = struct {
 
 
         for (0.., start_doc..end_doc) |doc_id, _| {
-            // buffer = try reader.getBuffer(file_pos, true);
-            buffer = try reader.getBuffer(file_pos, false);
+            buffer = try reader.getBuffer(file_pos);
             row_byte_idx = 0;
 
             if (timer.read() >= interval_ns) {
@@ -1175,7 +1174,7 @@ pub const IndexManager = struct {
 
     pub fn queryPartitionOrdered(
         self: *IndexManager,
-        queries: std.StringHashMap([]const u8),
+        queries: SHM,
         boost_factors: std.ArrayList(f32),
         partition_idx: usize,
         query_results: *SortedScoreMultiArray(QueryResult),
@@ -1313,7 +1312,10 @@ pub const IndexManager = struct {
             }
         }
 
-        if (empty_query) return;
+        if (empty_query) {
+            std.debug.print("Empty query\n", .{});
+            return;
+        }
 
         // For each token in each II, get relevant docs and add to score.
         var doc_scores: *std.AutoHashMap(u32, ScoringInfo) = &self.partitions.index_partitions[partition_idx].doc_score_map;
@@ -1447,7 +1449,7 @@ pub const IndexManager = struct {
 
     pub fn query(
         self: *IndexManager,
-        queries: std.StringHashMap([]const u8),
+        queries: SHM,
         k: usize,
         boost_factors: std.ArrayList(f32),
     ) !void {

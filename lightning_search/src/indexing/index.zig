@@ -5,7 +5,8 @@ const csv  = @import("../parsing/csv.zig");
 const json = @import("../parsing/json.zig");
 const pq   = @import("../parsing/parquet.zig");
 
-const CaseInsensitiveWyhash = @import("../utils/custom_wyhash.zig");
+const CaseInsensitiveWyhash = @import("../utils/custom_wyhash.zig").CaseInsensitiveWyhash;
+const CaseInsensitiveWyhashContext = @import("../utils/custom_wyhash.zig").CaseInsensitiveWyhashContext;
 const string_utils = @import("../utils/string_utils.zig");
 const file_utils   = @import("../storage/file_utils.zig");
 
@@ -134,8 +135,8 @@ pub const QueryResult = packed struct(u64){
     partition_idx: u32,
 };
 
-// const SHM = std.HashMap([]const u8, u32, std.hash.XxHash64, 80);
-const SHM = std.HashMap([]const u8, u32, CaseInsensitiveWyhash, 80);
+// pub const SHM = std.HashMap([]const u8, u32, std.hash.XxHash64, 80);
+pub const SHM = std.HashMap([]const u8, []const u8, CaseInsensitiveWyhashContext, 80);
 
 const IndexContext = struct {
     string_bytes: *const std.ArrayListUnmanaged(u8),
@@ -148,22 +149,35 @@ const IndexContext = struct {
         const x_slice = std.mem.span(
             @as([*:0]u8, @ptrCast(&self.string_bytes.items[x]))
             );
-        return std.hash_map.hashString(x_slice);
+        return CaseInsensitiveWyhash.hash(42, x_slice);
     }
 };
 
 const SliceAdapter = struct {
     string_bytes: *const std.ArrayListUnmanaged(u8),
 
+    // pub fn eql(self: SliceAdapter, a_slice: []u8, b: u32) bool {
+        // const b_slice = std.mem.span(
+            // @as([*:0]u8, @ptrCast(&self.string_bytes.items[b])),
+            // );
+        // return std.mem.eql(u8, a_slice, b_slice);
+    // }
     pub fn eql(self: SliceAdapter, a_slice: []u8, b: u32) bool {
         const b_slice = std.mem.span(
             @as([*:0]u8, @ptrCast(&self.string_bytes.items[b])),
             );
-        return std.mem.eql(u8, a_slice, b_slice);
+
+        if (a_slice.len != b_slice.len) return false;
+        for (0..a_slice.len) |i| {
+            if (std.ascii.toLower(a_slice[i]) != std.ascii.toLower(b_slice[i])) {
+                return false;
+            }
+        }
+        return true;
     }
 
     pub fn hash(_: SliceAdapter, adapted_key: []u8) u64 {
-        return std.hash_map.hashString(adapted_key);
+        return CaseInsensitiveWyhash.hash(42, adapted_key);
     }
 };
 

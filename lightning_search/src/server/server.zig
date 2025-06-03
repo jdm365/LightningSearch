@@ -3,6 +3,7 @@ const zap = @import("zap");
 
 const csv          = @import("../parsing/csv.zig");
 const string_utils = @import("../utils/string_utils.zig");
+const SHM = @import("../indexing/index.zig").SHM;
 
 const MAX_NUM_RESULTS = @import("../indexing/index.zig").MAX_NUM_RESULTS;
 const IndexManager    = @import("../indexing/index_manager.zig").IndexManager;
@@ -110,7 +111,8 @@ pub fn csvLineToJsonScore(
 pub const QueryHandlerZap = struct {
     index_manager: *IndexManager,
     boost_factors: std.ArrayList(f32),
-    query_map: std.StringHashMap([]const u8),
+    query_map: SHM,
+
     json_objects: std.ArrayListUnmanaged(std.json.Value),
     output_buffer: std.ArrayListUnmanaged(u8),
     column_names: std.ArrayListUnmanaged([]const u8),
@@ -131,7 +133,7 @@ pub const QueryHandlerZap = struct {
         const handler = QueryHandlerZap{
             .index_manager = index_manager,
             .boost_factors = boost_factors,
-            .query_map     = std.StringHashMap([]const u8).init(
+            .query_map     = SHM.init(
                 index_manager.stringArena(),
                 // index_manager.scratchArena(),
                 ),
@@ -364,6 +366,10 @@ pub const QueryHandlerZap = struct {
                 self.output_buffer.writer(self.index_manager.stringArena()),
             );
 
+            std.debug.print(
+                "{s}\n", 
+                .{self.output_buffer.items[self.output_buffer.items.len - 1 ..]},
+            );
             r.sendJson(self.output_buffer.items) catch |err| {
                 std.debug.print("ERROR SENDING JSON - {any}\n", .{err});
             };
@@ -500,7 +506,7 @@ pub const QueryHandlerZap = struct {
 
     pub fn parseKeys(
         raw_string: []const u8,
-        query_map: std.StringHashMap([]const u8),
+        query_map: SHM,
         allocator: std.mem.Allocator,
     ) void {
         // Format key=value&key=value
@@ -554,7 +560,8 @@ pub const QueryHandlerZap = struct {
 pub const QueryHandlerLocal = struct {
     index_manager: *IndexManager,
     boost_factors: std.ArrayList(f32),
-    query_map: std.StringHashMap([]const u8),
+    // query_map: std.StringHashMap([]const u8),
+    query_map: SHM,
     search_cols: std.ArrayList([]u8),
     allocator: std.mem.Allocator,
 
@@ -565,7 +572,7 @@ pub const QueryHandlerLocal = struct {
         return QueryHandlerLocal{
             .index_manager = index_manager,
             .boost_factors = std.ArrayList(f32).init(allocator),
-            .query_map = std.StringHashMap([]const u8).init(allocator),
+            .query_map = SHM.init(allocator),
             .search_cols = undefined,
             .allocator = allocator,
         };

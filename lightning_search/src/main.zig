@@ -1,6 +1,7 @@
 const std     = @import("std");
 const builtin = @import("builtin");
 
+const SHM = @import("indexing/index.zig").SHM;
 const IndexManager = @import("indexing/index_manager.zig").IndexManager;
 const FileType = @import("storage/file_utils.zig").FileType;
 
@@ -54,7 +55,7 @@ fn bench(filename: []const u8) !void {
     try boost_factors.append(1.0);
     try boost_factors.append(1.0);
 
-    var query_map = std.StringHashMap([]const u8).init(allocator);
+    var query_map = SHM;
     defer query_map.deinit();
 
     try query_map.put("TEXT", "UNDER MY SKIN");
