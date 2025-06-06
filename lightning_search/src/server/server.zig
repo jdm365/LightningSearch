@@ -12,7 +12,7 @@ const FileType        = @import("../storage/file_utils.zig").FileType;
 var FLOAT_BUF: [1000][64]u8 = undefined;
 var URL_BUFFER: [4096]u8 = undefined;
 
-const K: usize = 100;
+const K: usize = 10;
 
 pub const TermPos = struct {
     start_pos: u32,
@@ -304,7 +304,7 @@ pub const QueryHandlerZap = struct {
         self.output_buffer.clearRetainingCapacity();
         self.json_objects.clearRetainingCapacity();
 
-        const start = std.time.milliTimestamp();
+        const start = std.time.microTimestamp();
 
         if (r.query) |query| {
             parseKeys(
@@ -335,8 +335,8 @@ pub const QueryHandlerZap = struct {
                         idx,
                     ));
             }
-            const end = std.time.milliTimestamp();
-            const time_taken_ms = end - start;
+            const end = std.time.microTimestamp();
+            const time_taken_us = end - start;
 
             var response = std.json.Value{
                 .object = std.StringArrayHashMap(std.json.Value).init(
@@ -355,8 +355,8 @@ pub const QueryHandlerZap = struct {
                 },
             );
             try response.object.put(
-                "time_taken_ms",
-                std.json.Value{ .integer = time_taken_ms },
+                "time_taken_us",
+                std.json.Value{ .integer = time_taken_us },
             );
 
             try std.json.stringify(

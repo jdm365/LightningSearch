@@ -5,6 +5,7 @@ const csv  = @import("../parsing/csv.zig");
 const json = @import("../parsing/json.zig");
 const pq   = @import("../parsing/parquet.zig");
 
+const SortedIntMultiArray = @import("../utils/sorted_array.zig").SortedIntMultiArray;
 const CaseInsensitiveWyhash = @import("../utils/custom_wyhash.zig").CaseInsensitiveWyhash;
 const CaseInsensitiveWyhashContext = @import("../utils/custom_wyhash.zig").CaseInsensitiveWyhashContext;
 const string_utils = @import("../utils/string_utils.zig");
@@ -128,6 +129,13 @@ pub const HashNGram = extern struct {
 pub const ScoringInfo = packed struct {
     score: f32,
     term_pos: u8,
+
+    pub fn init() ScoringInfo {
+        return .{
+            .score = 0.0,
+            .term_pos = 0,
+        };
+    }
 };
 
 pub const QueryResult = packed struct(u64){
@@ -213,6 +221,16 @@ const Vocab = struct {
 pub const Postings = struct {
     doc_ids: []u32,
     term_positions: []u8,
+};
+
+pub const PostingsV2 = struct {
+    doc_id_buf: []align(std.heap.page_size_min)u32,
+    term_positions: []align(std.heap.page_size_min)u8,
+};
+
+pub const PostingsDynamic = struct {
+    doc_ids: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u32)),
+    term_positions: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u8)),
 };
 
 
@@ -333,6 +351,9 @@ pub const BM25Partition = struct {
     num_records: usize,
     allocator: std.mem.Allocator,
     doc_score_map: std.AutoHashMap(u32, ScoringInfo),
+    doc_score_sa: [2]SortedIntMultiArray(ScoringInfo),
+
+    scratch_array: SortedIntMultiArray(ScoringInfo),
 
     doc_store: DocStore,
 
@@ -344,14 +365,27 @@ pub const BM25Partition = struct {
         var doc_score_map = std.AutoHashMap(u32, ScoringInfo).init(allocator);
         try doc_score_map.ensureTotalCapacity(50_000);
 
-        const partition = BM25Partition{
+        var partition = BM25Partition{
             .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
             .num_records = num_records,
             .allocator = allocator,
             .doc_score_map = doc_score_map,
+            .doc_score_sa = undefined,
+            .scratch_array = try SortedIntMultiArray(ScoringInfo).init(
+                allocator,
+                1_048_576,
+            ),
 
             .doc_store = undefined,
         };
+        partition.doc_score_sa[0] = try SortedIntMultiArray(ScoringInfo).init(
+            allocator,
+            1_048_576,
+        );
+        partition.doc_score_sa[1] = try SortedIntMultiArray(ScoringInfo).init(
+            allocator,
+            1_048_576,
+        );
 
         for (0..num_search_cols) |idx| {
             partition.II[idx] = try InvertedIndexV2.init(

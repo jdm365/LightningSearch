@@ -13,7 +13,18 @@ pub const ProgressBar = struct {
 
     bar_string: [BAR_WIDTH + 2]u8,
 
-    pub fn init(total_iters: usize) ProgressBar {
+    display_units: DisplayUnits,
+
+    const DisplayUnits = enum {
+        None,
+        K,
+        M,
+    };
+
+    pub fn init(
+        total_iters: usize,
+        display_units: DisplayUnits,
+        ) ProgressBar {
         const total_updates = @min(BAR_WIDTH - 1, total_iters);
 
         var bar = ProgressBar{ 
@@ -23,6 +34,8 @@ pub const ProgressBar = struct {
             .total_updates = total_updates,
             .update_differential = @max(1, total_iters / total_updates),
             .bar_string = undefined,
+
+            .display_units = display_units,
         };
 
         for (1..bar.bar_string.len - 1) |i| {
@@ -72,16 +85,64 @@ pub const ProgressBar = struct {
     }
     
     fn display(self: *ProgressBar, message: ?[]const u8) void {
-        if (message) |m| {
-            std.debug.print(
-                "{s} | Docs Processed: {d}/{d} {s}\r", 
-                .{m, self.current_iter, self.total_iters, self.bar_string}
-                );
-        } else {
-            std.debug.print(
-                "Docs Processed: {d}/{d} {s}\r", 
-                .{self.current_iter, self.total_iters, self.bar_string}
-                );
+        switch (self.display_units) {
+            .None => {
+                if (message) |m| {
+                    std.debug.print(
+                        "{s} | Docs Processed: {d}/{d} {s}\r", 
+                        .{m, self.current_iter, self.total_iters, self.bar_string}
+                        );
+                } else {
+                    std.debug.print(
+                        "Docs Processed: {d}/{d} {s}\r", 
+                        .{self.current_iter, self.total_iters, self.bar_string}
+                        );
+                }
+            },
+            .K => {
+                if (message) |m| {
+                    std.debug.print(
+                        "{s} | Docs Processed: {d}/{d}K {s}\r", 
+                        .{
+                            m, 
+                            @divFloor(self.current_iter, 1_000), 
+                            @divFloor(self.total_iters, 1_000),
+                            self.bar_string,
+                        }
+                        );
+                } else {
+                    std.debug.print(
+                        "Docs Processed: {d}/{d}K {s}\r", 
+                        .{
+                            @divFloor(self.current_iter, 1_000), 
+                            @divFloor(self.total_iters, 1_000),
+                            self.bar_string,
+                        }
+                    );
+                }
+            },
+            .M => {
+                if (message) |m| {
+                    std.debug.print(
+                        "{s} | Docs Processed: {d}/{d}M {s}\r", 
+                        .{
+                            m, 
+                            @divFloor(self.current_iter, 1_000_000), 
+                            @divFloor(self.total_iters, 1_000_000),
+                            self.bar_string,
+                        }
+                        );
+                } else {
+                    std.debug.print(
+                        "Docs Processed: {d}/{d}M {s}\r", 
+                        .{
+                            @divFloor(self.current_iter, 1_000_000), 
+                            @divFloor(self.total_iters, 1_000_000),
+                            self.bar_string,
+                        }
+                    );
+                }
+            },
         }
     }
 

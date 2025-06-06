@@ -352,6 +352,193 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
     };
 }
 
+
+pub fn SortedIntMultiArray(comptime T: type) type {
+
+    return struct {
+        const Self = @This();
+
+        allocator: std.mem.Allocator,
+        items: []align(32)T,
+        values: []align(32)u32,
+        count: usize,
+        capacity: usize,
+
+        pub fn init(allocator: std.mem.Allocator, capacity: usize) !Self {
+            const alloc_size: usize = std.mem.alignForward(usize, capacity + 1, 8);
+
+            const values = try allocator.alignedAlloc(
+                u32, 
+                .@"32",
+                alloc_size,
+                );
+            @memset(values, 0);
+
+            return Self{
+                .allocator = allocator,
+                .items = try allocator.alignedAlloc(T, .@"32", alloc_size),
+                .values = values,
+                .count = 0,
+                .capacity = capacity,
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.allocator.free(self.items);
+            self.allocator.free(self.values);
+        }
+
+        pub inline fn clear(self: *Self) void {
+            self.count = 0;
+        }
+
+        pub inline fn resize(self: *Self, new_size: usize) void {
+            self.capacity = new_size;
+        }
+
+        inline fn binarySearch(self: *Self, value: u32) usize {
+            // TODO: Allow for common case of very many items and place starting
+            // needle closer to the end.
+            var low: usize = 0;
+            var high: usize = self.count;
+
+            while (low < high) {
+                const mid = low + (high - low) / 2;
+
+                if (self.values[mid] == value) return mid;
+
+                if (self.values[mid] > value) {
+                    low = mid + 1;
+                } else {
+                    high = mid;
+                }
+            }
+            return low;
+        }
+
+        inline fn linearSearch(self: *Self, value: u32) usize {
+            for (0.., self.values[0..self.count]) |idx, _values| {
+                if (_values <= value) {
+                    return idx;
+                }
+            }
+            return self.count;
+        }
+
+        inline fn linearSearchSIMD(self: *Self, value: u32) usize {
+            const new_value     = @as(@Vector(8, u32), @splat(value));
+            var existing_values = @as(
+                *const @Vector(8, u32), 
+                @ptrCast(self.values.ptr),
+                );
+
+            const simd_limit: usize = @divFloor(self.count, 8) + 
+                                      8 * @as(usize, @intFromBool(self.count % 8 != 0));
+            var idx: usize = 0;
+            while (idx < simd_limit) {
+                const mask = new_value > existing_values.*;
+                const set_idx = @ctz(@as(u8, @bitCast(mask)));
+                if (set_idx != 8) {
+                    return @min(idx + set_idx, self.count);
+                }
+
+                existing_values = @ptrFromInt(@intFromPtr(self.values.ptr) + 32);
+                idx += 8;
+            }
+            return self.count;
+        }
+
+        pub inline fn search(self: *Self, value: u32) usize {
+            if (self.count <= 32) {
+                return self.linearSearchSIMD(value);
+            } else {
+                return self.binarySearch(value);
+            }
+        }
+
+        pub inline fn insert(self: *Self, item: T, value: u32) void {
+            const insert_idx = self.search(value);
+            if (insert_idx == self.capacity) return;
+
+            self.count = @min(self.count + 1, self.capacity);
+
+            std.mem.copyBackwards(
+                T,
+                self.items[insert_idx + 1..self.count + 1],
+                self.items[insert_idx..self.count],
+                );
+            std.mem.copyBackwards(
+                u32,
+                self.values[insert_idx + 1..self.count + 1],
+                self.values[insert_idx..self.count],
+                );
+
+            self.items[insert_idx]  = item;
+            self.values[insert_idx] = value;
+        }
+
+        pub inline fn insertIdx(
+            self: *Self, 
+            value: u32,
+            item: T,
+            insert_idx: usize,
+            ) void {
+            self.count = @min(self.count + 1, self.capacity);
+
+            std.mem.copyBackwards(
+                T,
+                self.items[insert_idx + 1..self.count + 1],
+                self.items[insert_idx..self.count],
+                );
+            std.mem.copyBackwards(
+                u32,
+                self.values[insert_idx + 1..self.count + 1],
+                self.values[insert_idx..self.count],
+                );
+
+            self.items[insert_idx]  = item;
+            self.values[insert_idx] = value;
+        }
+
+        pub inline fn insertGet(self: *Self, value: u32) *T {
+            const insert_idx = self.search(value);
+            if (insert_idx == self.capacity) return &self.values[insert_idx];
+
+            self.count = @min(self.count + 1, self.capacity);
+
+            std.mem.copyBackwards(
+                T,
+                self.items[insert_idx + 1..self.count + 1],
+                self.items[insert_idx..self.count],
+                );
+            std.mem.copyBackwards(
+                u32,
+                self.values[insert_idx + 1..self.count + 1],
+                self.values[insert_idx..self.count],
+                );
+
+            self.items[insert_idx]  = T.init();
+            self.values[insert_idx] = value;
+
+            return &self.items[insert_idx];
+        }
+
+        pub fn check(self: *Self) void {
+            var prev_value: f32 = 1000000.0;
+            for (0.., self.values[0..self.count]) |idx, value| {
+                if (value > prev_value) {
+                    std.debug.print("IDX: {d}\n", .{idx});
+                    std.debug.print("Score: {d}\n", .{value});
+                    std.debug.print("Prev Score: {d}\n", .{prev_value});
+                    @panic("Bad copy\n");
+                }
+                prev_value = value;
+            }
+        }
+    };
+}
+
+
 test "sorted_arr" {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
