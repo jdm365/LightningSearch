@@ -122,6 +122,118 @@ pub fn CategoricalColumn(comptime T: type) type {
     };
 }
 
+inline fn binarySearch(
+    comptime T: type,
+    arr: []T,
+    value: T,
+    ) usize {
+    var low: usize = 0;
+    var high: usize = arr.len;
+
+    while (low < high) {
+        const mid = low + (high - low) / 2;
+
+        if (arr[mid] == value) return mid;
+
+        if (arr[mid] > value) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    return low;
+}
+
+pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
+    return struct {
+        const Self = @This();
+
+        doc_ids: []T,
+        term_positions: []term_pos_T,
+        current_idx: usize,
+        score: usize,
+        consumed: bool,
+
+        pub const Result = struct {
+            doc_id: T,
+            term_pos: term_pos_T,
+        };
+
+        pub fn init(doc_ids: []T, term_positions: []term_pos_T, score: usize) Self {
+            return Self{ 
+                .doc_ids = doc_ids,
+                .term_positions = term_positions,
+                .current_idx = 0,
+                .score = score,
+                .consumed = false,
+            };
+        }
+
+        pub inline fn next(self: *Self) Result {
+            if (self.consumed) {
+                return .{
+                    .doc_id = std.math.maxInt(T), 
+                    .term_pos = std.math.maxInt(term_pos_T),
+                };
+            }
+
+            if (self.current_idx < self.doc_ids.len) {
+                self.current_idx += 1;
+                return .{
+                    .doc_id = self.doc_ids[self.current_idx - 1],
+                    .term_pos = self.term_positions[self.current_idx - 1],
+                };
+            }
+            self.consumed = true;
+            return .{
+                .doc_id = std.math.maxInt(T), 
+                .term_pos = std.math.maxInt(term_pos_T),
+            };
+        }
+
+        pub inline fn advanceTo(self: *Self, next_item: T) Result {
+            if (self.consumed) {
+                return .{
+                    .doc_id = std.math.maxInt(T), 
+                    .term_pos = std.math.maxInt(term_pos_T),
+                };
+            }
+
+            if (self.current_idx == self.doc_ids.len) {
+                self.consumed = true;
+            }
+
+            // while (self.doc_ids[self.current_idx] < next_item) {
+                // self.current_idx += 1;
+                // if (self.current_idx == self.doc_ids.len) {
+                    // self.consumed = true;
+                    // return .{
+                        // .doc_id = std.math.maxInt(T), 
+                        // .term_pos = std.math.maxInt(term_pos_T),
+                    // };
+                // }
+            // }
+            self.current_idx += binarySearch(
+                T,
+                self.doc_ids[self.current_idx..],
+                next_item,
+            );
+            if (self.current_idx == self.doc_ids.len) {
+                self.consumed = true;
+                return .{
+                    .doc_id = std.math.maxInt(T), 
+                    .term_pos = std.math.maxInt(term_pos_T),
+                };
+            }
+
+            return .{
+                .doc_id = self.doc_ids[self.current_idx],
+                .term_pos = self.term_positions[self.current_idx],
+            };
+        }
+    };
+}
+
 pub const HashNGram = extern struct {
     hashes: [8]u16,
 };

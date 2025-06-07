@@ -41,3 +41,49 @@ pub fn printPercentiles(
         .{arr[arr.len - 1]},
         );
 }
+
+pub fn sortStruct(
+    comptime T: type,
+    arr: []T,
+    comptime field_name: []const u8,
+    comptime descending: bool,
+) void {
+    if (descending) {
+        std.mem.sort(T, arr, {}, struct {
+            fn greaterThan(_: void, a: T, b: T) bool {
+                return @field(a, field_name) > @field(b, field_name);
+            }
+        }.greaterThan);
+    } else {
+        std.mem.sort(T, arr, {}, struct {
+            fn lessThan(_: void, a: T, b: T) bool {
+                return @field(a, field_name) < @field(b, field_name);
+            }
+        }.lessThan);
+    }
+}
+
+
+
+test "sortStruct" {
+    const misc_utils = @import("misc_utils.zig");
+
+    const TestStruct = struct {
+        value: i32,
+    };
+
+    var arr: [5]TestStruct = .{
+        .{ .value = 5 },
+        .{ .value = 3 },
+        .{ .value = 1 },
+        .{ .value = 4 },
+        .{ .value = 2 },
+    };
+
+    misc_utils.sortStruct(TestStruct, arr[0..], "value", false);
+
+    try std.testing.expectEqual(
+        arr,
+        [_]TestStruct{ .{ .value = 1 }, .{ .value = 2 }, .{ .value = 3 }, .{ .value = 4 }, .{ .value = 5 } },
+    );
+}

@@ -18,6 +18,8 @@ const rt = @import("../utils/radix_trie.zig");
 
 const TermPos = @import("../server/server.zig").TermPos;
 
+const postingsIteratorLessThan = @import("index.zig").postingsIteratorLessThan;
+const PostingsIterator = @import("index.zig").PostingsIterator;
 const fetchRecordsDocStore = @import("index.zig").BM25Partition.fetchRecordsDocStore;
 const BM25Partition   = @import("index.zig").BM25Partition;
 const QueryResult     = @import("index.zig").QueryResult;
@@ -30,6 +32,7 @@ const SHM = @import("index.zig").SHM;
 const SortedScoreMultiArray = @import("../utils/sorted_array.zig").SortedScoreMultiArray;
 const ScorePair             = @import("../utils/sorted_array.zig").ScorePair;
 const findSorted            = @import("../utils/misc_utils.zig").findSorted;
+const sortStruct            = @import("../utils/misc_utils.zig").sortStruct;
 const printPercentiles      = @import("../utils/misc_utils.zig").printPercentiles;
 
 const AtomicCounter = std.atomic.Value(u64);
@@ -1172,6 +1175,295 @@ pub const IndexManager = struct {
         );
     }
 
+    pub fn queryPartitionDAAT(
+        self: *IndexManager,
+        queries: SHM,
+        boost_factors: std.ArrayList(f32),
+        partition_idx: usize,
+        query_results: *SortedScoreMultiArray(QueryResult),
+    ) void {
+        const num_search_cols = self.search_col_idxs.items.len;
+        std.debug.assert(num_search_cols > 0);
+
+        // Tokenize query.
+        var tokens = std.ArrayListUnmanaged(ColTokenPair){};
+
+        var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
+
+        var empty_query = true; 
+
+        var query_it = queries.iterator();
+        while (query_it.next()) |entry| {
+            const col_idx = self.columns.find(entry.key_ptr.*) catch {
+                std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
+                continue;
+            };
+            const II_idx = findSorted(
+                u32,
+                self.search_col_idxs.items,
+                col_idx,
+            ) catch {
+                std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
+                @panic("Column not found. Check findSorted function and self.columns map.");
+            };
+
+            std.debug.assert(II_idx <= self.search_col_idxs.items.len);
+
+            var term_len: usize = 0;
+
+            var term_pos: u8 = 0;
+            for (entry.value_ptr.*) |c| {
+                switch (c) {
+                    0...33, 35...47, 58...64, 91...96, 123...126 => {
+                        if (term_len == 0) continue;
+
+                        const token = self.partitions.index_partitions[partition_idx].II[II_idx].vocab.get(
+                            term_buffer[0..term_len],
+                            self.partitions.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
+                            );
+                        if (token != null) {
+                            tokens.append(
+                                self.gpa(),
+                                ColTokenPair{
+                                .col_idx       = @intCast(II_idx),
+                                .term_pos      = term_pos,
+                                .token         = token.?,
+                                .shallow_query = false,
+                            }) catch {
+                                @panic("Failed to append token");
+                            };
+                            term_pos += 1;
+                            empty_query = false;
+                        }
+                        term_len = 0;
+                        continue;
+                    },
+                    else => {
+                        term_buffer[term_len] = std.ascii.toUpper(c);
+                        term_len += 1;
+
+                        if (term_len == MAX_TERM_LENGTH) {
+                            const token = self.partitions.index_partitions[partition_idx].II[II_idx].vocab.get(
+                                term_buffer[0..term_len],
+                                self.partitions.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
+                                );
+                            if (token != null) {
+                                tokens.append(
+                                    self.gpa(),
+                                    ColTokenPair{
+                                    .col_idx       = @intCast(II_idx),
+                                    .term_pos      = term_pos,
+                                    .token         = token.?,
+                                    .shallow_query = false,
+                                }) catch {
+                                    @panic("Failed to append token");
+                                };
+                                term_pos += 1;
+                                empty_query = false;
+                            }
+                            term_len = 0;
+                        }
+                    },
+                }
+            }
+
+            if (term_len > 0) {
+                const token = self.partitions.index_partitions[partition_idx].II[II_idx].vocab.get(
+                    term_buffer[0..term_len],
+                    self.partitions.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
+                    );
+                if (token != null) {
+                    tokens.append(
+                        self.gpa(),
+                        ColTokenPair{
+                        .col_idx = @intCast(II_idx),
+                        .term_pos = term_pos,
+                        .token = token.?,
+                        .shallow_query = false,
+                    }) catch {
+                        @panic("Failed to append token");
+                    };
+
+                    term_pos += 1;
+                    empty_query = false;
+                }
+            }
+        }
+
+        if (empty_query) {
+            std.debug.print("Empty query\n", .{});
+            var iterator = queries.iterator();
+            std.debug.print("\n", .{});
+            std.debug.print("-----------------------------------------", .{});
+            while (iterator.next()) |item| {
+                std.debug.print("{s}: {s}\n", .{item.key_ptr.*, item.value_ptr.*});
+            }
+            std.debug.print("-----------------------------------------", .{});
+            std.debug.print("\n", .{});
+            return;
+        }
+
+        // For each token in each II, get relevant docs and add to score.
+        var doc_scores = &self.partitions.index_partitions[partition_idx].doc_score_sa[0];
+        var inactive_scores = &self.partitions.index_partitions[partition_idx].doc_score_sa[1];
+        var scratch_array = &self.partitions.index_partitions[partition_idx].scratch_array;
+
+        inactive_scores.clear();
+        doc_scores.clear();
+        scratch_array.clear();
+
+        var sorted_scores = SortedScoreMultiArray(u32).init(
+            self.gpa(), 
+            query_results.capacity,
+            ) catch {
+                @panic("Failed to init sorted scores");
+            };
+        defer sorted_scores.deinit();
+
+
+        var token_scores = self.gpa().alloc(f32, tokens.items.len) catch {
+            @panic("Failed to alloc token scores");
+        };
+
+        // TODO: Figure out meta typing to just map doc_id and term_pos types.
+        var iterators = std.ArrayListUnmanaged(
+            PostingsIterator(u32, u8),
+        ){};
+        defer iterators.deinit(self.gpa());
+
+        var idf_remaining: f32 = 0.0;
+        for (0.., tokens.items) |idx, _token| {
+            const II_idx: usize = @intCast(_token.col_idx);
+            const token:  usize = @intCast(_token.token);
+            std.debug.assert(II_idx <= self.search_col_idxs.items.len);
+
+            const II = &self.partitions.index_partitions[partition_idx].II[II_idx];
+
+            const inner_term = switch (_token.shallow_query) {
+                true => @as(f32, @floatFromInt(II.doc_freqs.items[token])),
+                false => @as(f32, @floatFromInt(II.num_docs)) / 
+                         @as(f32, @floatFromInt(II.doc_freqs.items[token])),
+            };
+            const boost_weighted_idf: f32 = (
+                1.0 + std.math.log2(inner_term)
+                ) * boost_factors.items[II_idx];
+            token_scores[idx] = boost_weighted_idf;
+
+            std.debug.print(
+                "Doc freq: {d} | BW_IDF: {d}\n",
+                .{II.doc_freqs.items[token], boost_weighted_idf},
+            );
+
+            idf_remaining += boost_weighted_idf;
+
+            const offset      = II.term_offsets[token];
+            const next_offset = II.term_offsets[token + 1];
+
+            const iterator_ptr = iterators.addOne(
+                self.gpa(),
+            ) catch @panic("Error adding iterator");
+            iterator_ptr.* = PostingsIterator(u32, u8).init(
+                II.postings.doc_ids[offset..next_offset],
+                II.postings.term_positions[offset..next_offset],
+                @intFromFloat(boost_weighted_idf),
+            );
+        }
+        // const idf_sum = idf_remaining;
+
+        if (iterators.items.len == 1) {
+            const score          = token_scores[0];
+            const col_score_pair = tokens.items[0];
+
+            const II_idx = @as(usize, @intCast(col_score_pair.col_idx));
+            const token  = @as(usize, @intCast(col_score_pair.token));
+
+            const II = &self.partitions.index_partitions[partition_idx].II[II_idx];
+
+            const offset      = II.term_offsets[token];
+            const next_offset = II.term_offsets[token + 1];
+
+            for (
+                0..,
+                II.postings.doc_ids[offset..next_offset],
+                II.postings.term_positions[offset..next_offset],
+                ) |_idx, doc_id, term_pos| {
+
+                doc_scores.items[_idx] = ScoringInfo{
+                    .score = score + 25.0 * @as(f32, @floatFromInt(@intFromBool(term_pos == 0))),
+                    .term_pos = term_pos,
+                };
+                doc_scores.values[_idx] = doc_id;
+                doc_scores.count += 1;
+                sorted_scores.insert(doc_id, score);
+            }
+
+            std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{doc_scores.count});
+
+            for (0..sorted_scores.count) |idx| {
+
+                const result = QueryResult{
+                    .doc_id = sorted_scores.items[idx],
+                    .partition_idx = @intCast(partition_idx),
+                };
+                query_results.insert(result, sorted_scores.scores[idx]);
+            }
+
+            return;
+        }
+
+        // Sort iterators by score.
+        sortStruct(
+            PostingsIterator(u32, u8),
+            iterators.items,
+            "score",
+            true,
+        );
+        // Check sorting.
+        for (0..iterators.items.len) |idx| {
+            const iterator = iterators.items[idx];
+            std.debug.print("Score: {d}\n", .{iterator.score});
+        }
+
+        // const high_df_thresh = 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len));
+
+        var total_docs_scored: usize = 0;
+        while (true) {
+            const result = iterators.items[0].next();
+            if (result.doc_id == std.math.maxInt(u32)) break;
+
+            const doc_id   = result.doc_id;
+            // const term_pos = result.term_pos;
+
+            var score = iterators.items[0].score;
+            for (iterators.items[1..]) |*iterator| {
+                const score_add = iterator.score;
+
+                const res = iterator.advanceTo(doc_id);
+                if (res.doc_id == doc_id) {
+                    score += score_add;
+
+                    // TODO: Incorporate term pos.
+                }
+            }
+
+            sorted_scores.insert(
+                doc_id,
+                @floatFromInt(score),
+            );
+            total_docs_scored += 1;
+        }
+
+        std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{total_docs_scored});
+
+        for (0..sorted_scores.count) |idx| {
+
+            const result = QueryResult{
+                .doc_id = sorted_scores.items[idx],
+                .partition_idx = @intCast(partition_idx),
+            };
+            query_results.insert(result, sorted_scores.scores[idx]);
+        }
+    }
 
 
     pub fn queryPartitionIntersectIter(
@@ -1348,6 +1640,15 @@ pub const IndexManager = struct {
 
         var done = false;
 
+        var time_0: i128 = 0;
+        var time_1: i128 = 0; var existing_doc_score_count: usize = 0;
+        var time_2: i128 = 0; var new_doc_score_count: usize = 0;
+        var time_3: i128 = 0;
+
+        var start: i128 = undefined;
+
+        const high_df_thresh = 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len));
+
         var last_II_idx: usize = 0;
         for (0..tokens.items.len) |idx| {
             const score          = token_scores[idx];
@@ -1363,18 +1664,11 @@ pub const IndexManager = struct {
             const offset      = II.term_offsets[token];
             const next_offset = II.term_offsets[token + 1];
 
-            const is_high_df_term: bool = (
-                score < 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len))
-                );
-
-            // var time_0: i128 = 0;
-            // var time_1: i128 = 0;
-            // var time_2: i128 = 0;
-// 
-            // var start: i128 = undefined;
+            const is_high_df_term: bool = score < high_df_thresh;
 
             if (idx == 0) {
                 // Direct insert.
+                start = std.time.nanoTimestamp();
                 for (
                     0..,
                     II.postings.doc_ids[offset..next_offset],
@@ -1389,6 +1683,7 @@ pub const IndexManager = struct {
                     doc_scores.count += 1;
                     sorted_scores.insert({}, score);
                 }
+                time_0 = std.time.nanoTimestamp() - start;
             } else {
                 // Iter 1, 2
                 var idx_1: usize = 0;
@@ -1402,7 +1697,10 @@ pub const IndexManager = struct {
                     const left_doc_id  = doc_scores.values[idx_1];
                     const right_doc_id = II.postings.doc_ids[idx_2];
 
+
                     if (left_doc_id == right_doc_id) {
+                        start = std.time.nanoTimestamp();
+
                         const result = &doc_scores.items[idx_1];
 
                         const prev_term_pos = result.term_pos;
@@ -1426,10 +1724,14 @@ pub const IndexManager = struct {
 
                         idx_1 += 1;
                         idx_2 += 1;
+
+                        time_1 += std.time.nanoTimestamp() - start;
+                        existing_doc_score_count += 1;
                     } else if (left_doc_id < right_doc_id) {
                         idx_1 += 1;
                     } else {
-                        if (!done and !is_high_df_term and !col_score_pair.shallow_query) {
+                        if (!done and !is_high_df_term) {
+                            start = std.time.nanoTimestamp();
                             const term_pos = II.postings.term_positions[idx_2];
 
                             if (sorted_scores.count == sorted_scores.capacity - 1) {
@@ -1438,37 +1740,39 @@ pub const IndexManager = struct {
                                 if (min_score > idf_remaining) {
                                     @branchHint(.unlikely);
                                     done = true;
-                                    // time_2 += std.time.nanoTimestamp() - start;
-                                    continue;
+                                    // continue;
+                                    break;
                                 }
                             }
 
-                            // doc_scores.insertIdx(
-                                // right_doc_id,
-                                // ScoringInfo{
-                                    // .score = score,
-                                    // .term_pos = term_pos,
-                                // },
-                                // doc_scores.count,
-                            // );
-                            scratch_array.insertIdx(
-                                right_doc_id,
-                                ScoringInfo{
-                                    .score = score,
-                                    .term_pos = term_pos,
-                                },
-                                scratch_array.count,
-                            );
+                            scratch_array.items[scratch_array.count] = ScoringInfo{
+                                .score    = score,
+                                .term_pos = term_pos,
+                            };
+                            scratch_array.values[scratch_array.count] = right_doc_id;
+                            scratch_array.count += 1;
+
                             sorted_scores.insert({}, score);
+                            time_2 += std.time.nanoTimestamp() - start;
+                            new_doc_score_count += 1;
                         }
                         idx_2 += 1;
                     }
                 }
             }
+
+            if (scratch_array.count == 0) {
+                std.debug.print("Scratch array empty, skipping.\n", .{});
+                idf_remaining -= score;
+                last_II_idx = II_idx;
+                continue;
+            }
             
             // Add scratch_array contents to doc_scores.
             const count_scratch = scratch_array.count;
             const count_docs    = doc_scores.count;
+
+            start = std.time.nanoTimestamp();
 
             var idx_1: usize = 0;
             var idx_2: usize = 0;
@@ -1492,17 +1796,51 @@ pub const IndexManager = struct {
 
                 count += 1;
             }
+            inactive_scores.count = count;
+
             const tmp_ptr = doc_scores;
             doc_scores = inactive_scores;
             inactive_scores = tmp_ptr;
+
+            inactive_scores.clear();
+            scratch_array.clear();
+
+            time_3 += std.time.nanoTimestamp() - start;
 
             std.debug.print("TOTAL DOCS SCORED: {d}\n", .{doc_scores.count});
             std.debug.print("WAS HIGH DF TERM:   {}\n\n", .{is_high_df_term});
             idf_remaining -= score;
             last_II_idx = II_idx;
+
         }
 
         std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{doc_scores.count});
+
+        std.debug.print(
+            "Time taken for first iteration: {d}us\n",
+            .{@divFloor(time_0, 1000)},
+            );
+        std.debug.print(
+            "Existing doc scoring time: {d}us\n",
+            .{@divFloor(time_1, 1000)},
+            );
+        std.debug.print(
+            "New doc scoring time: {d}us\n",
+            .{@divFloor(time_2, 1000)},
+            );
+        std.debug.print(
+            "Doc store transition time: {d}us\n",
+            .{@divFloor(time_3, 1000)},
+            );
+        std.debug.print(
+            "Existing doc scoring count: {d}\n",
+            .{existing_doc_score_count},
+            );
+        std.debug.print(
+            "New doc scoring count: {d}\n",
+            .{new_doc_score_count},
+            );
+
 
         for (0..doc_scores.count) |idx| {
 
@@ -1685,6 +2023,7 @@ pub const IndexManager = struct {
 
         var done = false;
 
+        const high_df_thresh: f32 = 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len));
         var last_II_idx: usize = 0;
         for (0..tokens.items.len) |idx| {
             const score          = token_scores[idx];
@@ -1700,9 +2039,7 @@ pub const IndexManager = struct {
             const offset      = II.term_offsets[token];
             const last_offset = II.term_offsets[token + 1];
 
-            const is_high_df_term: bool = (
-                score < 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len))
-                );
+            const is_high_df_term: bool = score < high_df_thresh;
 
             var time_0: i128 = 0;
             var time_1: i128 = 0;
@@ -2126,7 +2463,8 @@ pub const IndexManager = struct {
                 &wg,
                 // queryPartitionOrdered,
                 // queryPartitionIntersect,
-                queryPartitionIntersectIter,
+                // queryPartitionIntersectIter,
+                queryPartitionDAAT,
                 .{
                     self,
                     queries,
