@@ -152,6 +152,8 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
         term_positions: []term_pos_T,
         current_idx: usize,
         score: usize,
+        col_idx: u32,
+        query_term_pos: term_pos_T,
         consumed: bool,
 
         pub const Result = struct {
@@ -159,12 +161,20 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
             term_pos: term_pos_T,
         };
 
-        pub fn init(doc_ids: []T, term_positions: []term_pos_T, score: usize) Self {
+        pub fn init(
+            doc_ids: []T, 
+            term_positions: []term_pos_T, 
+            col_idx: u32,
+            query_term_pos: term_pos_T,
+            score: usize,
+            ) Self {
             return Self{ 
                 .doc_ids = doc_ids,
                 .term_positions = term_positions,
                 .current_idx = 0,
                 .score = score,
+                .col_idx = col_idx,
+                .query_term_pos = query_term_pos,
                 .consumed = false,
             };
         }
@@ -230,6 +240,10 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
                 .doc_id = self.doc_ids[self.current_idx],
                 .term_pos = self.term_positions[self.current_idx],
             };
+        }
+
+        pub inline fn len(self: *Self) usize {
+            return self.doc_ids.len;
         }
     };
 }

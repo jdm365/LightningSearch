@@ -52,8 +52,8 @@ const Column = struct {
 const ColTokenPair = struct {
     col_idx: u32,
     token: u32,
+    bw_idf: u32,
     term_pos: u8,
-    shallow_query: bool,
 };
 
 
@@ -1185,12 +1185,17 @@ pub const IndexManager = struct {
         const num_search_cols = self.search_col_idxs.items.len;
         std.debug.assert(num_search_cols > 0);
 
-        // Tokenize query.
-        var tokens = std.ArrayListUnmanaged(ColTokenPair){};
-
         var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
 
         var empty_query = true; 
+
+        // TODO: Figure out meta typing to just map doc_id and term_pos types.
+        var iterators = std.ArrayListUnmanaged(
+            PostingsIterator(u32, u8),
+        ){};
+        defer iterators.deinit(self.gpa());
+
+        var idf_remaining: f32 = 0.0;
 
         var query_it = queries.iterator();
         while (query_it.next()) |entry| {
@@ -1217,23 +1222,37 @@ pub const IndexManager = struct {
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
                         if (term_len == 0) continue;
 
-                        const token = self.partitions.index_partitions[partition_idx].II[II_idx].vocab.get(
+                        const II = &self.partitions.index_partitions[partition_idx].II[II_idx];
+
+                        const token = II.vocab.get(
                             term_buffer[0..term_len],
-                            self.partitions.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
+                            II.vocab.getAdapter(),
                             );
-                        if (token != null) {
-                            tokens.append(
+                        if (token) |_token| {
+                            const inner_term = @as(f32, @floatFromInt(II.num_docs)) / 
+                                               @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
+                            const boost_weighted_idf: f32 = (
+                                1.0 + std.math.log2(inner_term)
+                                ) * boost_factors.items[II_idx];
+
+                            std.debug.assert(II_idx <= self.search_col_idxs.items.len);
+                            const offset      = II.term_offsets[_token];
+                            const next_offset = II.term_offsets[_token + 1];
+
+                            const iterator_ptr = iterators.addOne(
                                 self.gpa(),
-                                ColTokenPair{
-                                .col_idx       = @intCast(II_idx),
-                                .term_pos      = term_pos,
-                                .token         = token.?,
-                                .shallow_query = false,
-                            }) catch {
-                                @panic("Failed to append token");
-                            };
+                            ) catch @panic("Error adding iterator");
+                            iterator_ptr.* = PostingsIterator(u32, u8).init(
+                                II.postings.doc_ids[offset..next_offset],
+                                II.postings.term_positions[offset..next_offset],
+                                @truncate(II_idx),
+                                term_pos,
+                                @intFromFloat(boost_weighted_idf),
+                            );
+
                             term_pos += 1;
                             empty_query = false;
+                            idf_remaining += boost_weighted_idf;
                         }
                         term_len = 0;
                         continue;
@@ -1243,23 +1262,37 @@ pub const IndexManager = struct {
                         term_len += 1;
 
                         if (term_len == MAX_TERM_LENGTH) {
-                            const token = self.partitions.index_partitions[partition_idx].II[II_idx].vocab.get(
+                            const II = &self.partitions.index_partitions[partition_idx].II[II_idx];
+
+                            const token = II.vocab.get(
                                 term_buffer[0..term_len],
-                                self.partitions.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
+                                II.vocab.getAdapter(),
                                 );
-                            if (token != null) {
-                                tokens.append(
+
+                            if (token) |_token| {
+                                const inner_term = @as(f32, @floatFromInt(II.num_docs)) / 
+                                                   @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
+                                const boost_weighted_idf: f32 = (
+                                    1.0 + std.math.log2(inner_term)
+                                    ) * boost_factors.items[II_idx];
+
+                                const offset      = II.term_offsets[_token];
+                                const next_offset = II.term_offsets[_token + 1];
+
+                                const iterator_ptr = iterators.addOne(
                                     self.gpa(),
-                                    ColTokenPair{
-                                    .col_idx       = @intCast(II_idx),
-                                    .term_pos      = term_pos,
-                                    .token         = token.?,
-                                    .shallow_query = false,
-                                }) catch {
-                                    @panic("Failed to append token");
-                                };
+                                ) catch @panic("Error adding iterator");
+                                iterator_ptr.* = PostingsIterator(u32, u8).init(
+                                    II.postings.doc_ids[offset..next_offset],
+                                    II.postings.term_positions[offset..next_offset],
+                                    @truncate(II_idx),
+                                    term_pos,
+                                    @intFromFloat(boost_weighted_idf),
+                                );
+
                                 term_pos += 1;
                                 empty_query = false;
+                                idf_remaining += boost_weighted_idf;
                             }
                             term_len = 0;
                         }
@@ -1268,24 +1301,37 @@ pub const IndexManager = struct {
             }
 
             if (term_len > 0) {
-                const token = self.partitions.index_partitions[partition_idx].II[II_idx].vocab.get(
+                const II = &self.partitions.index_partitions[partition_idx].II[II_idx];
+
+                const token = II.vocab.get(
                     term_buffer[0..term_len],
-                    self.partitions.index_partitions[partition_idx].II[II_idx].vocab.getAdapter(),
+                    II.vocab.getAdapter(),
                     );
-                if (token != null) {
-                    tokens.append(
+
+                if (token) |_token| {
+                    const inner_term = @as(f32, @floatFromInt(II.num_docs)) / 
+                                       @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
+                    const boost_weighted_idf: f32 = (
+                        1.0 + std.math.log2(inner_term)
+                        ) * boost_factors.items[II_idx];
+
+                    const offset      = II.term_offsets[_token];
+                    const next_offset = II.term_offsets[_token + 1];
+
+                    const iterator_ptr = iterators.addOne(
                         self.gpa(),
-                        ColTokenPair{
-                        .col_idx = @intCast(II_idx),
-                        .term_pos = term_pos,
-                        .token = token.?,
-                        .shallow_query = false,
-                    }) catch {
-                        @panic("Failed to append token");
-                    };
+                    ) catch @panic("Error adding iterator");
+                    iterator_ptr.* = PostingsIterator(u32, u8).init(
+                        II.postings.doc_ids[offset..next_offset],
+                        II.postings.term_positions[offset..next_offset],
+                        @truncate(II_idx),
+                        term_pos,
+                        @intFromFloat(boost_weighted_idf),
+                    );
 
                     term_pos += 1;
                     empty_query = false;
+                    idf_remaining += boost_weighted_idf;
                 }
             }
         }
@@ -1303,15 +1349,6 @@ pub const IndexManager = struct {
             return;
         }
 
-        // For each token in each II, get relevant docs and add to score.
-        var doc_scores = &self.partitions.index_partitions[partition_idx].doc_score_sa[0];
-        var inactive_scores = &self.partitions.index_partitions[partition_idx].doc_score_sa[1];
-        var scratch_array = &self.partitions.index_partitions[partition_idx].scratch_array;
-
-        inactive_scores.clear();
-        doc_scores.clear();
-        scratch_array.clear();
-
         var sorted_scores = SortedScoreMultiArray(u32).init(
             self.gpa(), 
             query_results.capacity,
@@ -1320,84 +1357,23 @@ pub const IndexManager = struct {
             };
         defer sorted_scores.deinit();
 
-
-        var token_scores = self.gpa().alloc(f32, tokens.items.len) catch {
-            @panic("Failed to alloc token scores");
-        };
-
-        // TODO: Figure out meta typing to just map doc_id and term_pos types.
-        var iterators = std.ArrayListUnmanaged(
-            PostingsIterator(u32, u8),
-        ){};
-        defer iterators.deinit(self.gpa());
-
-        var idf_remaining: f32 = 0.0;
-        for (0.., tokens.items) |idx, _token| {
-            const II_idx: usize = @intCast(_token.col_idx);
-            const token:  usize = @intCast(_token.token);
-            std.debug.assert(II_idx <= self.search_col_idxs.items.len);
-
-            const II = &self.partitions.index_partitions[partition_idx].II[II_idx];
-
-            const inner_term = switch (_token.shallow_query) {
-                true => @as(f32, @floatFromInt(II.doc_freqs.items[token])),
-                false => @as(f32, @floatFromInt(II.num_docs)) / 
-                         @as(f32, @floatFromInt(II.doc_freqs.items[token])),
-            };
-            const boost_weighted_idf: f32 = (
-                1.0 + std.math.log2(inner_term)
-                ) * boost_factors.items[II_idx];
-            token_scores[idx] = boost_weighted_idf;
-
-            std.debug.print(
-                "Doc freq: {d} | BW_IDF: {d}\n",
-                .{II.doc_freqs.items[token], boost_weighted_idf},
-            );
-
-            idf_remaining += boost_weighted_idf;
-
-            const offset      = II.term_offsets[token];
-            const next_offset = II.term_offsets[token + 1];
-
-            const iterator_ptr = iterators.addOne(
-                self.gpa(),
-            ) catch @panic("Error adding iterator");
-            iterator_ptr.* = PostingsIterator(u32, u8).init(
-                II.postings.doc_ids[offset..next_offset],
-                II.postings.term_positions[offset..next_offset],
-                @intFromFloat(boost_weighted_idf),
-            );
-        }
-        // const idf_sum = idf_remaining;
-
         if (iterators.items.len == 1) {
-            const score          = token_scores[0];
-            const col_score_pair = tokens.items[0];
+            const score: f32 = @floatFromInt(iterators.items[0].score);
 
-            const II_idx = @as(usize, @intCast(col_score_pair.col_idx));
-            const token  = @as(usize, @intCast(col_score_pair.token));
+            var res = iterators.items[0].next();
+            var doc_id:  u32 = res.doc_id;
+            var term_pos: u8 = res.term_pos;
+            while (doc_id != std.math.maxInt(u32)) {
+                const score_add = score + 25.0 * @as(f32, @floatFromInt(@intFromBool(term_pos == 0)));
+                sorted_scores.insert(doc_id, score_add);
 
-            const II = &self.partitions.index_partitions[partition_idx].II[II_idx];
+                res = iterators.items[0].next();
+                doc_id   = res.doc_id;
+                term_pos = res.term_pos;
 
-            const offset      = II.term_offsets[token];
-            const next_offset = II.term_offsets[token + 1];
-
-            for (
-                0..,
-                II.postings.doc_ids[offset..next_offset],
-                II.postings.term_positions[offset..next_offset],
-                ) |_idx, doc_id, term_pos| {
-
-                doc_scores.items[_idx] = ScoringInfo{
-                    .score = score + 25.0 * @as(f32, @floatFromInt(@intFromBool(term_pos == 0))),
-                    .term_pos = term_pos,
-                };
-                doc_scores.values[_idx] = doc_id;
-                doc_scores.count += 1;
-                sorted_scores.insert(doc_id, score);
             }
 
-            std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{doc_scores.count});
+            std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{iterators.items[0].len()});
 
             for (0..sorted_scores.count) |idx| {
 

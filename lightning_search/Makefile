@@ -1,4 +1,6 @@
 EXEC_PATH := ./swift/build/search_app
+BIN_PATH  := lightning_search.bin
+DATA_PATH := ../../data/enwiki.csv
 
 build:
 	zig build shared
@@ -16,30 +18,20 @@ exec:
 
 run: build exec
 
-## app:
-	## zig build
-	## mv zig-out/bin/lightning_search electron_app/
-	## cd electron_app && npm start
-
-## app_release:
-## 	zig build -Doptimize=ReleaseSafe
-## 	mv zig-out/bin/lightning_search electron_app/
-## 	cd electron_app && npm start
-
 app:
 	zig build
-	mv zig-out/bin/lightning_search web_app/
-	cd web_app && ./lightning_search ../../data/enwiki.csv
+	mv zig-out/bin/$(BIN_PATH) web_app/
+	cd web_app && ./$(BIN_PATH) $(DATA_PATH)
 
 app_release:
 	zig build -Doptimize=ReleaseSafe
-	mv zig-out/bin/lightning_search web_app/
-	cd web_app && ./lightning_search ../../data/enwiki.csv
+	mv zig-out/bin/$(BIN_PATH) web_app/
+	cd web_app && ./$(BIN_PATH) $(DATA_PATH)
 
 app_release_fast:
 	zig build -Doptimize=ReleaseFast
-	mv zig-out/bin/lightning_search web_app/
-	cd web_app && ./lightning_search ../../data/enwiki.csv
+	mv zig-out/bin/$(BIN_PATH) web_app/
+	cd web_app && ./$(BIN_PATH) $(DATA_PATH)
 
 debug:
 	lldb $(EXEC_PATH)
