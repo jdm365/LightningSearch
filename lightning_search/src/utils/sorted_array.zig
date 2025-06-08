@@ -353,7 +353,7 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
 }
 
 
-pub fn SortedIntMultiArray(comptime T: type) type {
+pub fn SortedIntMultiArray(comptime T: type, comptime descending: bool) type {
 
     return struct {
         const Self = @This();
@@ -372,7 +372,7 @@ pub fn SortedIntMultiArray(comptime T: type) type {
                 .@"32",
                 alloc_size,
                 );
-            @memset(values, 0);
+            @memset(values, comptime if (descending) 0 else std.math.maxInt(u32));
 
             return Self{
                 .allocator = allocator,
@@ -407,10 +407,18 @@ pub fn SortedIntMultiArray(comptime T: type) type {
 
                 if (self.values[mid] == value) return mid;
 
-                if (self.values[mid] > value) {
-                    low = mid + 1;
+                if (descending) {
+                    if (self.values[mid] > value) {
+                        low = mid + 1;
+                    } else {
+                        high = mid;
+                    }
                 } else {
-                    high = mid;
+                    if (self.values[mid] < value) {
+                        low = mid + 1;
+                    } else {
+                        high = mid;
+                    }
                 }
             }
             return low;
@@ -418,8 +426,14 @@ pub fn SortedIntMultiArray(comptime T: type) type {
 
         inline fn linearSearch(self: *Self, value: u32) usize {
             for (0.., self.values[0..self.count]) |idx, _values| {
-                if (_values <= value) {
-                    return idx;
+                if (descending) {
+                    if (_values <= value) {
+                        return idx;
+                    }
+                } else {
+                    if (_values >= value) {
+                        return idx;
+                    }
                 }
             }
             return self.count;
@@ -436,7 +450,12 @@ pub fn SortedIntMultiArray(comptime T: type) type {
                                       8 * @as(usize, @intFromBool(self.count % 8 != 0));
             var idx: usize = 0;
             while (idx < simd_limit) {
-                const mask = new_value > existing_values.*;
+                const mask = if (descending) 
+                    new_value > existing_values.*
+                 else 
+                    new_value < existing_values.*
+                ;
+
                 const set_idx = @ctz(@as(u8, @bitCast(mask)));
                 if (set_idx != 8) {
                     return @min(idx + set_idx, self.count);

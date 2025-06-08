@@ -30,6 +30,7 @@ const MAX_NUM_TERMS   = @import("index.zig").MAX_NUM_TERMS;
 
 const SHM = @import("index.zig").SHM;
 const SortedScoreMultiArray = @import("../utils/sorted_array.zig").SortedScoreMultiArray;
+const SortedIntMultiArray = @import("../utils/sorted_array.zig").SortedIntMultiArray;
 const ScorePair             = @import("../utils/sorted_array.zig").ScorePair;
 const findSorted            = @import("../utils/misc_utils.zig").findSorted;
 const sortStruct            = @import("../utils/misc_utils.zig").sortStruct;
@@ -1187,6 +1188,29 @@ pub const IndexManager = struct {
 
         var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
 
+        var search_col_counts = self.gpa().alloc(usize, num_search_cols) catch {
+            @panic("Failed to alloc search_col_counts.");
+        };
+        defer self.gpa().free(search_col_counts);
+
+        @memset(search_col_counts, 0);
+
+        const bigrams = self.gpa().alloc(
+            std.ArrayListUnmanaged(u64),
+            num_search_cols,
+        ) catch {
+            @panic("Failed to alloc bigrams.");
+        };
+        defer {
+            for (bigrams) |*inner_arr| {
+                inner_arr.deinit(self.gpa());
+            }
+            self.gpa().free(bigrams);
+        }
+        for (bigrams) |*bg| {
+            bg.* = std.ArrayListUnmanaged(u64){};
+        }
+
         var empty_query = true; 
 
         // TODO: Figure out meta typing to just map doc_id and term_pos types.
@@ -1245,6 +1269,7 @@ pub const IndexManager = struct {
                             iterator_ptr.* = PostingsIterator(u32, u8).init(
                                 II.postings.doc_ids[offset..next_offset],
                                 II.postings.term_positions[offset..next_offset],
+                                _token,
                                 @truncate(II_idx),
                                 term_pos,
                                 @intFromFloat(boost_weighted_idf),
@@ -1253,6 +1278,17 @@ pub const IndexManager = struct {
                             term_pos += 1;
                             empty_query = false;
                             idf_remaining += boost_weighted_idf;
+
+                            search_col_counts[II_idx] += 1;
+                            if (search_col_counts[II_idx] > 1) {
+                                bigrams[II_idx].append(
+                                    self.gpa(),
+                                    (@as(u64, @intCast(iterators.items[iterators.items.len - 2].term_id)) << 32) | 
+                                    @as(u64, @intCast(_token)),
+                                ) catch {
+                                    @panic("Failed to append bigram.");
+                                };
+                            }
                         }
                         term_len = 0;
                         continue;
@@ -1285,6 +1321,7 @@ pub const IndexManager = struct {
                                 iterator_ptr.* = PostingsIterator(u32, u8).init(
                                     II.postings.doc_ids[offset..next_offset],
                                     II.postings.term_positions[offset..next_offset],
+                                    _token,
                                     @truncate(II_idx),
                                     term_pos,
                                     @intFromFloat(boost_weighted_idf),
@@ -1293,6 +1330,17 @@ pub const IndexManager = struct {
                                 term_pos += 1;
                                 empty_query = false;
                                 idf_remaining += boost_weighted_idf;
+
+                                search_col_counts[II_idx] += 1;
+                                if (search_col_counts[II_idx] > 1) {
+                                    bigrams[II_idx].append(
+                                        self.gpa(),
+                                        (@as(u64, @intCast(iterators.items[iterators.items.len - 2].term_id)) << 32) | 
+                                        @as(u64, @intCast(_token)),
+                                    ) catch {
+                                        @panic("Failed to append bigram.");
+                                    };
+                                }
                             }
                             term_len = 0;
                         }
@@ -1324,6 +1372,7 @@ pub const IndexManager = struct {
                     iterator_ptr.* = PostingsIterator(u32, u8).init(
                         II.postings.doc_ids[offset..next_offset],
                         II.postings.term_positions[offset..next_offset],
+                        _token,
                         @truncate(II_idx),
                         term_pos,
                         @intFromFloat(boost_weighted_idf),
@@ -1332,6 +1381,17 @@ pub const IndexManager = struct {
                     term_pos += 1;
                     empty_query = false;
                     idf_remaining += boost_weighted_idf;
+
+                    search_col_counts[II_idx] += 1;
+                    if (search_col_counts[II_idx] > 1) {
+                        bigrams[II_idx].append(
+                            self.gpa(),
+                            (@as(u64, @intCast(iterators.items[iterators.items.len - 2].term_id)) << 32) | 
+                            @as(u64, @intCast(_token)),
+                        ) catch {
+                            @panic("Failed to append bigram.");
+                        };
+                    }
                 }
             }
         }
@@ -1400,15 +1460,37 @@ pub const IndexManager = struct {
             std.debug.print("Score: {d}\n", .{iterator.score});
         }
 
-        // const high_df_thresh = 0.4 * idf_sum / @as(f32, @floatFromInt(tokens.items.len));
+        var doc_term_positions = self.gpa().alloc(
+            SortedIntMultiArray(u32, false), 
+            num_search_cols,
+            ) catch {
+            @panic("Failed to alloc doc_term_positions.");
+        };
+        defer self.gpa().free(doc_term_positions);
+        for (doc_term_positions) |*arr| {
+            arr.* = SortedIntMultiArray(u32, false).init(
+                self.gpa(),
+                64,
+            ) catch {
+                @panic("Failed to init doc_term_positions.");
+            };
+        }
 
+        var lead_iter = &iterators.items[0];
         var total_docs_scored: usize = 0;
         while (true) {
-            const result = iterators.items[0].next();
+            const result = lead_iter.next();
             if (result.doc_id == std.math.maxInt(u32)) break;
+            for (doc_term_positions) |*pos| {
+                pos.clear();
+            }
 
-            const doc_id   = result.doc_id;
-            // const term_pos = result.term_pos;
+            doc_term_positions[lead_iter.col_idx].insert(
+                lead_iter.term_id,
+                result.term_pos,
+            );
+
+            const doc_id = result.doc_id;
 
             var score = iterators.items[0].score;
             for (iterators.items[1..]) |*iterator| {
@@ -1417,8 +1499,27 @@ pub const IndexManager = struct {
                 const res = iterator.advanceTo(doc_id);
                 if (res.doc_id == doc_id) {
                     score += score_add;
+                }
 
-                    // TODO: Incorporate term pos.
+                doc_term_positions[iterator.col_idx].insert(
+                    iterator.term_id,
+                    res.term_pos,
+                );
+            }
+
+            // Term pos scoring.
+            for (0.., doc_term_positions) |II_idx, *pos| {
+                if (pos.count <= 1) continue;
+
+                for (0..(pos.count - 1)) |idx| {
+                    const diff = pos.values[idx + 1] - pos.values[idx];
+                    if (diff != 1) continue;
+
+                    const new_bigram = @as(u64, @intCast(pos.items[idx])) << 32 | 
+                                       @as(u64, @intCast(pos.items[idx + 1]));
+                    for (bigrams[II_idx].items) |bg| {
+                        score *= 2 * @as(u32, @intCast(@intFromBool(bg == new_bigram)));
+                    }
                 }
             }
 

@@ -122,20 +122,34 @@ pub fn CategoricalColumn(comptime T: type) type {
     };
 }
 
-inline fn binarySearch(
-    comptime T: type,
-    arr: []T,
-    value: T,
-    ) usize {
+// inline fn binarySearch(
+    // comptime T: type,
+    // arr: []T,
+    // value: T,
+    // ) usize {
+    // var low: usize = 0;
+    // var high: usize = arr.len;
+// 
+    // while (low < high) {
+        // const mid = low + (high - low) / 2;
+// 
+        // if (arr[mid] == value) return mid;
+// 
+        // if (arr[mid] > value) {
+            // low = mid + 1;
+        // } else {
+            // high = mid;
+        // }
+    // }
+    // return low;
+// }
+inline fn lowerBound(comptime T: type, slice: []const T, target: T) usize {
     var low: usize = 0;
-    var high: usize = arr.len;
+    var high: usize = slice.len;
 
     while (low < high) {
-        const mid = low + (high - low) / 2;
-
-        if (arr[mid] == value) return mid;
-
-        if (arr[mid] > value) {
+        const mid = low + ((high - low) >> 1);
+        if (slice[mid] < target) {
             low = mid + 1;
         } else {
             high = mid;
@@ -152,6 +166,7 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
         term_positions: []term_pos_T,
         current_idx: usize,
         score: usize,
+        term_id: u32,
         col_idx: u32,
         query_term_pos: term_pos_T,
         consumed: bool,
@@ -164,6 +179,7 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
         pub fn init(
             doc_ids: []T, 
             term_positions: []term_pos_T, 
+            term_id: u32,
             col_idx: u32,
             query_term_pos: term_pos_T,
             score: usize,
@@ -171,12 +187,20 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
             return Self{ 
                 .doc_ids = doc_ids,
                 .term_positions = term_positions,
+                .term_id = term_id,
                 .current_idx = 0,
                 .score = score,
                 .col_idx = col_idx,
                 .query_term_pos = query_term_pos,
                 .consumed = false,
             };
+        }
+
+        pub inline fn currentDocId(self: *const Self) T {
+            if (self.current_idx >= self.doc_ids.len) {
+                return std.math.maxInt(T);
+            }
+            return self.doc_ids[self.current_idx];
         }
 
         pub inline fn next(self: *Self) Result {
@@ -213,17 +237,7 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
                 self.consumed = true;
             }
 
-            // while (self.doc_ids[self.current_idx] < next_item) {
-                // self.current_idx += 1;
-                // if (self.current_idx == self.doc_ids.len) {
-                    // self.consumed = true;
-                    // return .{
-                        // .doc_id = std.math.maxInt(T), 
-                        // .term_pos = std.math.maxInt(term_pos_T),
-                    // };
-                // }
-            // }
-            self.current_idx += binarySearch(
+            self.current_idx += lowerBound(
                 T,
                 self.doc_ids[self.current_idx..],
                 next_item,
@@ -244,6 +258,65 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
 
         pub inline fn len(self: *Self) usize {
             return self.doc_ids.len;
+        }
+    };
+}
+
+pub fn IteratorMinHeap(comptime IteratorPtrType: type) type {
+    return struct {
+        const Self = @This();
+
+        fn compareIterators(
+            _: void, 
+            a: IteratorPtrType, 
+            b: IteratorPtrType
+            ) std.math.Order {
+            return std.math.order(a.currentDocId(), b.currentDocId());
+        }
+
+        pq: std.PriorityQueue(void, IteratorPtrType, compareIterators),
+
+        pub fn init(allocator: std.mem.Allocator) Self {
+            return Self{
+                .pq = std.heap.PriorityQueue(
+                    void,
+                    IteratorPtrType,
+                    compareIterators,
+                ).init(
+                    allocator,
+                    {},
+                ),
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.pq.deinit();
+        }
+
+        pub inline fn push(self: *Self, iterator: IteratorPtrType) !void {
+            try self.pq.add(iterator);
+        }
+
+        pub inline fn pop(self: *Self) ?IteratorPtrType {
+            if (self.pq.count() == 0) {
+                return null;
+            }
+            return self.pq.remove();
+        }
+
+        pub inline fn peek(self: *const Self) ?IteratorPtrType {
+            if (self.pq.count() == 0) {
+                return null;
+            }
+            return self.pq.items[0];
+        }
+
+        pub inline fn len(self: *const Self) usize {
+            return self.pq.count();
+        }
+
+        pub inline fn is_empty(self: *const Self) bool {
+            return self.pq.count() == 0;
         }
     };
 }
@@ -477,9 +550,9 @@ pub const BM25Partition = struct {
     num_records: usize,
     allocator: std.mem.Allocator,
     doc_score_map: std.AutoHashMap(u32, ScoringInfo),
-    doc_score_sa: [2]SortedIntMultiArray(ScoringInfo),
+    doc_score_sa: [2]SortedIntMultiArray(ScoringInfo, false),
 
-    scratch_array: SortedIntMultiArray(ScoringInfo),
+    scratch_array: SortedIntMultiArray(ScoringInfo, false),
 
     doc_store: DocStore,
 
@@ -497,18 +570,18 @@ pub const BM25Partition = struct {
             .allocator = allocator,
             .doc_score_map = doc_score_map,
             .doc_score_sa = undefined,
-            .scratch_array = try SortedIntMultiArray(ScoringInfo).init(
+            .scratch_array = try SortedIntMultiArray(ScoringInfo, false).init(
                 allocator,
                 1_048_576,
             ),
 
             .doc_store = undefined,
         };
-        partition.doc_score_sa[0] = try SortedIntMultiArray(ScoringInfo).init(
+        partition.doc_score_sa[0] = try SortedIntMultiArray(ScoringInfo, false).init(
             allocator,
             1_048_576,
         );
-        partition.doc_score_sa[1] = try SortedIntMultiArray(ScoringInfo).init(
+        partition.doc_score_sa[1] = try SortedIntMultiArray(ScoringInfo, false).init(
             allocator,
             1_048_576,
         );
