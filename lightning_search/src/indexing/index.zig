@@ -176,7 +176,7 @@ inline fn linearLowerBound(slice: []const u32, target: u32) usize {
             return @min(idx + set_idx, slice.len);
         }
 
-        existing_values = @ptrFromInt(@intFromPtr(slice.ptr) + 32);
+        existing_values = @ptrFromInt(@intFromPtr(existing_values) + 32);
         idx += 8;
     }
     return slice.len;
@@ -234,25 +234,49 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
             return self.term_positions[self.current_idx];
         }
 
+        // pub inline fn next(self: *Self) Result {
+            // if (self.consumed) {
+                // return .{
+                    // .doc_id = std.math.maxInt(T), 
+                    // .term_pos = std.math.maxInt(term_pos_T),
+                // };
+            // }
+// 
+            // if (self.current_idx < self.doc_ids.len) {
+                // self.current_idx += 1;
+                // return .{
+                    // .doc_id = self.doc_ids[self.current_idx - 1],
+                    // .term_pos = self.term_positions[self.current_idx - 1],
+                // };
+            // }
+            // self.consumed = true;
+            // return .{
+                // .doc_id = std.math.maxInt(T), 
+                // .term_pos = std.math.maxInt(term_pos_T),
+            // };
+        // }
+
         pub inline fn next(self: *Self) Result {
             if (self.consumed) {
                 return .{
-                    .doc_id = std.math.maxInt(T), 
+                    .doc_id = std.math.maxInt(T),
                     .term_pos = std.math.maxInt(term_pos_T),
                 };
             }
 
-            if (self.current_idx < self.doc_ids.len) {
-                self.current_idx += 1;
+            self.current_idx += 1;
+
+            if (self.current_idx >= self.doc_ids.len) {
+                self.consumed = true;
                 return .{
-                    .doc_id = self.doc_ids[self.current_idx - 1],
-                    .term_pos = self.term_positions[self.current_idx - 1],
+                    .doc_id = std.math.maxInt(T),
+                    .term_pos = std.math.maxInt(term_pos_T),
                 };
             }
-            self.consumed = true;
+
             return .{
-                .doc_id = std.math.maxInt(T), 
-                .term_pos = std.math.maxInt(term_pos_T),
+                .doc_id = self.doc_ids[self.current_idx],
+                .term_pos = self.term_positions[self.current_idx],
             };
         }
 

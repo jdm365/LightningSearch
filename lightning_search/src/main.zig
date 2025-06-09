@@ -34,10 +34,10 @@ fn bench(filename: []const u8) !void {
     try index_manager.readHeader(filename, filetype);
     try index_manager.scanFile();
 
-    // try index_manager.addSearchCol("text");
-    try index_manager.addSearchCol("title");
-    try index_manager.addSearchCol("artist");
-    try index_manager.addSearchCol("album");
+    try index_manager.addSearchCol("text");
+    // try index_manager.addSearchCol("title");
+    // try index_manager.addSearchCol("artist");
+    // try index_manager.addSearchCol("album");
     // try index_manager.addSearchCol("story_url");
     // try index_manager.addSearchCol("story_text");
     // try index_manager.addSearchCol("story_author");
@@ -50,18 +50,18 @@ fn bench(filename: []const u8) !void {
     defer boost_factors.deinit();
 
     try boost_factors.append(2.0);
-    try boost_factors.append(1.0);
-    try boost_factors.append(1.0);
+    // try boost_factors.append(1.0);
+    // try boost_factors.append(1.0);
     // try boost_factors.append(1.0);
     // try boost_factors.append(1.0);
 
     var query_map = SHM.init(allocator);
     defer query_map.deinit();
 
-    // try query_map.put("TEXT", "griffith observatory");
-    try query_map.put("TITLE", "UNDER MY SKIN");
-    try query_map.put("ARTIST", "FRANK SINATRA");
-    try query_map.put("ALBUM", "LIGHTNING");
+    try query_map.put("TEXT", "griffith observatory");
+    // try query_map.put("TITLE", "UNDER MY SKIN");
+    // try query_map.put("ARTIST", "FRANK SINATRA");
+    // try query_map.put("ALBUM", "LIGHTNING");
     // try query_map.put("STORY_TEXT", "zig");
     // try query_map.put("COMMENT_TEXT", "gotta go fast");
 
@@ -128,8 +128,8 @@ fn serveHTML(filename: []const u8) !void {
     defer boost_factors.deinit();
 
     try boost_factors.append(2.0);
-    try boost_factors.append(1.0);
-    try boost_factors.append(1.0);
+    // try boost_factors.append(1.0);
+    // try boost_factors.append(1.0);
 
     var server_handler = try server.QueryHandlerZap.init(
         &index_manager,
@@ -161,8 +161,8 @@ pub fn main() !void {
     // try serveHTML(filename);
 
     // const filename = "../data/mb_small.csv";
-    const filename = "../data/mb.csv";
-    // const filename = "../data/enwiki.csv";
+    // const filename = "../data/mb.csv";
+    const filename = "../data/enwiki.csv";
     // const filename = "../data/enwiki_small.csv";
     // const filename = "../data/mb.parquet";
     // const filename = "../data/hn.csv";

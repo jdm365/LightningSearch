@@ -31,7 +31,7 @@ const MAX_NUM_TERMS   = @import("index.zig").MAX_NUM_TERMS;
 
 const SHM = @import("index.zig").SHM;
 const SortedScoreMultiArray = @import("../utils/sorted_array.zig").SortedScoreMultiArray;
-const SortedIntMultiArray = @import("../utils/sorted_array.zig").SortedIntMultiArray;
+const SortedIntMultiArray   = @import("../utils/sorted_array.zig").SortedIntMultiArray;
 const ScorePair             = @import("../utils/sorted_array.zig").ScorePair;
 const findSorted            = @import("../utils/misc_utils.zig").findSorted;
 const sortStruct            = @import("../utils/misc_utils.zig").sortStruct;
@@ -42,8 +42,8 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
-// const MAX_NUM_THREADS: usize = 2;
-const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+const MAX_NUM_THREADS: usize = 1;
+// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -1469,21 +1469,12 @@ pub const IndexManager = struct {
             self.gpa().free(doc_term_positions);
         }
 
-        var iterator_heap = PostingsIteratorMinHeap(*PostingsIterator(u32, u8)).init(
-            self.gpa(),
-        );
-        for (iterators.items) |*it| {
-            iterator_heap.push(it) catch {
-                @panic("Failed to push iterator onto heap.");
-            };
-        }
-
         var total_docs_scored: usize = 0;
 
-        var iterators_to_advance = std.ArrayListUnmanaged(*PostingsIterator(u32, u8)){};
-        defer iterators_to_advance.deinit(self.gpa());
-
-        var score_sums_vec:  @Vector(8, u32) = @splat(0);
+        var consumed_mask:  @Vector(8, bool) = @splat(false);
+        for (iterators.items.len..8) |idx| {
+            consumed_mask[idx] = true;
+        }
         var doc_id_vec: @Vector(8, u32) = @splat(0);
         var score_vec:  @Vector(8, u16) = @splat(0);
         std.debug.assert(iterators.items.len <= 8);
@@ -1491,74 +1482,72 @@ pub const IndexManager = struct {
             score_vec[idx] = @truncate(it.score);
         }
 
+        // PROCESS
+        // 1. Do (doc_id_vec < doc_id) for each iterator, to identify iterators which could potentially
+        //    contain `doc_id`, and could impact the score.
+        // 2. Use mask from 1 on score_vec, then take sum to get the approx upper bound if we chose that
+        //    iterator's doc_id as the pivot_doc_id.
+        // 3. Choose the largest pivot_doc_id whose upper_bound is below min_score.
+
         // --- MAIN WAND LOOP ---
-        while (iterator_heap.peek()) |_| {
-            score_sums_vec = @splat(0);
+        var current_doc_id: u32 = 0;
+        while (std.simd.countTrues(consumed_mask) < 8) {
 
-            // var pivot_doc_id = pivot_iterator.currentDocId();
-            for (0.., iterators.items) |idx, *it| {
-                doc_id_vec[idx] = it.currentDocId();
-            }
-            for (0.., iterators.items) |idx, *it| {
-                const doc_id: @Vector(8, u32) = @splat(it.currentDocId());
-                score_sums_vec[idx] = @reduce(
-                    .Add,
-                    score_vec * (doc_id_vec < doc_id),
-                    );
-            }
-            const _it_idx = std.simd.lastIndexOfValue(@reduce(
-                .Max,
-                score_sums_vec,
-                ));
-
-            if (_it_idx) |it_idx| {
-                var pivot_iterator = iterators.items[it_idx];
-                const pivot_doc_id = pivot_iterator.currentDocId();
-
-                for (0..it_idx) |idx| {
-                    var iterator = iterators.items[idx];
-                    _ = iterator.advanceTo(pivot_doc_id + 1);
+            // for (0.., iterators.items) |idx, *it| {
+                // if (consumed_mask[idx]) continue;
+                // std.debug.assert(it.currentDocId() != std.math.maxInt(u32));
+                // doc_id_vec[idx] = it.currentDocId();
+            // }
+            inline for (0..8) |idx| {
+                if (!consumed_mask[idx]) {
+                    doc_id_vec[idx] = iterators.items[idx].currentDocId();
                 }
+            }
+
+            var max_doc_id: u32 = 0;
+            var min_doc_id: u32 = std.math.maxInt(u32);
+
+            for (0.., iterators.items) |idx, *it| {
+                if (consumed_mask[idx]) continue;
+
+                const doc_id: @Vector(8, u32) = @splat(it.currentDocId());
+                const upper_bound = @reduce(
+                    .Add,
+                    score_vec * @as(@Vector(8, u16), @intFromBool(doc_id_vec < doc_id)),
+                    );
+
+                min_doc_id = @min(it.currentDocId(), min_doc_id);
+
+                if (@as(f32, @floatFromInt(upper_bound)) > sorted_scores.lastScore()) continue;
+
+                if (it.currentDocId() > max_doc_id) {
+                    max_doc_id = it.currentDocId();
+                }
+            }
+
+            if (max_doc_id > min_doc_id) {
+                current_doc_id = std.math.maxInt(u32);
+                for (0..iterators.items.len) |idx| {
+                    if (consumed_mask[idx]) continue;
+
+                    var iterator = &iterators.items[idx];
+                    const res = iterator.advanceTo(max_doc_id + 1);
+
+                    if (res.doc_id == std.math.maxInt(u32)) {
+                        consumed_mask[idx] = true;
+                    } else {
+                        current_doc_id = @min(res.doc_id, current_doc_id);
+                    }
+                }
+            } else {
+                std.debug.assert(current_doc_id != std.math.maxInt(u32));
+                current_doc_id = min_doc_id;
+            }
+            if (current_doc_id == std.math.maxInt(u32)) {
+                std.debug.assert(std.simd.countTrues(consumed_mask) == 8);
                 continue;
             }
 
-            // var upper_bound_base_score: f32 = 0.0;
-            // for (iterator_heap.pq.items) |it| {
-                // if (it.currentDocId() <= pivot_doc_id) {
-                    // upper_bound_base_score += @as(f32, @floatFromInt(it.score));
-                // }
-            // }
-            // const pessimistic_upper_bound = upper_bound_base_score * 1.25;
-
-
-            // 2. PRUNING DECISION (THE "SKIP" PATH)
-            // if (pessimistic_upper_bound <= sorted_scores.lastScore()) {
-                // iterators_to_advance.clearRetainingCapacity();
-                // while (iterator_heap.peek()) |top_iterator| {
-                    // if (top_iterator.currentDocId() <= pivot_doc_id) {
-                        // iterators_to_advance.append(
-                            // self.gpa(),
-                            // iterator_heap.pop().?,
-                            // ) catch {
-                            // @panic("Failed to advance iterator");
-                        // };
-                    // } else {
-                        // break;
-                    // }
-                // }
-// 
-                // for (iterators_to_advance.items) |it| {
-                    // const res = it.advanceTo(pivot_doc_id + 1);
-                    // if (res.doc_id != std.math.maxInt(u32)) {
-                        // iterator_heap.push(it) catch {
-                            // @panic("Failed to push iterator");
-                        // };
-                    // }
-                // }
-                // continue;
-            // }
-
-            pivot_doc_id = iterator_heap.peek().?.currentDocId();
             total_docs_scored += 1;
 
             for (doc_term_positions) |*pos| {
@@ -1566,24 +1555,22 @@ pub const IndexManager = struct {
             }
 
             var base_score: f32 = 0.0;
-            while (iterator_heap.peek()) |it| {
-                // Break if the next iterator is past our pivot document.
-                if (it.currentDocId() > pivot_doc_id) break;
+            for (0.., iterators.items) |idx, *it| {
+                if (consumed_mask[idx]) continue;
+                if (it.currentDocId() > current_doc_id) continue;
 
-                // This iterator is at the pivot. Consume it.
-                var current_iterator = iterator_heap.pop().?;
-                base_score += @as(f32, @floatFromInt(current_iterator.score));
+                std.debug.assert(it.currentDocId() == current_doc_id);
 
-                doc_term_positions[current_iterator.col_idx].insert(
-                    current_iterator.term_id,
-                    current_iterator.currentTermPos(),
+                base_score += @as(f32, @floatFromInt(it.score));
+
+                doc_term_positions[it.col_idx].insert(
+                    it.term_id,
+                    it.currentTermPos(),
                 );
 
-                const res = current_iterator.next();
-                if (res.doc_id != std.math.maxInt(u32)) {
-                    iterator_heap.push(current_iterator) catch {
-                        @panic("Failed to push iterator back on to min heap.");
-                    };
+                const res = it.next();
+                if (res.doc_id == std.math.maxInt(u32)) {
+                    consumed_mask[idx] = true;
                 }
             }
 
@@ -1612,7 +1599,7 @@ pub const IndexManager = struct {
             }
 
             sorted_scores.insert(
-                pivot_doc_id,
+                current_doc_id,
                 final_score,
             );
 
