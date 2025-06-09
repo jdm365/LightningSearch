@@ -54,7 +54,7 @@ const ColTokenPair = struct {
     col_idx: u32,
     token: u32,
     bw_idf: u32,
-    term_pos: u8,
+    term_pos: u16,
 };
 
 
@@ -567,7 +567,7 @@ pub const IndexManager = struct {
         defer reader.deinit(self.gpa());
 
 
-        var token_stream = try fu.TokenStream(fu.token_32t).init(
+        var token_stream = try fu.TokenStreamV2(fu.token_32t_v2).init(
             output_filename,
             self.gpa(),
             self.search_col_idxs.items.len,
@@ -765,7 +765,7 @@ pub const IndexManager = struct {
 
         const current_IP = &self.partitions.index_partitions[partition_idx];
 
-        var token_stream = try fu.TokenStream(fu.token_32t).init(
+        var token_stream = try fu.TokenStreamV2(fu.token_32t_v2).init(
             output_filename,
             self.gpa(),
             self.search_col_idxs.items.len,
@@ -1215,7 +1215,7 @@ pub const IndexManager = struct {
 
         // TODO: Figure out meta typing to just map doc_id and term_pos types.
         var iterators = std.ArrayListUnmanaged(
-            PostingsIterator(u32, u8),
+            PostingsIterator(u32, u16),
         ){};
         defer iterators.deinit(self.gpa());
 
@@ -1240,7 +1240,7 @@ pub const IndexManager = struct {
 
             var term_len: usize = 0;
 
-            var term_pos: u8 = 0;
+            var term_pos: u16 = 0;
             for (entry.value_ptr.*) |c| {
                 switch (c) {
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
@@ -1266,7 +1266,7 @@ pub const IndexManager = struct {
                             const iterator_ptr = iterators.addOne(
                                 self.gpa(),
                             ) catch @panic("Error adding iterator");
-                            iterator_ptr.* = PostingsIterator(u32, u8).init(
+                            iterator_ptr.* = PostingsIterator(u32, u16).init(
                                 II.postings.doc_ids[offset..next_offset],
                                 II.postings.term_positions[offset..next_offset],
                                 _token,
@@ -1318,7 +1318,7 @@ pub const IndexManager = struct {
                                 const iterator_ptr = iterators.addOne(
                                     self.gpa(),
                                 ) catch @panic("Error adding iterator");
-                                iterator_ptr.* = PostingsIterator(u32, u8).init(
+                                iterator_ptr.* = PostingsIterator(u32, u16).init(
                                     II.postings.doc_ids[offset..next_offset],
                                     II.postings.term_positions[offset..next_offset],
                                     _token,
@@ -1369,7 +1369,7 @@ pub const IndexManager = struct {
                     const iterator_ptr = iterators.addOne(
                         self.gpa(),
                     ) catch @panic("Error adding iterator");
-                    iterator_ptr.* = PostingsIterator(u32, u8).init(
+                    iterator_ptr.* = PostingsIterator(u32, u16).init(
                         II.postings.doc_ids[offset..next_offset],
                         II.postings.term_positions[offset..next_offset],
                         _token,
@@ -1421,8 +1421,8 @@ pub const IndexManager = struct {
             const score: f32 = @floatFromInt(iterators.items[0].score);
 
             var res = iterators.items[0].next();
-            var doc_id:  u32 = res.doc_id;
-            var term_pos: u8 = res.term_pos;
+            var doc_id:   u32 = res.doc_id;
+            var term_pos: u16 = res.term_pos;
             while (doc_id != std.math.maxInt(u32)) {
                 const score_add = score + 25.0 * @as(f32, @floatFromInt(@intFromBool(term_pos == 0)));
                 sorted_scores.insert(doc_id, score_add);
@@ -1433,7 +1433,7 @@ pub const IndexManager = struct {
 
             }
 
-            std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{iterators.items[0].len()});
+            // std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{iterators.items[0].len()});
 
             for (0..sorted_scores.count) |idx| {
 
@@ -1558,7 +1558,8 @@ pub const IndexManager = struct {
 
                 std.debug.assert(it.currentDocId() == current_doc_id);
 
-                base_score += @as(f32, @floatFromInt(it.score));
+                base_score += @as(f32, @floatFromInt(it.score)) +
+                              25.0 * @as(f32, @floatFromInt(@intFromBool(it.currentTermPos() == 0)));
 
                 doc_term_positions[it.col_idx].insert(
                     it.term_id,
@@ -1589,7 +1590,7 @@ pub const IndexManager = struct {
                     // Check against the query's required bigrams.
                     for (bigrams[col_idx].items) |required_bigram| {
                         if (required_bigram == new_bigram) {
-                            final_score *= 2.0;
+                            final_score *= 1.4;
                         }
                     }
                 }
@@ -1600,8 +1601,8 @@ pub const IndexManager = struct {
                 final_score,
             );
 
-            // std.debug.print("Total docs scored: {d} | Current doc ID: {d} | Num iterators in heap: {d} | Final score: {d}\n",
-                // .{total_docs_scored, pivot_doc_id, iterator_heap.pq.items.len, final_score},
+            // std.debug.print("Total docs scored: {d} | Current doc ID: {d} | Final score: {d}\n",
+                // .{total_docs_scored, max_doc_id, final_score},
                 // );
         }
 
@@ -1655,7 +1656,7 @@ pub const IndexManager = struct {
 
         // TODO: Figure out meta typing to just map doc_id and term_pos types.
         var iterators = std.ArrayListUnmanaged(
-            PostingsIterator(u32, u8),
+            PostingsIterator(u32, u16),
         ){};
         defer iterators.deinit(self.gpa());
 
@@ -1680,7 +1681,7 @@ pub const IndexManager = struct {
 
             var term_len: usize = 0;
 
-            var term_pos: u8 = 0;
+            var term_pos: u16 = 0;
             for (entry.value_ptr.*) |c| {
                 switch (c) {
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
@@ -1706,7 +1707,7 @@ pub const IndexManager = struct {
                             const iterator_ptr = iterators.addOne(
                                 self.gpa(),
                             ) catch @panic("Error adding iterator");
-                            iterator_ptr.* = PostingsIterator(u32, u8).init(
+                            iterator_ptr.* = PostingsIterator(u32, u16).init(
                                 II.postings.doc_ids[offset..next_offset],
                                 II.postings.term_positions[offset..next_offset],
                                 _token,
@@ -1758,7 +1759,7 @@ pub const IndexManager = struct {
                                 const iterator_ptr = iterators.addOne(
                                     self.gpa(),
                                 ) catch @panic("Error adding iterator");
-                                iterator_ptr.* = PostingsIterator(u32, u8).init(
+                                iterator_ptr.* = PostingsIterator(u32, u16).init(
                                     II.postings.doc_ids[offset..next_offset],
                                     II.postings.term_positions[offset..next_offset],
                                     _token,
@@ -1809,7 +1810,7 @@ pub const IndexManager = struct {
                     const iterator_ptr = iterators.addOne(
                         self.gpa(),
                     ) catch @panic("Error adding iterator");
-                    iterator_ptr.* = PostingsIterator(u32, u8).init(
+                    iterator_ptr.* = PostingsIterator(u32, u16).init(
                         II.postings.doc_ids[offset..next_offset],
                         II.postings.term_positions[offset..next_offset],
                         _token,
@@ -1889,7 +1890,7 @@ pub const IndexManager = struct {
 
         // Sort iterators by score.
         sortStruct(
-            PostingsIterator(u32, u8),
+            PostingsIterator(u32, u16),
             iterators.items,
             "score",
             true,
@@ -2019,7 +2020,7 @@ pub const IndexManager = struct {
 
             var term_len: usize = 0;
 
-            var term_pos: u8 = 0;
+            var term_pos: u16 = 0;
             for (entry.value_ptr.*) |c| {
                 switch (c) {
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
@@ -2405,7 +2406,7 @@ pub const IndexManager = struct {
 
             var term_len: usize = 0;
 
-            var term_pos: u8 = 0;
+            var term_pos: u16 = 0;
             for (entry.value_ptr.*) |c| {
                 switch (c) {
                     0...33, 35...47, 58...64, 91...96, 123...126 => {
@@ -2685,7 +2686,7 @@ pub const IndexManager = struct {
 
             var term_len: usize = 0;
 
-            var term_pos: u8 = 0;
+            var term_pos: u16 = 0;
             for (entry.value_ptr.*) |c| {
                 switch (c) {
                     0...33, 35...47, 58...64, 91...96, 123...126 => {

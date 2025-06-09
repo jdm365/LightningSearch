@@ -74,6 +74,11 @@ fn bench(filename: []const u8) !void {
             10,
             boost_factors,
             );
+
+        // std.debug.print(
+            // "Query result: {s}\n",
+            // .{index_manager.query_state.result_strings[0].items[0..256]},
+        // );
     }
     const end_time = std.time.microTimestamp();
     const execution_time_us: usize = @intCast(end_time - start_time);
@@ -141,31 +146,31 @@ fn serveHTML(filename: []const u8) !void {
 }
 
 pub fn main() !void {
-    // var gpa = std.heap.DebugAllocator(.{}){};
-    // const allocator = gpa.allocator();
-    // defer _ = gpa.deinit();
-// 
-    // const args = try std.process.argsAlloc(allocator);
-    // defer std.process.argsFree(allocator, args);
-// 
-    // if (args.len != 2) {
-        // std.debug.print("Usage: {s} <filename>\n", .{args[0]});
-// 
-        // for (args) |arg| {
-            // std.debug.print("Arg: {s}\n", .{arg});
-        // }
-        // return error.InvalidArguments;
-    // }
-// 
-    // const filename = args[1];
-    // try serveHTML(filename);
+    var gpa = std.heap.DebugAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
 
-    // const filename = "../data/mb_small.csv";
-    // const filename = "../data/mb.csv";
-    // const filename = "../data/enwiki.csv";
-    const filename = "../data/enwiki_small.csv";
-    // const filename = "../data/mb.parquet";
-    // const filename = "../data/hn.csv";
-    // const filename = "../data/hn_half.csv";
-    try bench(filename);
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (args.len != 2) {
+        std.debug.print("Usage: {s} <filename>\n", .{args[0]});
+
+        for (args) |arg| {
+            std.debug.print("Arg: {s}\n", .{arg});
+        }
+        return error.InvalidArguments;
+    }
+
+    const filename = args[1];
+    try serveHTML(filename);
+
+    // // const filename = "../data/mb_small.csv";
+    // // const filename = "../data/mb.csv";
+    // // const filename = "../data/enwiki.csv";
+    // const filename = "../data/enwiki_small.csv";
+    // // const filename = "../data/mb.parquet";
+    // // const filename = "../data/hn.csv";
+    // // const filename = "../data/hn_half.csv";
+    // try bench(filename);
 }

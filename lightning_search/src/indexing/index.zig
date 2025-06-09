@@ -278,16 +278,6 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
                 self.doc_ids[self.current_idx..],
                 target_id,
             );
-            // if (found_idx_in_slice > 1) {
-                // std.debug.print(
-                    // "Found idx in slice: {d} {any} {d}\n", 
-                    // .{
-                        // found_idx_in_slice, 
-                        // self.doc_ids[self.current_idx..][0..32],
-                        // target_id,
-                    // },
-                    // );
-            // }
 
             self.current_idx += found_idx_in_slice;
 
@@ -348,7 +338,7 @@ pub const HashNGram = extern struct {
 
 pub const ScoringInfo = packed struct {
     score: f32,
-    term_pos: u8,
+    term_pos: u16,
 
     pub fn init() ScoringInfo {
         return .{
@@ -440,17 +430,17 @@ const Vocab = struct {
 
 pub const Postings = struct {
     doc_ids: []u32,
-    term_positions: []u8,
+    term_positions: []u16,
 };
 
 pub const PostingsV2 = struct {
     doc_id_buf: []align(std.heap.page_size_min)u32,
-    term_positions: []align(std.heap.page_size_min)u8,
+    term_positions: []align(std.heap.page_size_min)u16,
 };
 
 pub const PostingsDynamic = struct {
     doc_ids: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u32)),
-    term_positions: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u8)),
+    term_positions: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u16)),
 };
 
 
@@ -531,7 +521,7 @@ pub const InvertedIndexV2 = struct {
         self.term_offsets[self.num_terms] = postings_size;
 
         self.postings.doc_ids = try allocator.alloc(u32, postings_size + 1);
-        self.postings.term_positions = try allocator.alloc(u8, postings_size + 1);
+        self.postings.term_positions = try allocator.alloc(u16, postings_size + 1);
 
         var avg_doc_size: f64 = 0.0;
         for (self.doc_sizes) |doc_size| {
@@ -645,9 +635,9 @@ pub const BM25Partition = struct {
         term: []u8,
         term_len: usize,
         doc_id: u32,
-        term_pos: u8,
+        term_pos: u16,
         col_idx: usize,
-        token_stream: *file_utils.TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -699,9 +689,9 @@ pub const BM25Partition = struct {
         term: []u8,
         cntr: *usize,
         doc_id: u32,
-        term_pos: *u8,
+        term_pos: *u16,
         col_idx: usize,
-        token_stream: *file_utils.TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -720,84 +710,7 @@ pub const BM25Partition = struct {
             new_doc,
             );
 
-        term_pos.* += @intFromBool(term_pos.* != 255);
-        cntr.* = 0;
-    }
-
-    inline fn addTermPq(
-        self: *BM25Partition,
-        term: []u8,
-        term_len: usize,
-        doc_id: u32,
-        term_pos: u8,
-        col_idx: usize,
-        token_stream: *file_utils.ParquetTokenStream(file_utils.token_32t),
-        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
-        new_doc: *bool,
-    ) !void {
-        const gop = try self.II[col_idx].vocab.map.getOrPutContextAdapted(
-            self.allocator,
-            term[0..term_len],
-            self.II[col_idx].vocab.getAdapter(),
-            self.II[col_idx].vocab.getCtx(),
-            );
-
-        if (!gop.found_existing) {
-            try self.II[col_idx].vocab.string_bytes.appendSlice(
-                self.allocator, 
-                term[0..term_len],
-                );
-            try self.II[col_idx].vocab.string_bytes.append(self.allocator, 0);
-
-            gop.key_ptr.* = @truncate(
-                self.II[col_idx].vocab.string_bytes.items.len - term_len - 1,
-                );
-            gop.value_ptr.* = self.II[col_idx].num_terms;
-
-            self.II[col_idx].num_terms += 1;
-            try self.II[col_idx].doc_freqs.append(1);
-            try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*, col_idx);
-
-        } else {
-
-            const val = gop.value_ptr.*;
-            if (!terms_seen.checkOrInsertSIMD(val)) {
-                self.II[col_idx].doc_freqs.items[val] += 1;
-                try token_stream.addToken(new_doc.*, term_pos, val, col_idx);
-            }
-        }
-
-        self.II[col_idx].doc_sizes[doc_id] += 1;
-        new_doc.* = false;
-    }
-
-    inline fn addTokenPq(
-        self: *BM25Partition,
-        term: []u8,
-        cntr: *usize,
-        doc_id: u32,
-        term_pos: *u8,
-        col_idx: usize,
-        token_stream: *file_utils.ParquetTokenStream(file_utils.token_32t),
-        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
-        new_doc: *bool,
-    ) !void {
-        if (cntr.* == 0) {
-            return;
-        }
-
-        try self.addTermPq(
-            term, 
-            cntr.*, 
-            doc_id, 
-            term_pos.*, 
-            col_idx, 
-            token_stream, 
-            terms_seen,
-            new_doc,
-            );
-
-        term_pos.* += @intFromBool(term_pos.* != 255);
+        term_pos.* += @intFromBool(term_pos.* != std.math.maxInt(u16));
         cntr.* = 0;
     }
 
@@ -806,9 +719,9 @@ pub const BM25Partition = struct {
         term: []u8,
         cntr: *usize,
         doc_id: u32,
-        term_pos: *u8,
+        term_pos: *u16,
         col_idx: usize,
-        token_stream: *file_utils.TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
@@ -823,40 +736,14 @@ pub const BM25Partition = struct {
             new_doc,
             );
 
-        term_pos.* += @intFromBool(term_pos.* != 255);
-        cntr.* = 0;
-    }
-
-    inline fn flushLargeTokenPq(
-        self: *BM25Partition,
-        term: []u8,
-        cntr: *usize,
-        doc_id: u32,
-        term_pos: *u8,
-        col_idx: usize,
-        token_stream: *file_utils.ParquetTokenStream(file_utils.token_32t),
-        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
-        new_doc: *bool,
-    ) !void {
-        try self.addTermPq(
-            term, 
-            cntr.*, 
-            doc_id, 
-            term_pos.*, 
-            col_idx, 
-            token_stream, 
-            terms_seen,
-            new_doc,
-            );
-
-        term_pos.* += @intFromBool(term_pos.* != 255);
+        term_pos.* += @intFromBool(term_pos.* != std.math.maxInt(u16));
         cntr.* = 0;
     }
 
 
     pub fn processDocRfc4180(
         self: *BM25Partition,
-        token_stream: *file_utils.TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         buffer: []u8,
         byte_idx: *usize,
         doc_id: u32,
@@ -872,15 +759,15 @@ pub const BM25Partition = struct {
             ) {
             try token_stream.addToken(
                 true,
-                std.math.maxInt(u7),
-                std.math.maxInt(u24),
+                std.math.maxInt(u16),
+                std.math.maxInt(u31),
                 col_idx,
             );
             byte_idx.* += 1;
             return;
         }
 
-        var term_pos: u8 = 0;
+        var term_pos: u16 = 0;
         const is_quoted = (buffer[buffer_idx] == '"');
         buffer_idx += @intFromBool(is_quoted);
 
@@ -1047,20 +934,19 @@ pub const BM25Partition = struct {
             // No terms found. Add null token.
             try token_stream.addToken(
                 true,
-                std.math.maxInt(u7),
-                std.math.maxInt(u24),
+                std.math.maxInt(u16),
+                std.math.maxInt(u31),
                 col_idx,
             );
         }
 
-        // byte_idx.* += buffer_idx;
         byte_idx.* = buffer_idx;
     }
 
 
     pub fn processDocVbyte(
         self: *BM25Partition,
-        token_stream: *file_utils.TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         buffer: []u8,
         doc_id: u32,
         search_col_idx: usize,
@@ -1074,14 +960,14 @@ pub const BM25Partition = struct {
         if (buffer.len == 0) {
             try token_stream.addToken(
                 true,
-                std.math.maxInt(u7),
-                std.math.maxInt(u24),
+                std.math.maxInt(u16),
+                std.math.maxInt(u31),
                 search_col_idx,
             );
             return;
         }
 
-        var term_pos: u8 = 0;
+        var term_pos: u16 = 0;
 
         var cntr: usize = 0;
         var new_doc: bool = (doc_id != 0);
@@ -1160,8 +1046,8 @@ pub const BM25Partition = struct {
             // No terms found. Add null token.
             try token_stream.addToken(
                 true,
-                std.math.maxInt(u7),
-                std.math.maxInt(u24),
+                std.math.maxInt(u16),
+                std.math.maxInt(u31),
                 search_col_idx,
             );
         }
@@ -1169,7 +1055,7 @@ pub const BM25Partition = struct {
 
     pub fn processDocRfc8259(
         self: *BM25Partition,
-        token_stream: *file_utils.TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         buffer: []u8,
         trie: *const RadixTrie(u32),
         search_col_idxs: *const std.ArrayListUnmanaged(u32),
@@ -1228,8 +1114,8 @@ pub const BM25Partition = struct {
             ) {
             try token_stream.addToken(
                 true,
-                std.math.maxInt(u7),
-                std.math.maxInt(u24),
+                std.math.maxInt(u16),
+                std.math.maxInt(u31),
                 II_idx,
             );
 
@@ -1256,7 +1142,7 @@ pub const BM25Partition = struct {
             return;
         }
 
-        var term_pos: u8 = 0;
+        var term_pos: u16 = 0;
         const is_quoted = (buffer[buffer_idx] == '"');
         buffer_idx += @intFromBool(is_quoted);
 
@@ -1467,8 +1353,8 @@ pub const BM25Partition = struct {
             // No terms found. Add null token.
             try token_stream.addToken(
                 true,
-                std.math.maxInt(u7),
-                std.math.maxInt(u24),
+                std.math.maxInt(u16),
+                std.math.maxInt(u31),
                 II_idx,
             );
         }
@@ -1489,7 +1375,7 @@ pub const BM25Partition = struct {
 
     pub fn constructFromTokenStream(
         self: *BM25Partition,
-        token_stream: *file_utils.TokenStream(file_utils.token_32t),
+        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         ) !void {
 
         var term_cntr = try self.allocator.alloc(usize, self.II[0].num_terms);
@@ -1506,7 +1392,8 @@ pub const BM25Partition = struct {
             const output_file = &token_stream.output_files[col_idx];
             try output_file.seekTo(0);
 
-            const tokens = &token_stream.tokens[col_idx];
+            const doc_id_tokens   = token_stream.doc_id_tokens[col_idx];
+            const term_pos_tokens = token_stream.term_pos_tokens[col_idx];
 
             var bytes_read: usize = 0;
 
@@ -1521,19 +1408,22 @@ pub const BM25Partition = struct {
                 num_tokens = std.mem.readInt(u32, &_num_tokens, ENDIANESS);
 
                 bytes_read = try output_file.read(
-                    std.mem.sliceAsBytes(tokens.*[0..num_tokens])
+                    std.mem.sliceAsBytes(doc_id_tokens[0..num_tokens])
+                    );
+                bytes_read += try output_file.read(
+                    std.mem.sliceAsBytes(term_pos_tokens[0..num_tokens])
                     );
 
                 for (0..num_tokens) |idx| {
-                    if (@as(*u32, @ptrCast(&tokens.*[idx])).* == std.math.maxInt(u32)) {
+                    if (@as(*u32, @ptrCast(&doc_id_tokens[idx])).* == std.math.maxInt(u32)) {
                         // Null token.
                         current_doc_id += 1;
                         continue;
                     }
 
-                    const new_doc  = tokens.*[idx].new_doc;
-                    const term_pos = tokens.*[idx].term_pos;
-                    const term_id: usize = @intCast(tokens.*[idx].term_id);
+                    const new_doc  = doc_id_tokens[idx].new_doc;
+                    const term_pos = term_pos_tokens[idx];
+                    const term_id: usize = @intCast(doc_id_tokens[idx].term_id);
 
                     current_doc_id += @intCast(new_doc);
 
@@ -1545,78 +1435,9 @@ pub const BM25Partition = struct {
                     term_cntr[term_id] += 1;
 
                     II.postings.doc_ids[postings_offset]        = @truncate(current_doc_id);
-                    II.postings.term_positions[postings_offset] = @intCast(term_pos);
+                    II.postings.term_positions[postings_offset] = term_pos;
                 }
             }
-            std.debug.assert(
-                (current_doc_id == II.num_docs - 1)
-                    or
-                (current_doc_id == II.num_docs)
-            );
-        }
-    }
-
-    pub fn constructFromTokenStreamPq(
-        self: *BM25Partition,
-        token_stream: *file_utils.ParquetTokenStream(file_utils.token_32t),
-        ) !void {
-
-        var term_cntr = try self.allocator.alloc(usize, self.II[0].num_terms);
-        defer self.allocator.free(term_cntr);
-        for (0.., self.II) |col_idx, *II| {
-            try II.resizePostings(self.allocator);
-
-            if (II.num_terms > term_cntr.len) {
-                term_cntr = try self.allocator.realloc(term_cntr, @as(usize, @intCast(II.num_terms)));
-            }
-            @memset(term_cntr, 0);
-
-            // Create index.
-            const output_file = &token_stream.output_files[col_idx];
-            try output_file.seekTo(0);
-
-            const tokens = &token_stream.tokens[col_idx];
-
-            var bytes_read: usize = 0;
-
-            var num_tokens: usize = file_utils.TOKEN_STREAM_CAPACITY;
-            var current_doc_id: usize = 0;
-
-            while (num_tokens == file_utils.TOKEN_STREAM_CAPACITY) {
-                var _num_tokens: [4]u8 = undefined;
-                _ = try output_file.read(std.mem.asBytes(&_num_tokens));
-                num_tokens = std.mem.readInt(u32, &_num_tokens, ENDIANESS);
-
-                bytes_read = try output_file.read(
-                    std.mem.sliceAsBytes(tokens.*[0..num_tokens])
-                    );
-
-                for (0..num_tokens) |idx| {
-                    if (@as(*u32, @ptrCast(&tokens.*[idx])).* == std.math.maxInt(u32)) {
-                        // Null token.
-                        current_doc_id += 1;
-                        continue;
-                    }
-
-                    const new_doc  = tokens.*[idx].new_doc;
-                    const term_pos = tokens.*[idx].term_pos;
-                    const term_id: usize = @intCast(tokens.*[idx].term_id);
-
-                    current_doc_id += @intCast(new_doc);
-
-                    const postings_offset = II.term_offsets[term_id] + term_cntr[term_id];
-                    std.debug.assert(postings_offset < II.postings.doc_ids.len);
-
-                    std.debug.assert(current_doc_id <= II.num_docs);
-
-                    term_cntr[term_id] += 1;
-
-                    II.postings.doc_ids[postings_offset] = @intCast(current_doc_id);
-                    II.postings.term_positions[postings_offset] = @intCast(term_pos);
-                }
-            }
-            // std.debug.print("\n\ncurrent_doc_id: {d}\n", .{current_doc_id});
-            // std.debug.print("II.num_docs:    {d}\n", .{II.num_docs});
             std.debug.assert(
                 (current_doc_id == II.num_docs - 1)
                     or
@@ -1635,7 +1456,6 @@ pub const BM25Partition = struct {
     ) void {
         self.doc_store.getRow(
             @intCast(query_result.doc_id),
-            // record_string.items[0..],
             record_string,
             self.allocator,
             result_positions,
@@ -1645,46 +1465,4 @@ pub const BM25Partition = struct {
             @panic("Error fetching document.");
         };
     }
-
-    // pub fn fetchRecords(
-        // self: *BM25Partition,
-        // result_positions: []TermPos,
-        // file_handle: *std.fs.File,
-        // query_result: QueryResult,
-        // record_string: *std.ArrayListUnmanaged(u8),
-        // file_type: file_utils.FileType,
-        // reference_dict: *const RadixTrie(u32),
-    // ) !void {
-        // const doc_id:    usize = @intCast(query_result.doc_id);
-        // const byte_offset      = self.line_offsets[doc_id];
-        // const next_byte_offset = self.line_offsets[doc_id + 1];
-        // const bytes_to_read    = next_byte_offset - byte_offset;
-// 
-        // std.debug.assert(bytes_to_read < MAX_LINE_LENGTH);
-// 
-        // try file_handle.seekTo(byte_offset);
-        // if (bytes_to_read > record_string.capacity) {
-            // try record_string.resize(self.allocator, bytes_to_read);
-        // }
-        // _ = try file_handle.read(record_string.items[0..bytes_to_read]);
-// 
-        // switch (file_type) {
-            // file_utils.FileType.CSV => {
-                // record_string.items[bytes_to_read - 1] = '\n';
-                // try csv.parseRecordCSV(
-                    // record_string.items[0..bytes_to_read], 
-                    // result_positions,
-                    // );
-            // },
-            // file_utils.FileType.JSON => {
-                // record_string.items[bytes_to_read - 1] = '{';
-                // try json.parseRecordJSON(
-                    // record_string.items[0..bytes_to_read], 
-                    // result_positions,
-                    // reference_dict,
-                    // );
-            // },
-            // file_utils.FileType.PARQUET => unreachable,
-        // }
-    // }
 };

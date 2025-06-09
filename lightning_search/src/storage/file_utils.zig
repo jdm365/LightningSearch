@@ -12,6 +12,11 @@ pub const FileType = enum {
     PARQUET,
 };
 
+pub const token_32t_v2 = packed struct(u32) {
+    new_doc: u1,
+    term_id: u31,
+};
+
 pub const token_32t = packed struct(u32) {
     new_doc: u1,
     term_pos: u7,
@@ -380,35 +385,22 @@ pub fn TokenStream(comptime token_t: type) type {
     };
 }
 
-pub fn ParquetTokenStream(comptime token_t: type) type {
+pub fn TokenStreamV2(comptime token_t: type) type {
     return struct {
         const Self = @This();
 
-        tokens: [][]token_t,
+        doc_id_tokens: [][]token_t,
+        term_pos_tokens: [][]u16,
         num_terms: []u32,
         allocator: std.mem.Allocator,
         output_files: []std.fs.File,
-        input_filename: [*:0]const u8,
-        column_buffer: [*]u8,
-        current_idx: usize,
-
-        search_col_idxs: []u32,
-        min_row_group: usize,
-        max_row_group: usize,
-        current_row_group: usize,
-        current_col_idx: usize,
-        buffer_len: usize,
+        buffer_idx: usize,
 
         pub fn init(
-            input_filename: [*:0]const u8,
             output_filename: []const u8,
             allocator: std.mem.Allocator,
-
-            search_col_idxs: []u32,
-            min_row_group: usize,
-            max_row_group: usize,
+            num_search_cols: usize,
         ) !Self {
-            const num_search_cols = search_col_idxs.len;
 
             var output_files = try allocator.alloc(std.fs.File, num_search_cols);
             for (0..num_search_cols) |idx| {
@@ -428,56 +420,57 @@ pub fn ParquetTokenStream(comptime token_t: type) type {
             const num_terms = try allocator.alloc(u32, num_search_cols);
             @memset(num_terms, 0);
 
-            const token_buffers = try allocator.alloc([]token_t, num_search_cols);
-            for (0..token_buffers.len) |idx| {
-                token_buffers[idx] = try allocator.alloc(
+            const doc_id_buffers   = try allocator.alloc([]token_t, num_search_cols);
+            const term_pos_buffers = try allocator.alloc([]u16, num_search_cols);
+            for (0..num_search_cols) |idx| {
+                doc_id_buffers[idx] = try allocator.alloc(
                     token_t, 
+                    TOKEN_STREAM_CAPACITY,
+                    );
+                term_pos_buffers[idx] = try allocator.alloc(
+                    u16, 
                     TOKEN_STREAM_CAPACITY,
                     );
             }
 
-            return Self{
-                .tokens = token_buffers,
+                return Self{
+                .doc_id_tokens = doc_id_buffers,
+                .term_pos_tokens = term_pos_buffers,
                 .num_terms = num_terms,
                 .allocator = allocator,
                 .output_files = output_files,
-                .input_filename = input_filename,
-                .column_buffer = undefined,
-                .current_idx = 0,
-
-                .search_col_idxs = search_col_idxs,
-                .min_row_group = min_row_group,
-                .max_row_group = max_row_group,
-                .current_row_group = min_row_group,
-                .current_col_idx = 0,
-                .buffer_len = 0,
+                .buffer_idx = 0,
             };
         }
 
         pub fn deinit(self: *Self) void {
             for (0.., self.output_files) |col_idx, *file| {
-                self.allocator.free(self.tokens[col_idx]);
+                self.allocator.free(self.doc_id_tokens[col_idx]);
+                self.allocator.free(self.term_pos_tokens[col_idx]);
                 file.close();
             }
             self.allocator.free(self.output_files);
             self.allocator.free(self.num_terms);
-            self.allocator.free(self.tokens);
+            self.allocator.free(self.doc_id_tokens);
+            self.allocator.free(self.term_pos_tokens);
         }
         
-        pub fn addToken(
+        pub inline fn addToken(
             self: *Self,
             new_doc: bool,
-            term_pos: u8,
+            term_pos: u16,
             term_id: u32,
             search_col_idx: usize,
         ) !void {
-            comptime std.debug.assert(token_t == token_32t);
+            comptime std.debug.assert(token_t == token_32t_v2);
 
-            self.tokens[search_col_idx][self.num_terms[search_col_idx]] = token_t{
-                .new_doc = @intFromBool(new_doc),
-                .term_pos = @truncate(term_pos),
-                .term_id = @truncate(term_id),
+            const idx = self.num_terms[search_col_idx];
+            self.doc_id_tokens[search_col_idx][idx] = token_t{
+                .new_doc  = @intFromBool(new_doc),
+                .term_id  = @truncate(term_id),
             };
+            self.term_pos_tokens[search_col_idx][idx] = term_pos;
+
             self.num_terms[search_col_idx] += 1;
 
             if (self.num_terms[search_col_idx] == TOKEN_STREAM_CAPACITY) {
@@ -485,80 +478,28 @@ pub fn ParquetTokenStream(comptime token_t: type) type {
             }
         }
 
-        pub inline fn flushTokenStream(self: *Self, search_col_idx: usize) !void {
-            const bytes_to_write = @sizeOf(token_t) * self.num_terms[search_col_idx];
-            _ = try self.output_files[search_col_idx].write(
+        pub fn flushTokenStream(self: *Self, search_col_idx: usize) !void {
+            const bytes_to_write = (@sizeOf(token_t) * self.num_terms[search_col_idx]) +
+                                   (@sizeOf(u16) * self.num_terms[search_col_idx]);
+            var bytes_written = try self.output_files[search_col_idx].write(
                 std.mem.asBytes(&self.num_terms[search_col_idx]),
                 );
-            const bytes_written = try self.output_files[search_col_idx].write(
+            std.debug.assert(bytes_written == 4);
+
+            const end_idx = self.num_terms[search_col_idx];
+            bytes_written = try self.output_files[search_col_idx].write(
                 std.mem.sliceAsBytes(
-                    self.tokens[search_col_idx][0..self.num_terms[search_col_idx]]
+                    self.doc_id_tokens[search_col_idx][0..end_idx]
                     )
                 );
-            
+            bytes_written += try self.output_files[search_col_idx].write(
+                std.mem.sliceAsBytes(
+                    self.term_pos_tokens[search_col_idx][0..end_idx]
+                    )
+                );
             std.debug.assert(bytes_written == bytes_to_write);
 
             self.num_terms[search_col_idx] = 0;
-        }
-
-        pub inline fn getNextBuffer(self: *Self, first: bool) bool {
-            if (!first) {
-                if (self.current_col_idx == self.search_col_idxs.len - 1) {
-                    if (self.current_row_group == self.max_row_group - 1) return false;
-                    self.current_row_group += 1;
-                    self.current_col_idx = 0;
-                } else {
-                    self.current_col_idx += 1;
-                }
-            }
-            self.column_buffer = pq.readParquetRowGroupColumnUtf8Vbyte(
-                self.input_filename,
-                self.current_row_group,
-                self.search_col_idxs[self.current_col_idx],
-                &self.buffer_len,
-            );
-            self.current_idx = 0;
-            return true;
-        }
-
-        pub fn writeDocStore(
-            self: *Self, 
-            doc_store: *DocStore,
-            num_cols: usize,
-            ) !void {
-
-            var row_offset: usize = 0;
-            for (self.min_row_group..self.max_row_group) |rg_idx| {
-                for (0..num_cols) |col_idx| {
-                    var buffer_len: usize = 0;
-                    self.column_buffer = pq.readParquetRowGroupColumnUtf8Vbyte(
-                        self.input_filename,
-                        rg_idx,
-                        col_idx,
-                        &buffer_len,
-                    );
-
-                    var buffer_idx: usize = 0;
-                    var row_idx:    usize = row_offset;
-                    while (buffer_idx < buffer_len) {
-                        const field_len = pq.decodeVbyte(
-                            self.column_buffer,
-                            &buffer_idx,
-                        );
-                        try doc_store.addHuffmanRowIter(
-                            field_len,
-                            std.mem.bytesAsSlice(u8, self.column_buffer[buffer_idx..buffer_len]),
-                            row_idx,
-                            // col_idx,
-                        );
-                        row_idx += 1;
-                        buffer_idx += field_len;
-                    }
-                    row_offset = row_idx;
-                }
-            }
-
-            try doc_store.finalize();
         }
     };
 }
