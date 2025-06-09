@@ -330,7 +330,6 @@ pub const DocStore = struct {
     pub inline fn getRow(
         self: *DocStore,
         row_idx: usize,
-        // row_data: []u8,
         row_data: *std.ArrayListUnmanaged(u8),
         allocator: std.mem.Allocator,
         offsets: []TermPos,

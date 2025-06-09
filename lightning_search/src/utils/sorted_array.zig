@@ -349,6 +349,20 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
                 prev_value = score;
             }
         }
+
+        pub inline fn last(self: *Self) T {
+            if (self.count == 0) {
+                return T.init();
+            }
+            return self.items[self.count - 1];
+        }
+
+        pub inline fn lastScore(self: *Self) f32 {
+            if (self.count == 0) {
+                return std.math.floatMin(f32);
+            }
+            return self.scores[self.count - 1];
+        }
     };
 }
 

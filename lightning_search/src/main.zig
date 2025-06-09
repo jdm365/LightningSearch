@@ -34,10 +34,10 @@ fn bench(filename: []const u8) !void {
     try index_manager.readHeader(filename, filetype);
     try index_manager.scanFile();
 
-    try index_manager.addSearchCol("text");
-    // try index_manager.addSearchCol("title");
-    // try index_manager.addSearchCol("artist");
-    // try index_manager.addSearchCol("album");
+    // try index_manager.addSearchCol("text");
+    try index_manager.addSearchCol("title");
+    try index_manager.addSearchCol("artist");
+    try index_manager.addSearchCol("album");
     // try index_manager.addSearchCol("story_url");
     // try index_manager.addSearchCol("story_text");
     // try index_manager.addSearchCol("story_author");
@@ -52,21 +52,22 @@ fn bench(filename: []const u8) !void {
     try boost_factors.append(2.0);
     try boost_factors.append(1.0);
     try boost_factors.append(1.0);
-    try boost_factors.append(1.0);
-    try boost_factors.append(1.0);
+    // try boost_factors.append(1.0);
+    // try boost_factors.append(1.0);
 
-    var query_map = SHM;
+    var query_map = SHM.init(allocator);
     defer query_map.deinit();
 
-    try query_map.put("TEXT", "UNDER MY SKIN");
-    // try query_map.put("ARTIST", "FRANK SINATRA");
-    // try query_map.put("ALBUM", "LIGHTNING");
+    // try query_map.put("TEXT", "griffith observatory");
+    try query_map.put("TITLE", "UNDER MY SKIN");
+    try query_map.put("ARTIST", "FRANK SINATRA");
+    try query_map.put("ALBUM", "LIGHTNING");
     // try query_map.put("STORY_TEXT", "zig");
     // try query_map.put("COMMENT_TEXT", "gotta go fast");
 
-    const num_queries: usize = 1_000;
+    const num_queries: usize = 10_000;
 
-    const start_time = std.time.milliTimestamp();
+    const start_time = std.time.microTimestamp();
     for (0..num_queries) |_| {
         try index_manager.query(
             query_map,
@@ -74,12 +75,14 @@ fn bench(filename: []const u8) !void {
             boost_factors,
             );
     }
-    const end_time = std.time.milliTimestamp();
-    const execution_time_ms: usize = @intCast(end_time - start_time);
-    const qps = @divFloor(num_queries * 1000, execution_time_ms);
+    const end_time = std.time.microTimestamp();
+    const execution_time_us: usize = @intCast(end_time - start_time);
+    const qps = @divFloor(num_queries * 1_000_000, execution_time_us);
+    const avg_latency = @divFloor(execution_time_us, num_queries);
 
     std.debug.print("\n\n================================================\n", .{});
-    std.debug.print("QUERIES PER SECOND: {d}\n", .{qps});
+    std.debug.print("QUERIES PER SECOND: {d}\n",   .{qps});
+    std.debug.print("AVG LATENCY:        {d}us\n", .{avg_latency});
     std.debug.print("================================================\n", .{});
 }
 
@@ -138,30 +141,31 @@ fn serveHTML(filename: []const u8) !void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    // var gpa = std.heap.DebugAllocator(.{}){};
+    // const allocator = gpa.allocator();
+    // defer _ = gpa.deinit();
+// 
+    // const args = try std.process.argsAlloc(allocator);
+    // defer std.process.argsFree(allocator, args);
+// 
+    // if (args.len != 2) {
+        // std.debug.print("Usage: {s} <filename>\n", .{args[0]});
+// 
+        // for (args) |arg| {
+            // std.debug.print("Arg: {s}\n", .{arg});
+        // }
+        // return error.InvalidArguments;
+    // }
+// 
+    // const filename = args[1];
+    // try serveHTML(filename);
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-
-    if (args.len != 2) {
-        std.debug.print("Usage: {s} <filename>\n", .{args[0]});
-
-        for (args) |arg| {
-            std.debug.print("Arg: {s}\n", .{arg});
-        }
-        return error.InvalidArguments;
-    }
-
-    const filename = args[1];
-    try serveHTML(filename);
-
-    // // const filename = "../data/mb_small.csv";
-    // // const filename = "../data/mb.csv";
+    // const filename = "../data/mb_small.csv";
+    const filename = "../data/mb.csv";
     // const filename = "../data/enwiki.csv";
-    // // const filename = "../data/mb.parquet";
-    // // const filename = "../data/hn.csv";
-    // // const filename = "../data/hn_half.csv";
-    // try bench(filename);
+    // const filename = "../data/enwiki_small.csv";
+    // const filename = "../data/mb.parquet";
+    // const filename = "../data/hn.csv";
+    // const filename = "../data/hn_half.csv";
+    try bench(filename);
 }

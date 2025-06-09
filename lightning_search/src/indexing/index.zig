@@ -158,6 +158,30 @@ inline fn lowerBound(comptime T: type, slice: []const T, target: T) usize {
     return low;
 }
 
+inline fn linearLowerBound(slice: []const u32, target: u32) usize {
+    const new_value: @Vector(8, u32) align(4) = @splat(target);
+    var existing_values = @as(
+        *const align(4) @Vector(8, u32), 
+        @alignCast(@ptrCast(slice.ptr)),
+        );
+
+    const simd_limit: usize = @divFloor(slice.len, 8) + 
+                              8 * @as(usize, @intFromBool(slice.len % 8 != 0));
+    var idx: usize = 0;
+    while (idx < simd_limit) {
+        const mask = new_value < existing_values.*;
+
+        const set_idx = @ctz(@as(u8, @bitCast(mask)));
+        if (set_idx != 8) {
+            return @min(idx + set_idx, slice.len);
+        }
+
+        existing_values = @ptrFromInt(@intFromPtr(slice.ptr) + 32);
+        idx += 8;
+    }
+    return slice.len;
+}
+
 pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
     return struct {
         const Self = @This();
@@ -203,6 +227,13 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
             return self.doc_ids[self.current_idx];
         }
 
+        pub inline fn currentTermPos(self: *const Self) term_pos_T {
+            if (self.current_idx >= self.term_positions.len) {
+                return std.math.maxInt(term_pos_T);
+            }
+            return self.term_positions[self.current_idx];
+        }
+
         pub inline fn next(self: *Self) Result {
             if (self.consumed) {
                 return .{
@@ -225,24 +256,39 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
             };
         }
 
-        pub inline fn advanceTo(self: *Self, next_item: T) Result {
-            if (self.consumed) {
+        pub inline fn advanceTo(self: *Self, target_id: T) Result {
+            if (self.current_idx >= self.doc_ids.len) {
                 return .{
                     .doc_id = std.math.maxInt(T), 
                     .term_pos = std.math.maxInt(term_pos_T),
                 };
             }
 
-            if (self.current_idx == self.doc_ids.len) {
-                self.consumed = true;
+            if (self.doc_ids[self.current_idx] >= target_id) {
+                return .{
+                    .doc_id   = self.doc_ids[self.current_idx],
+                    .term_pos = self.term_positions[self.current_idx],
+                };
             }
 
-            self.current_idx += lowerBound(
-                T,
+            const found_idx_in_slice = linearLowerBound(
                 self.doc_ids[self.current_idx..],
-                next_item,
+                target_id,
             );
-            if (self.current_idx == self.doc_ids.len) {
+            // if (found_idx_in_slice > 1) {
+                // std.debug.print(
+                    // "Found idx in slice: {d} {any} {d}\n", 
+                    // .{
+                        // found_idx_in_slice, 
+                        // self.doc_ids[self.current_idx..][0..32],
+                        // target_id,
+                    // },
+                    // );
+            // }
+
+            self.current_idx += found_idx_in_slice;
+
+            if (self.current_idx >= self.doc_ids.len) {
                 self.consumed = true;
                 return .{
                     .doc_id = std.math.maxInt(T), 
@@ -251,10 +297,41 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
             }
 
             return .{
-                .doc_id = self.doc_ids[self.current_idx],
+                .doc_id = self.doc_ids[self.current_idx], 
                 .term_pos = self.term_positions[self.current_idx],
             };
         }
+
+        // pub inline fn advanceTo(self: *Self, next_item: T) Result {
+            // if (self.consumed) {
+                // return .{
+                    // .doc_id = std.math.maxInt(T), 
+                    // .term_pos = std.math.maxInt(term_pos_T),
+                // };
+            // }
+// 
+            // if (self.current_idx == self.doc_ids.len) {
+                // self.consumed = true;
+            // }
+// 
+            // self.current_idx += lowerBound(
+                // T,
+                // self.doc_ids[self.current_idx..],
+                // next_item,
+            // );
+            // if (self.current_idx == self.doc_ids.len) {
+                // self.consumed = true;
+                // return .{
+                    // .doc_id = std.math.maxInt(T), 
+                    // .term_pos = std.math.maxInt(term_pos_T),
+                // };
+            // }
+// 
+            // return .{
+                // .doc_id = self.doc_ids[self.current_idx],
+                // .term_pos = self.term_positions[self.current_idx],
+            // };
+        // }
 
         pub inline fn len(self: *Self) usize {
             return self.doc_ids.len;
@@ -262,7 +339,7 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
     };
 }
 
-pub fn IteratorMinHeap(comptime IteratorPtrType: type) type {
+pub fn PostingsIteratorMinHeap(comptime IteratorPtrType: type) type {
     return struct {
         const Self = @This();
 
@@ -274,13 +351,13 @@ pub fn IteratorMinHeap(comptime IteratorPtrType: type) type {
             return std.math.order(a.currentDocId(), b.currentDocId());
         }
 
-        pq: std.PriorityQueue(void, IteratorPtrType, compareIterators),
+        pq: std.PriorityQueue(IteratorPtrType, void, compareIterators),
 
         pub fn init(allocator: std.mem.Allocator) Self {
             return Self{
-                .pq = std.heap.PriorityQueue(
-                    void,
+                .pq = std.PriorityQueue(
                     IteratorPtrType,
+                    void,
                     compareIterators,
                 ).init(
                     allocator,
@@ -309,6 +386,30 @@ pub fn IteratorMinHeap(comptime IteratorPtrType: type) type {
                 return null;
             }
             return self.pq.items[0];
+        }
+
+        pub inline fn peekMid(self: *const Self) ?IteratorPtrType {
+            if (self.pq.count() == 0) {
+                return null;
+            }
+            const idx = @divFloor(self.pq.items.len, 2);
+            return self.pq.items[idx];
+        }
+
+        pub inline fn peekThreshold(
+            self: *const Self, 
+            min_score: usize,
+            ) ?IteratorPtrType {
+            if (self.pq.count() == 0) {
+                return null;
+            }
+            var pq_idx: usize = 0;
+            var score: usize = 0;
+            while (score < min_score) {
+                score = self.pq.items[pq_idx].score;
+                pq_idx += 1;
+            }
+            return self.pq.items[pq_idx];
         }
 
         pub inline fn len(self: *const Self) usize {
