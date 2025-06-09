@@ -20,7 +20,6 @@ const TermPos = @import("../server/server.zig").TermPos;
 
 const postingsIteratorLessThan = @import("index.zig").postingsIteratorLessThan;
 const PostingsIterator = @import("index.zig").PostingsIterator;
-const PostingsIteratorMinHeap = @import("index.zig").PostingsIteratorMinHeap;
 const fetchRecordsDocStore = @import("index.zig").BM25Partition.fetchRecordsDocStore;
 const BM25Partition   = @import("index.zig").BM25Partition;
 const QueryResult     = @import("index.zig").QueryResult;
@@ -42,8 +41,8 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
-const MAX_NUM_THREADS: usize = 1;
-// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+// const MAX_NUM_THREADS: usize = 1;
+const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -1479,7 +1478,10 @@ pub const IndexManager = struct {
         var score_vec:  @Vector(8, u16) = @splat(0);
         std.debug.assert(iterators.items.len <= 8);
         for (0.., iterators.items) |idx, *it| {
-            score_vec[idx] = @truncate(it.score);
+            // score_vec[idx] = @truncate(it.score);
+
+            // multiply by 1.25 to help account for potential term_pos boosts.
+            score_vec[idx] = @truncate(@divFloor(it.score * 5, 4));
         }
 
         // PROCESS
@@ -1493,11 +1495,6 @@ pub const IndexManager = struct {
         var current_doc_id: u32 = 0;
         while (std.simd.countTrues(consumed_mask) < 8) {
 
-            // for (0.., iterators.items) |idx, *it| {
-                // if (consumed_mask[idx]) continue;
-                // std.debug.assert(it.currentDocId() != std.math.maxInt(u32));
-                // doc_id_vec[idx] = it.currentDocId();
-            // }
             inline for (0..8) |idx| {
                 if (!consumed_mask[idx]) {
                     doc_id_vec[idx] = iterators.items[idx].currentDocId();

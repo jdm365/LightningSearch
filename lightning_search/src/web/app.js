@@ -249,7 +249,7 @@ function escapeRegExp(string) {
 function updateGrid(results) {
 	// Update metadata
 	var numResultsDiv = document.getElementById('metadata');
-	let time_taken_str = new Intl.NumberFormat().format(Math.round(results.time_taken_us)) + "us";
+	let time_taken_str = new Intl.NumberFormat().format(Math.round(results.time_taken_us)) + "\u03BCs";
 	numResultsDiv.innerHTML = `<b>Number of results:</b> ${results.results.length} 
 							   &nbsp;&nbsp;&nbsp;&nbsp;
 							   <b>Time taken:</b> ${time_taken_str}`;

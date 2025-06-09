@@ -122,27 +122,6 @@ pub fn CategoricalColumn(comptime T: type) type {
     };
 }
 
-// inline fn binarySearch(
-    // comptime T: type,
-    // arr: []T,
-    // value: T,
-    // ) usize {
-    // var low: usize = 0;
-    // var high: usize = arr.len;
-// 
-    // while (low < high) {
-        // const mid = low + (high - low) / 2;
-// 
-        // if (arr[mid] == value) return mid;
-// 
-        // if (arr[mid] > value) {
-            // low = mid + 1;
-        // } else {
-            // high = mid;
-        // }
-    // }
-    // return low;
-// }
 inline fn lowerBound(comptime T: type, slice: []const T, target: T) usize {
     var low: usize = 0;
     var high: usize = slice.len;
@@ -359,89 +338,6 @@ pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
 
         pub inline fn len(self: *Self) usize {
             return self.doc_ids.len;
-        }
-    };
-}
-
-pub fn PostingsIteratorMinHeap(comptime IteratorPtrType: type) type {
-    return struct {
-        const Self = @This();
-
-        fn compareIterators(
-            _: void, 
-            a: IteratorPtrType, 
-            b: IteratorPtrType
-            ) std.math.Order {
-            return std.math.order(a.currentDocId(), b.currentDocId());
-        }
-
-        pq: std.PriorityQueue(IteratorPtrType, void, compareIterators),
-
-        pub fn init(allocator: std.mem.Allocator) Self {
-            return Self{
-                .pq = std.PriorityQueue(
-                    IteratorPtrType,
-                    void,
-                    compareIterators,
-                ).init(
-                    allocator,
-                    {},
-                ),
-            };
-        }
-
-        pub fn deinit(self: *Self) void {
-            self.pq.deinit();
-        }
-
-        pub inline fn push(self: *Self, iterator: IteratorPtrType) !void {
-            try self.pq.add(iterator);
-        }
-
-        pub inline fn pop(self: *Self) ?IteratorPtrType {
-            if (self.pq.count() == 0) {
-                return null;
-            }
-            return self.pq.remove();
-        }
-
-        pub inline fn peek(self: *const Self) ?IteratorPtrType {
-            if (self.pq.count() == 0) {
-                return null;
-            }
-            return self.pq.items[0];
-        }
-
-        pub inline fn peekMid(self: *const Self) ?IteratorPtrType {
-            if (self.pq.count() == 0) {
-                return null;
-            }
-            const idx = @divFloor(self.pq.items.len, 2);
-            return self.pq.items[idx];
-        }
-
-        pub inline fn peekThreshold(
-            self: *const Self, 
-            min_score: usize,
-            ) ?IteratorPtrType {
-            if (self.pq.count() == 0) {
-                return null;
-            }
-            var pq_idx: usize = 0;
-            var score: usize = 0;
-            while (score < min_score) {
-                score = self.pq.items[pq_idx].score;
-                pq_idx += 1;
-            }
-            return self.pq.items[pq_idx];
-        }
-
-        pub inline fn len(self: *const Self) usize {
-            return self.pq.count();
-        }
-
-        pub inline fn is_empty(self: *const Self) bool {
-            return self.pq.count() == 0;
         }
     };
 }
