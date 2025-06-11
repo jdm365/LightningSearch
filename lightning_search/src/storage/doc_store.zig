@@ -45,6 +45,8 @@ pub const DocStore = struct {
     row_idx: usize,
     zeroed_range: u64,
 
+    prev_buf_idx: u64,
+
     const FileHandles = struct {
         huffman_row_data_file: std.fs.File,
         huffman_row_offsets_file: std.fs.File,
@@ -70,7 +72,14 @@ pub const DocStore = struct {
                 null,
                 MMAP_MAX_SIZE_HUFFMAN_BUFFER,
                 std.posix.PROT.WRITE | std.posix.PROT.READ,
-                .{ .TYPE = .SHARED },
+                // .{ .TYPE = .SHARED },
+                .{ 
+                    // .TYPE = .SHARED, 
+                    .TYPE = .PRIVATE, 
+                    .SYNC = false, 
+                    .ANONYMOUS = true,
+                    .HUGETLB = true,
+                },
                 huffman_row_data_file.handle,
                 0,
             );
@@ -95,9 +104,21 @@ pub const DocStore = struct {
                 null,
                 MMAP_MAX_SIZE_HUFFMAN_ROW_OFFSETS,
                 std.posix.PROT.WRITE | std.posix.PROT.READ,
-                .{ .TYPE = .SHARED },
+                // .{ .TYPE = .SHARED, .SYNC = .ASYNC },
+                .{ 
+                    // .TYPE = .SHARED, 
+                    .TYPE = .PRIVATE, 
+                    .SYNC = false, 
+                    .ANONYMOUS = true,
+                    .HUGETLB = true,
+                },
                 huffman_row_offsets_file.handle,
                 0,
+            );
+            try std.posix.madvise(
+                huffman_row_offsets_mmap_buffer.ptr,
+                MMAP_MAX_SIZE_HUFFMAN_BUFFER,
+                std.posix.MADV.SEQUENTIAL,
             );
 
             const literal_rows_filename = try std.fmt.allocPrint(
@@ -179,6 +200,8 @@ pub const DocStore = struct {
                 .huffman_row_data_mmap_buffer = undefined,
                 .huffman_row_offsets_mmap_buffer = undefined,
             },
+
+            .prev_buf_idx = 0,
         };
         store.literal_byte_sizes = try literal_byte_sizes.clone(store.gpa.allocator());
         store.literal_col_idxs   = try literal_col_idxs.clone(store.gpa.allocator());
@@ -268,16 +291,40 @@ pub const DocStore = struct {
                 ][0..(comptime 1 << 20)],
                 0,
             );
-            // try std.posix.madvise(
-                // @alignCast(
-                    // self.file_handles.huffman_row_data_mmap_buffer[self.zeroed_range..].ptr
-                    // ),
-                // (comptime 1 << 20),
-                // std.posix.MADV.DONTNEED,
-            // );
-
+            try std.posix.madvise(
+                @alignCast(
+                    self.file_handles.huffman_row_data_mmap_buffer[self.zeroed_range..].ptr
+                    ),
+                (comptime 1 << 20),
+                std.posix.MADV.DONTNEED,
+            );
             self.zeroed_range += (comptime 1 << 20);
         }
+
+        // if ((self.row_idx % (comptime 1 << 20) == 0) and (self.row_idx != 0)) {
+// 
+            // const new_buf_idx = std.mem.alignBackward(
+                // u64,
+                // self.huffman_buffer_pos,
+                // 4096,
+            // );
+// 
+            // try std.posix.msync(
+                    // @alignCast(self.file_handles.huffman_row_data_mmap_buffer[
+                        // self.prev_buf_idx..new_buf_idx
+                    // ]),
+                    // std.posix.MSF.ASYNC,
+                    // );
+            // self.prev_buf_idx = new_buf_idx;
+// 
+            // const prev_buf_idx = (self.row_idx - (comptime 1 << 20)) * 8;
+            // try std.posix.msync(
+                    // @alignCast(self.file_handles.huffman_row_offsets_mmap_buffer[
+                        // prev_buf_idx..(self.row_idx * 8)
+                    // ]),
+                    // std.posix.MSF.ASYNC,
+                    // );
+        // }
 
         // TODO: Need to rethink this. Not correct currently.
         // | -- data -- |<offset>| -- bit sizes -- |.| -- data -- | ...
