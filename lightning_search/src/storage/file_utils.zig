@@ -211,7 +211,7 @@ pub const DoubleBufferedReader = struct {
         self.semaphore.post();
     }
 
-    pub fn getBuffer(
+    pub inline fn getBuffer(
         self: *DoubleBufferedReader, 
         file_pos: u64,
     ) ![]u8 {
@@ -264,6 +264,77 @@ pub const DoubleBufferedReader = struct {
     }
 };
 
+
+pub fn SingleThreadedDoubleBufferedWriter(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        file: std.fs.File,
+        buffers: [2][]T,
+        buffer_offsets: [2]u64,
+        single_buffer_size: usize,
+        current_buffer: usize,
+        
+        pub fn init(allocator: std.mem.Allocator, file: std.fs.File) !Self {
+
+            const buffer_size: usize = 1 << 24;
+
+            var dbw = Self{
+                .file = file,
+                .buffers = undefined,
+                .buffer_offsets = .{0, 0},
+                .single_buffer_size = buffer_size,
+                .current_buffer = 0,
+            };
+
+            dbw.buffers[0] = try allocator.alloc(T, buffer_size);
+            dbw.buffers[1] = try allocator.alloc(T, buffer_size);
+            @memset(dbw.buffers[0], 0);
+            @memset(dbw.buffers[1], 0);
+
+            return dbw;
+        }
+
+        pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+            allocator.free(self.buffers[0]);
+            allocator.free(self.buffers[1]);
+        }
+
+        fn writeBuffer(self: *Self, buffer: []T) void {
+            _ = self.file.write(
+                std.mem.sliceAsBytes(buffer)
+                ) catch {
+                std.debug.print("Error reading file\n", .{});
+                return;
+            };
+            @memset(buffer, 0);
+        }
+
+        pub inline fn getBuffer(
+            self: *Self, 
+            file_pos: u64,
+        ) ![]T {
+            const index = file_pos - self.buffer_offsets[self.current_buffer];
+
+            if (index < @divFloor(self.buffers[0].len, 2)) {
+                return self.buffers[self.current_buffer][index..];
+            } else {
+                self.writeBuffer(self.buffers[self.current_buffer][0..index]);
+                self.current_buffer ^= 1;
+
+                self.buffer_offsets[self.current_buffer] = file_pos;
+                return self.buffers[self.current_buffer];
+            }
+        }
+
+        pub fn flush(self: *Self) void {
+            // TODO: Track last idx.
+            self.writeBuffer(
+                self.buffers[self.current_buffer],
+            );
+        }
+    };
+}
 
 
 pub fn TokenStream(comptime token_t: type) type {

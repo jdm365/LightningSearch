@@ -917,6 +917,10 @@ pub const IndexManager = struct {
         for (0..self.search_col_idxs.items.len) |_search_col_idx| {
             try token_stream.flushTokenStream(_search_col_idx);
         }
+
+        // Flush remaining doc storage.
+        try current_IP.doc_store.flush();
+
         _ = total_docs_read.fetchAdd(doc_id - prev_doc_id, .monotonic);
 
         // Construct II
