@@ -74,14 +74,20 @@ pub const DocStore = struct {
                 std.posix.PROT.WRITE | std.posix.PROT.READ,
                 // .{ .TYPE = .SHARED },
                 .{ 
-                    // .TYPE = .SHARED, 
-                    .TYPE = .PRIVATE, 
+                    .TYPE = .SHARED, 
+                    // .TYPE = .PRIVATE, 
                     .SYNC = false, 
-                    .ANONYMOUS = true,
-                    .HUGETLB = true,
+                    // .ANONYMOUS = true,
+                    // .HUGETLB = true,
+                    // .NORESERVE = true,
                 },
                 huffman_row_data_file.handle,
                 0,
+            );
+            try std.posix.madvise(
+                huffman_row_data_mmap_buffer.ptr,
+                MMAP_MAX_SIZE_HUFFMAN_BUFFER,
+                std.posix.MADV.HUGEPAGE,
             );
             try std.posix.madvise(
                 huffman_row_data_mmap_buffer.ptr,
@@ -106,18 +112,24 @@ pub const DocStore = struct {
                 std.posix.PROT.WRITE | std.posix.PROT.READ,
                 // .{ .TYPE = .SHARED, .SYNC = .ASYNC },
                 .{ 
-                    // .TYPE = .SHARED, 
-                    .TYPE = .PRIVATE, 
+                    .TYPE = .SHARED, 
+                    // .TYPE = .PRIVATE, 
                     .SYNC = false, 
-                    .ANONYMOUS = true,
-                    .HUGETLB = true,
+                    // .ANONYMOUS = true,
+                    // .HUGETLB = true,
+                    // .NORESERVE = true,
                 },
                 huffman_row_offsets_file.handle,
                 0,
             );
             try std.posix.madvise(
                 huffman_row_offsets_mmap_buffer.ptr,
-                MMAP_MAX_SIZE_HUFFMAN_BUFFER,
+                MMAP_MAX_SIZE_HUFFMAN_ROW_OFFSETS,
+                std.posix.MADV.HUGEPAGE,
+            );
+            try std.posix.madvise(
+                huffman_row_offsets_mmap_buffer.ptr,
+                MMAP_MAX_SIZE_HUFFMAN_ROW_OFFSETS,
                 std.posix.MADV.SEQUENTIAL,
             );
 
@@ -291,42 +303,48 @@ pub const DocStore = struct {
                 ][0..(comptime 1 << 20)],
                 0,
             );
-            try std.posix.madvise(
-                @alignCast(
-                    self.file_handles.huffman_row_data_mmap_buffer[self.zeroed_range..].ptr
-                    ),
-                (comptime 1 << 20),
-                std.posix.MADV.DONTNEED,
-            );
             self.zeroed_range += (comptime 1 << 20);
         }
 
-        // if ((self.row_idx % (comptime 1 << 20) == 0) and (self.row_idx != 0)) {
-// 
-            // const new_buf_idx = std.mem.alignBackward(
-                // u64,
-                // self.huffman_buffer_pos,
-                // 4096,
-            // );
-// 
-            // try std.posix.msync(
-                    // @alignCast(self.file_handles.huffman_row_data_mmap_buffer[
-                        // self.prev_buf_idx..new_buf_idx
-                    // ]),
-                    // std.posix.MSF.ASYNC,
-                    // );
-            // self.prev_buf_idx = new_buf_idx;
-// 
-            // const prev_buf_idx = (self.row_idx - (comptime 1 << 20)) * 8;
-            // try std.posix.msync(
-                    // @alignCast(self.file_handles.huffman_row_offsets_mmap_buffer[
-                        // prev_buf_idx..(self.row_idx * 8)
-                    // ]),
-                    // std.posix.MSF.ASYNC,
-                    // );
-        // }
+        if ((self.row_idx % (comptime 1 << 20) == 0) and (self.row_idx != 0)) {
+            const new_buf_idx = std.mem.alignBackward(
+                u64,
+                self.huffman_buffer_pos,
+                4096,
+            );
 
-        // TODO: Need to rethink this. Not correct currently.
+            try std.posix.madvise(
+                @alignCast(self.file_handles.huffman_row_data_mmap_buffer[
+                    self.prev_buf_idx..new_buf_idx
+                ].ptr),
+                new_buf_idx - self.prev_buf_idx,
+                std.posix.MADV.DONTNEED,
+            );
+            try std.posix.msync(
+                    @alignCast(self.file_handles.huffman_row_data_mmap_buffer[
+                        self.prev_buf_idx..new_buf_idx
+                    ]),
+                    std.posix.MSF.ASYNC,
+                    );
+            self.prev_buf_idx = new_buf_idx;
+
+            const prev_buf_idx = (self.row_idx - (comptime 1 << 20)) * 8;
+            try std.posix.madvise(
+                    @alignCast(self.file_handles.huffman_row_offsets_mmap_buffer[
+                        prev_buf_idx..(self.row_idx * 8)
+                    ].ptr),
+                    (comptime 1 << 23),
+                    std.posix.MADV.DONTNEED,
+                    );
+
+            try std.posix.msync(
+                    @alignCast(self.file_handles.huffman_row_offsets_mmap_buffer[
+                        prev_buf_idx..(self.row_idx * 8)
+                    ]),
+                    std.posix.MSF.ASYNC,
+                    );
+        }
+
         // | -- data -- |<offset>| -- bit sizes -- |.| -- data -- | ...
         var row_bit_size: usize = 0;
         for (self.huffman_col_idxs.items) |col_idx| {
@@ -372,6 +390,25 @@ pub const DocStore = struct {
         try self.file_handles.huffman_row_offsets_file.setEndPos(
             self.row_idx * 8
             );
+        try std.posix.msync(
+                @alignCast(self.file_handles.huffman_row_data_mmap_buffer[
+                    self.prev_buf_idx..self.huffman_buffer_pos
+                ]),
+                std.posix.MSF.ASYNC,
+                );
+        self.prev_buf_idx = self.huffman_buffer_pos;
+
+        const prev_row_idx = std.mem.alignBackward(
+            u64,
+            self.row_idx * 8,
+            (comptime 1 << 23),
+        );
+        try std.posix.msync(
+                @alignCast(self.file_handles.huffman_row_offsets_mmap_buffer[
+                    prev_row_idx..(self.row_idx * 8)
+                ]),
+                std.posix.MSF.ASYNC,
+                );
     }
 
     pub inline fn getRow(
