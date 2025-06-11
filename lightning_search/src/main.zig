@@ -7,6 +7,9 @@ const FileType = @import("storage/file_utils.zig").FileType;
 
 const server = @import("server/server.zig");
 
+inline fn contains(haystack: []const u8, needle: []const u8) bool {
+    return std.mem.indexOf(u8, haystack, needle) != null;
+}
 
 fn bench(filename: []const u8) !void {
     var gpa = std.heap.DebugAllocator(.{}){};
@@ -23,10 +26,13 @@ fn bench(filename: []const u8) !void {
 
     if (std.mem.endsWith(u8, filename, ".csv")) {
         filetype = FileType.CSV;
+
     } else if (std.mem.endsWith(u8, filename, ".parquet")) {
         filetype = FileType.PARQUET;
+
     } else if (std.mem.endsWith(u8, filename, ".json")) {
         filetype = FileType.JSON;
+
     } else {
         @panic("Unsupported filetype.");
     }
@@ -34,18 +40,21 @@ fn bench(filename: []const u8) !void {
     try index_manager.readHeader(filename, filetype);
     try index_manager.scanFile();
 
-    if (std.mem.startsWith(u8, filename, "../data/hn")) {
+    if (contains(filename, "hn")) {
         // try index_manager.addSearchCol("story_url");
         try index_manager.addSearchCol("story_text");
         // try index_manager.addSearchCol("story_author");
         try index_manager.addSearchCol("comment_text");
         // try index_manager.addSearchCol("comment_author");
-    } else if (std.mem.startsWith(u8, filename, "../data/enwik")) {
+
+    } else if (contains(filename, "enwik")) {
         try index_manager.addSearchCol("text");
-    } else if (std.mem.startsWith(u8, filename, "../data/mb")) {
+
+    } else if (contains(filename, "mb")) {
         try index_manager.addSearchCol("title");
         try index_manager.addSearchCol("artist");
         try index_manager.addSearchCol("album");
+
     } else {
         @panic("File not supported yet.");
     }
@@ -64,15 +73,18 @@ fn bench(filename: []const u8) !void {
     var query_map = SHM.init(allocator);
     defer query_map.deinit();
 
-    if (std.mem.startsWith(u8, filename, "../data/hn")) {
+    if (contains(filename, "hn")) {
         try query_map.put("STORY_TEXT", "zig");
         try query_map.put("COMMENT_TEXT", "gotta go fast");
-    } else if (std.mem.startsWith(u8, filename, "../data/enwik")) {
+
+    } else if (contains(filename, "enwik")) {
         try query_map.put("TEXT", "griffith observatory");
-    } else if (std.mem.startsWith(u8, filename, "../data/mb")) {
+
+    } else if (contains(filename, "mb")) {
         try query_map.put("TITLE", "UNDER MY SKIN");
         try query_map.put("ARTIST", "FRANK SINATRA");
         try query_map.put("ALBUM", "LIGHTNING");
+
     } else {
         @panic("File not supported yet.");
     }
@@ -118,10 +130,13 @@ fn serveHTML(filename: []const u8) !void {
 
     if (std.mem.endsWith(u8, filename, ".csv")) {
         filetype = FileType.CSV;
+
     } else if (std.mem.endsWith(u8, filename, ".parquet")) {
         filetype = FileType.PARQUET;
+
     } else if (std.mem.endsWith(u8, filename, ".json")) {
         filetype = FileType.JSON;
+
     } else {
         @panic("Unsupported filetype.");
     }
@@ -129,30 +144,38 @@ fn serveHTML(filename: []const u8) !void {
     try index_manager.readHeader(filename, filetype);
     try index_manager.scanFile();
 
-    if (std.mem.startsWith(u8, filename, "../data/hn")) {
+    var boost_factors = std.ArrayList(f32).init(allocator);
+    defer boost_factors.deinit();
+
+    if (contains(filename, "hn")) {
         // try index_manager.addSearchCol("story_url");
         try index_manager.addSearchCol("story_text");
         // try index_manager.addSearchCol("story_author");
         try index_manager.addSearchCol("comment_text");
         // try index_manager.addSearchCol("comment_author");
-    } else if (std.mem.startsWith(u8, filename, "../data/enwik")) {
+
+        try boost_factors.append(2.0);
+        try boost_factors.append(1.0);
+
+    } else if (contains(filename, "enwik")) {
         try index_manager.addSearchCol("text");
-    } else if (std.mem.startsWith(u8, filename, "../data/mb")) {
+
+        try boost_factors.append(2.0);
+
+    } else if (contains(filename, "mb")) {
         try index_manager.addSearchCol("title");
         try index_manager.addSearchCol("artist");
         try index_manager.addSearchCol("album");
+
+        try boost_factors.append(2.0);
+        try boost_factors.append(1.0);
+        try boost_factors.append(1.0);
+
     } else {
         @panic("File not supported yet.");
     }
 
     try index_manager.indexFile();
-
-    var boost_factors = std.ArrayList(f32).init(allocator);
-    defer boost_factors.deinit();
-
-    try boost_factors.append(2.0);
-    // try boost_factors.append(1.0);
-    // try boost_factors.append(1.0);
 
     var server_handler = try server.QueryHandlerZap.init(
         &index_manager,
@@ -164,31 +187,31 @@ fn serveHTML(filename: []const u8) !void {
 }
 
 pub fn main() !void {
-    // var gpa = std.heap.DebugAllocator(.{}){};
-    // const allocator = gpa.allocator();
-    // defer _ = gpa.deinit();
-// 
-    // const args = try std.process.argsAlloc(allocator);
-    // defer std.process.argsFree(allocator, args);
-// 
-    // if (args.len != 2) {
-        // std.debug.print("Usage: {s} <filename>\n", .{args[0]});
-// 
-        // for (args) |arg| {
-            // std.debug.print("Arg: {s}\n", .{arg});
-        // }
-        // return error.InvalidArguments;
-    // }
-// 
-    // const filename = args[1];
-    // try serveHTML(filename);
+    var gpa = std.heap.DebugAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
 
-    // const filename = "../data/mb_small.csv";
-    const filename = "../data/mb.csv";
-    // const filename = "../data/enwiki.csv";
-    // const filename = "../data/enwiki_small.csv";
-    // const filename = "../data/mb.parquet";
-    // const filename = "../data/hn.csv";
-    // const filename = "../data/hn_half.csv";
-    try bench(filename);
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (args.len > 2) {
+        std.debug.print("Usage: {s} <filename>\n", .{args[0]});
+
+        for (args) |arg| {
+            std.debug.print("Arg: {s}\n", .{arg});
+        }
+        return error.InvalidArguments;
+    } else if (args.len == 2) {
+        const filename = args[1];
+        try serveHTML(filename);
+    } else {
+        // const filename = "../data/mb_small.csv";
+        const filename = "../data/mb.csv";
+        // const filename = "../data/enwiki.csv";
+        // const filename = "../data/enwiki_small.csv";
+        // const filename = "../data/mb.parquet";
+        // const filename = "../data/hn.csv";
+        // const filename = "../data/hn_half.csv";
+        try bench(filename);
+    }
 }
