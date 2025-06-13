@@ -205,8 +205,9 @@ pub fn main() !void {
         const filename = args[1];
         try serveHTML(filename);
     } else {
+        const filename = "../data/mb_tiny.csv";
         // const filename = "../data/mb_small.csv";
-        const filename = "../data/mb.csv";
+        // const filename = "../data/mb.csv";
         // const filename = "../data/enwiki.csv";
         // const filename = "../data/enwiki_small.csv";
         // const filename = "../data/mb.parquet";

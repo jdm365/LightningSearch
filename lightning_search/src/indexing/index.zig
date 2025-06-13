@@ -27,101 +27,6 @@ pub const MAX_LINE_LENGTH = 1_048_576;
 pub const ENDIANESS = builtin.cpu.arch.endian();
 
 
-pub fn CategoricalColumn(comptime T: type) type {
-    return struct {
-        const Self = @This();
-
-        is_literal_type: bool,
-        col_idx: u32,
-        total_count: u64,
-
-        value_map_u8: std.AutoArrayHashMapUnmanaged(T, u8),
-        values_literal: std.ArrayListUnmanaged(u8),
-
-        value_idx_map: std.AutoHashMapUnmanaged(T, std.ArrayListUnmanaged(u8)),
-
-
-        pub fn init(col_idx: u32) !Self {
-            return Self{
-                .is_literal_type = true,
-                .col_idx = col_idx,
-                .total_count = 0,
-
-                .value_map_u8 = std.AutoArrayHashMapUnmanaged(T, u8){},
-                .values_literal = std.ArrayListUnmanaged(u8){},
-
-                .value_idx_map = std.AutoHashMapUnmanaged(
-                    T, 
-                    std.ArrayListUnmanaged(u8),
-                    ),
-
-            };
-        }
-
-        pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-            if (self.is_literal_type) {
-                self.value_map_u8.deinit(allocator);
-                self.value_idx_map.deinit(allocator);
-            } else {
-                while (self.value_idx_map.iterator()) |item| {
-                    item.value_ptr.*.deinit(allocator);
-                }
-                self.value_idx_map.deinit(allocator);
-            }
-        }
-
-        pub inline fn add(
-            self: *Self, 
-            allocator: std.mem.Allocator, 
-            value: T,
-            ) !void {
-            if (self.is_literal_type) {
-                var gop = try self.value_map_u8.getOrPut(value);
-                if (!gop.found_existing) {
-                    gop.key_ptr.*   = value;
-                    gop.value_ptr.* = @truncate(self.value_map_u8.count());
-                }
-                try self.values_literal.append(allocator, gop.value_ptr.*);
-
-                if (self.value_map_u8.count() == 255) {
-                    self.is_literal_type = false;
-                    self.total_count = self.values_literal.items.len;
-
-                    // Transfer to value_idx_map.
-                    for (0.., try self.value_map_u8.iterator()) |idx, T_val| {
-                        try self.value_idx_map.put(
-                            T_val,
-                            std.ArrayListUnmanaged(u32),
-                        );
-                        for (0.., self.values_literal) |jdx, map_val| {
-                            if (map_val == @as(T, @intCast(idx))) {
-                                try self.value_idx_map.get(
-                                    T_val,
-                                ).?.append(allocator, jdx);
-                            }
-                        }
-                    }
-                    gop = try self.value_idx_map.getOrPut(
-                        self.value_map_u8.items[value].key,
-                        );
-                    if (!gop.found_existing) {
-                        gop.key_ptr.* = self.value_map_u8.items[value].key;
-                        try gop.value_ptr.*.append(allocator, @truncate(self.value_idx_map.count()));
-                    }
-
-                    self.values_literal.deinit(allocator);
-                    self.value_map_u8.deinit(allocator);
-                }
-            } else {
-                try self.value_idx_map.getPtr(
-                    value,
-                ).append(allocator, self.total_count);
-                self.total_count += 1;
-            }
-        }
-    };
-}
-
 inline fn lowerBound(comptime T: type, slice: []const T, target: T) usize {
     var low: usize = 0;
     var high: usize = slice.len;
@@ -161,190 +66,150 @@ inline fn linearLowerBound(slice: []const u32, target: u32) usize {
     return slice.len;
 }
 
-pub fn PostingsIterator(comptime T: type, comptime term_pos_T: type) type {
-    return struct {
-        const Self = @This();
+pub const PostingsIterator = struct {
+    doc_ids: []u32,
+    term_positions: []u16,
+    current_idx: usize,
+    score: usize,
+    term_id: u32,
+    col_idx: u32,
+    query_term_pos: u16,
+    consumed: bool,
+    single_doc: ?flag_u32,
+    single_term: ?flag_u32,
 
-        doc_ids: []T,
-        term_positions: []term_pos_T,
-        current_idx: usize,
-        score: usize,
+    pub const Result = struct {
+        doc_id: u32,
+        term_pos: u16,
+    };
+
+    pub fn init(
+        doc_ids: []u32, 
+        term_positions: []u16, 
         term_id: u32,
         col_idx: u32,
-        query_term_pos: term_pos_T,
-        consumed: bool,
-
-        pub const Result = struct {
-            doc_id: T,
-            term_pos: term_pos_T,
+        query_term_pos: u16,
+        score: usize,
+        single_doc_id: ?flag_u32,
+        single_term: ?flag_u32,
+        ) PostingsIterator {
+        return PostingsIterator{ 
+            .doc_ids = doc_ids,
+            .term_positions = term_positions,
+            .term_id = term_id,
+            .current_idx = 0,
+            .score = score,
+            .col_idx = col_idx,
+            .query_term_pos = query_term_pos,
+            .consumed = false,
+            .single_doc = single_doc_id,
+            .single_term = single_term,
         };
+    }
 
-        pub fn init(
-            doc_ids: []T, 
-            term_positions: []term_pos_T, 
-            term_id: u32,
-            col_idx: u32,
-            query_term_pos: term_pos_T,
-            score: usize,
-            ) Self {
-            return Self{ 
-                .doc_ids = doc_ids,
-                .term_positions = term_positions,
-                .term_id = term_id,
-                .current_idx = 0,
-                .score = score,
-                .col_idx = col_idx,
-                .query_term_pos = query_term_pos,
-                .consumed = false,
-            };
+    pub inline fn currentDocId(self: *const PostingsIterator) u32 {
+        if (self.single_doc) |d| {
+            return @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111;
         }
 
-        pub inline fn currentDocId(self: *const Self) T {
-            if (self.current_idx >= self.doc_ids.len) {
-                return std.math.maxInt(T);
-            }
-            return self.doc_ids[self.current_idx];
+        if (self.current_idx >= self.doc_ids.len) {
+            return std.math.maxInt(u32);
         }
+        return self.doc_ids[self.current_idx];
+    }
 
-        pub inline fn currentTermPos(self: *const Self) term_pos_T {
-            if (self.current_idx >= self.term_positions.len) {
-                return std.math.maxInt(term_pos_T);
-            }
-            return self.term_positions[self.current_idx];
-        }
-
-        // pub inline fn next(self: *Self) Result {
-            // if (self.consumed) {
-                // return .{
-                    // .doc_id = std.math.maxInt(T), 
-                    // .term_pos = std.math.maxInt(term_pos_T),
-                // };
-            // }
-// 
-            // if (self.current_idx < self.doc_ids.len) {
-                // self.current_idx += 1;
-                // return .{
-                    // .doc_id = self.doc_ids[self.current_idx - 1],
-                    // .term_pos = self.term_positions[self.current_idx - 1],
-                // };
-            // }
-            // self.consumed = true;
-            // return .{
-                // .doc_id = std.math.maxInt(T), 
-                // .term_pos = std.math.maxInt(term_pos_T),
-            // };
-        // }
-
-        pub inline fn next(self: *Self) Result {
-            if (self.consumed) {
-                return .{
-                    .doc_id = std.math.maxInt(T),
-                    .term_pos = std.math.maxInt(term_pos_T),
-                };
-            }
-
-            self.current_idx += 1;
-
-            if (self.current_idx >= self.doc_ids.len) {
-                self.consumed = true;
-                return .{
-                    .doc_id = std.math.maxInt(T),
-                    .term_pos = std.math.maxInt(term_pos_T),
-                };
-            }
-
-            return .{
-                .doc_id = self.doc_ids[self.current_idx],
-                .term_pos = self.term_positions[self.current_idx],
-            };
-        }
-
-        pub inline fn advanceTo(self: *Self, target_id: T) Result {
-            if (self.current_idx >= self.doc_ids.len) {
-                return .{
-                    .doc_id = std.math.maxInt(T), 
-                    .term_pos = std.math.maxInt(term_pos_T),
-                };
-            }
-
-            if (self.doc_ids[self.current_idx] >= target_id) {
-                return .{
-                    .doc_id   = self.doc_ids[self.current_idx],
-                    .term_pos = self.term_positions[self.current_idx],
-                };
-            }
-
-            const found_idx_in_slice = linearLowerBound(
-                self.doc_ids[self.current_idx..],
-                target_id,
+    pub inline fn currentTermPos(self: *const PostingsIterator) u16 {
+        if (self.single_term) |t| {
+            return @truncate(
+                @as(u32, @bitCast(t)) & 0b00000000_00000000_11111111_11111111
             );
+        }
 
-            self.current_idx += found_idx_in_slice;
+        if (self.current_idx >= self.term_positions.len) {
+            return std.math.maxInt(u16);
+        }
 
-            if (self.current_idx >= self.doc_ids.len) {
-                self.consumed = true;
-                return .{
-                    .doc_id = std.math.maxInt(T), 
-                    .term_pos = std.math.maxInt(term_pos_T),
-                };
-            }
+        return self.term_positions[self.current_idx];
+    }
 
+    pub inline fn next(self: *PostingsIterator) Result {
+        if (self.consumed) {
             return .{
-                .doc_id = self.doc_ids[self.current_idx], 
+                .doc_id = std.math.maxInt(u32),
+                .term_pos = std.math.maxInt(u16),
+            };
+        }
+        if (self.single_doc) |d| {
+            return .{
+                .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                .term_pos = @truncate(@as(u32, @bitCast(self.single_term.?)) & 0b00000000_00000000_11111111_11111111),
+            };
+        }
+
+        self.current_idx += 1;
+
+        if (self.current_idx >= self.doc_ids.len) {
+            self.consumed = true;
+            return .{
+                .doc_id = std.math.maxInt(u32),
+                .term_pos = std.math.maxInt(u16),
+            };
+        }
+
+        return .{
+            .doc_id = self.doc_ids[self.current_idx],
+            .term_pos = self.term_positions[self.current_idx],
+        };
+    }
+
+    pub inline fn advanceTo(self: *PostingsIterator, target_id: u32) Result {
+        if (self.current_idx >= self.doc_ids.len) {
+            return .{
+                .doc_id = std.math.maxInt(u32), 
+                .term_pos = std.math.maxInt(u16),
+            };
+        }
+
+        if (self.single_doc) |d| {
+            return .{
+                .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                .term_pos = @truncate(
+                    @as(u32, @bitCast(self.single_term.?)) & 0b00000000_00000000_01111111_11111111
+                ),
+            };
+        }
+
+        if (self.doc_ids[self.current_idx] >= target_id) {
+            return .{
+                .doc_id   = self.doc_ids[self.current_idx],
                 .term_pos = self.term_positions[self.current_idx],
             };
         }
 
-        // pub inline fn advanceTo(self: *Self, next_item: T) Result {
-            // if (self.consumed) {
-                // return .{
-                    // .doc_id = std.math.maxInt(T), 
-                    // .term_pos = std.math.maxInt(term_pos_T),
-                // };
-            // }
-// 
-            // if (self.current_idx == self.doc_ids.len) {
-                // self.consumed = true;
-            // }
-// 
-            // self.current_idx += lowerBound(
-                // T,
-                // self.doc_ids[self.current_idx..],
-                // next_item,
-            // );
-            // if (self.current_idx == self.doc_ids.len) {
-                // self.consumed = true;
-                // return .{
-                    // .doc_id = std.math.maxInt(T), 
-                    // .term_pos = std.math.maxInt(term_pos_T),
-                // };
-            // }
-// 
-            // return .{
-                // .doc_id = self.doc_ids[self.current_idx],
-                // .term_pos = self.term_positions[self.current_idx],
-            // };
-        // }
+        const found_idx_in_slice = linearLowerBound(
+            self.doc_ids[self.current_idx..],
+            target_id,
+        );
 
-        pub inline fn len(self: *Self) usize {
-            return self.doc_ids.len;
+        self.current_idx += found_idx_in_slice;
+
+        if (self.current_idx >= self.doc_ids.len) {
+            self.consumed = true;
+            return .{
+                .doc_id = std.math.maxInt(u32), 
+                .term_pos = std.math.maxInt(u16),
+            };
         }
-    };
-}
 
-pub const HashNGram = extern struct {
-    hashes: [8]u16,
-};
-
-pub const ScoringInfo = packed struct {
-    score: f32,
-    term_pos: u16,
-
-    pub fn init() ScoringInfo {
         return .{
-            .score = 0.0,
-            .term_pos = 0,
+            .doc_id = self.doc_ids[self.current_idx], 
+            .term_pos = self.term_positions[self.current_idx],
         };
+    }
+
+    pub inline fn len(self: *PostingsIterator) usize {
+        if (self.single_doc) |_| return 1;
+        return self.doc_ids.len;
     }
 };
 
@@ -353,7 +218,6 @@ pub const QueryResult = packed struct(u64){
     partition_idx: u32,
 };
 
-// pub const SHM = std.HashMap([]const u8, u32, std.hash.XxHash64, 80);
 pub const SHM = std.HashMap([]const u8, []const u8, CaseInsensitiveWyhashContext, 80);
 
 const IndexContext = struct {
@@ -433,22 +297,25 @@ pub const Postings = struct {
     term_positions: []u16,
 };
 
-pub const PostingsV2 = struct {
-    doc_id_buf: []align(std.heap.page_size_min)u32,
-    term_positions: []align(std.heap.page_size_min)u16,
+pub const flag_u32 = packed struct(u32) {
+    is_inline: u1,
+    value: u31,
 };
 
-pub const PostingsDynamic = struct {
-    doc_ids: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u32)),
-    term_positions: std.ArrayListUnmanaged(std.ArrayListUnmanaged(u16)),
+pub const PostingsV2 = struct {
+    doc_id_ptrs:  []align(std.heap.page_size_min)flag_u32,
+    doc_id_buf: []align(std.heap.page_size_min)u32,
+
+    term_pos_ptrs:  []align(std.heap.page_size_min)flag_u32,
+    term_positions: []align(std.heap.page_size_min)u16,
 };
 
 
 pub const InvertedIndexV2 = struct {
-    postings: Postings,
+    postings: PostingsV2,
     vocab: Vocab,
     prt_vocab: RadixTrie(u32),
-    term_offsets: []usize,
+    // term_offsets: []usize,
     doc_freqs: std.ArrayList(u32),
     doc_sizes: []u16,
 
@@ -462,13 +329,16 @@ pub const InvertedIndexV2 = struct {
         num_docs: usize,
         ) !InvertedIndexV2 {
         var II = InvertedIndexV2{
-            .postings = Postings{
-                .doc_ids = undefined,
+            .postings = PostingsV2{
+                .doc_id_ptrs = undefined,
+                .doc_id_buf  = undefined,
+
+                .term_pos_ptrs  = undefined,
                 .term_positions = undefined,
             },
             .vocab = undefined,
             .prt_vocab = try RadixTrie(u32).init(allocator),
-            .term_offsets = &[_]usize{},
+            // .term_offsets = &[_]usize{},
             .doc_freqs = try std.ArrayList(u32).initCapacity(
                 allocator, @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
                 ),
@@ -488,40 +358,84 @@ pub const InvertedIndexV2 = struct {
         return II;
     }
 
-    pub fn deinit(
-        self: *InvertedIndexV2,
-        allocator: std.mem.Allocator,
-        ) void {
+    pub fn deinit(self: *InvertedIndexV2, allocator: std.mem.Allocator) void {
+
+        allocator.free(self.postings.doc_id_ptrs);
+        allocator.free(self.postings.doc_id_buf);
+        allocator.free(self.postings.term_pos_ptrs);
         allocator.free(self.postings.term_positions);
-        allocator.free(self.postings.doc_ids);
 
         self.vocab.deinit(allocator);
         self.prt_vocab.deinit();
 
-        allocator.free(self.term_offsets);
+        // allocator.free(self.term_offsets);
         self.doc_freqs.deinit();
         allocator.free(self.doc_sizes);
     }
 
-    pub fn resizePostings(
-        self: *InvertedIndexV2,
-        allocator: std.mem.Allocator,
-        ) !void {
+    pub fn resizePostings(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
         self.num_terms = @intCast(self.doc_freqs.items.len);
-        self.term_offsets = try allocator.alloc(usize, self.num_terms + 1);
+        self.postings.doc_id_ptrs = try allocator.alignedAlloc(
+            flag_u32,
+            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            self.num_terms + 1,
+        );
+        self.postings.term_pos_ptrs = try allocator.alignedAlloc(
+            flag_u32,
+            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            self.num_terms + 1,
+        );
 
         std.debug.assert(self.num_terms == self.vocab.map.count());
 
         // Num terms is now known.
         var postings_size: usize = 0;
-        for (0.., self.doc_freqs.items) |i, doc_freq| {
-            self.term_offsets[i] = postings_size;
-            postings_size += doc_freq;
-        }
-        self.term_offsets[self.num_terms] = postings_size;
+        for (0.., self.doc_freqs.items) |idx, doc_freq| {
+            // self.term_offsets[idx] = postings_size;
 
-        self.postings.doc_ids = try allocator.alloc(u32, postings_size + 1);
-        self.postings.term_positions = try allocator.alloc(u16, postings_size + 1);
+            if (doc_freq == 1) {
+                self.postings.doc_id_ptrs[idx] = flag_u32{
+                    .is_inline = 1,
+                    .value = undefined,
+                };
+                self.postings.term_pos_ptrs[idx] = flag_u32{
+                    .is_inline = 1,
+                    .value = undefined,
+                };
+            } else {
+                self.postings.doc_id_ptrs[idx] = flag_u32{
+                    .is_inline = 0,
+                    .value = @truncate(postings_size),
+                };
+                self.postings.term_pos_ptrs[idx] = flag_u32{
+                    .is_inline = 0,
+                    .value = @truncate(postings_size),
+                };
+                postings_size += doc_freq;
+            }
+
+            std.debug.assert(postings_size < (comptime 1 << 31));
+        }
+        self.postings.doc_id_ptrs[self.num_terms] = flag_u32{
+            .is_inline = 0,
+            .value = @truncate(postings_size),
+        };
+        self.postings.term_pos_ptrs[self.num_terms] = flag_u32{
+            .is_inline = 0,
+            .value = @truncate(postings_size),
+        };
+        postings_size += 1;
+
+        self.postings.doc_id_buf     = try allocator.alignedAlloc(
+            u32, 
+            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            postings_size,
+            );
+        self.postings.term_positions = try allocator.alignedAlloc(
+            u16, 
+            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            postings_size,
+            );
 
         var avg_doc_size: f64 = 0.0;
         for (self.doc_sizes) |doc_size| {
@@ -529,41 +443,13 @@ pub const InvertedIndexV2 = struct {
         }
         avg_doc_size /= @floatFromInt(self.num_docs);
         self.avg_doc_size = @floatCast(avg_doc_size);
-
-        // try self.buildPRT();
     }
-
-    // pub fn buildPRT(self: *InvertedIndexV2) !void {
-        // const start = std.time.milliTimestamp();
-        // var vocab_iterator = self.vocab.iterator();
-        // while (vocab_iterator.next()) |val| {
-            // const df = @as(f32, @floatFromInt(self.doc_freqs.items[val.value_ptr.*]));
-            // if (df >= 5.0) {
-                // // try self.prt_vocab.insert(
-                    // // val.key_ptr.*, 
-                    // // val.value_ptr.*, 
-                    // // df,
-                    // // );
-                // try self.prt_vocab.insert(
-                    // val.key_ptr.*, 
-                    // val.value_ptr.*, 
-                    // // df,
-                    // );
-            // }
-        // }
-        // const end = std.time.milliTimestamp();
-        // std.debug.print("Build PRT in {}ms\n", .{end - start});
-    // }
 };
 
 pub const BM25Partition = struct {
     II: []InvertedIndexV2,
     num_records: usize,
     allocator: std.mem.Allocator,
-    doc_score_map: std.AutoHashMap(u32, ScoringInfo),
-    doc_score_sa: [2]SortedIntMultiArray(ScoringInfo, false),
-
-    scratch_array: SortedIntMultiArray(ScoringInfo, false),
 
     doc_store: DocStore,
 
@@ -572,30 +458,12 @@ pub const BM25Partition = struct {
         num_search_cols: usize,
         num_records: usize,
     ) !BM25Partition {
-        var doc_score_map = std.AutoHashMap(u32, ScoringInfo).init(allocator);
-        try doc_score_map.ensureTotalCapacity(50_000);
-
         var partition = BM25Partition{
             .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
             .num_records = num_records,
             .allocator = allocator,
-            .doc_score_map = doc_score_map,
-            .doc_score_sa = undefined,
-            .scratch_array = try SortedIntMultiArray(ScoringInfo, false).init(
-                allocator,
-                1_048_576,
-            ),
-
             .doc_store = undefined,
         };
-        partition.doc_score_sa[0] = try SortedIntMultiArray(ScoringInfo, false).init(
-            allocator,
-            1_048_576,
-        );
-        partition.doc_score_sa[1] = try SortedIntMultiArray(ScoringInfo, false).init(
-            allocator,
-            1_048_576,
-        );
 
         for (0..num_search_cols) |idx| {
             partition.II[idx] = try InvertedIndexV2.init(
@@ -612,7 +480,6 @@ pub const BM25Partition = struct {
             self.II[i].deinit(self.allocator);
         }
         self.allocator.free(self.II);
-        self.doc_score_map.deinit();
 
         try self.doc_store.deinit();
     }
@@ -1384,7 +1251,10 @@ pub const BM25Partition = struct {
             try II.resizePostings(self.allocator);
 
             if (II.num_terms > term_cntr.len) {
-                term_cntr = try self.allocator.realloc(term_cntr, @as(usize, @intCast(II.num_terms)));
+                term_cntr = try self.allocator.realloc(
+                    term_cntr, 
+                    @as(usize, @intCast(II.num_terms)),
+                    );
             }
             @memset(term_cntr, 0);
 
@@ -1427,15 +1297,33 @@ pub const BM25Partition = struct {
 
                     current_doc_id += @intCast(new_doc);
 
-                    const postings_offset = II.term_offsets[term_id] + term_cntr[term_id];
-                    std.debug.assert(postings_offset < II.postings.doc_ids.len);
+                    const is_inline_doc_id   = II.postings.doc_id_ptrs[term_id].is_inline;
+                    const is_inline_term_pos = II.postings.term_pos_ptrs[term_id].is_inline;
 
-                    std.debug.assert(current_doc_id <= II.num_docs);
+                    if (is_inline_doc_id == 1) {
+                        II.postings.doc_id_ptrs[term_id].value = @truncate(current_doc_id);
+                    } else {
+                        const doc_id_offset = @as(usize, @intCast(@as(u32, @bitCast(II.postings.doc_id_ptrs[term_id])))) + term_cntr[term_id];
+
+                        std.debug.print("doc_id_offset: {d}, doc_id_buf.len: {d}\n", 
+                            .{doc_id_offset, II.postings.doc_id_buf.len});
+                        std.debug.assert(doc_id_offset < II.postings.doc_id_buf.len);
+
+                        II.postings.doc_id_buf[doc_id_offset] = @truncate(current_doc_id);
+                    }
+
+                    if (is_inline_term_pos == 1) {
+                        II.postings.term_pos_ptrs[term_id].value = @intCast(term_pos);
+                    } else {
+                        const tp_id_offset = @as(usize, @intCast(@as(u32, @bitCast(II.postings.term_pos_ptrs[term_id])))) + term_cntr[term_id];
+                        std.debug.assert(tp_id_offset < II.postings.term_positions.len);
+
+                        II.postings.term_positions[tp_id_offset] = term_pos;
+                    }
 
                     term_cntr[term_id] += 1;
 
-                    II.postings.doc_ids[postings_offset]        = @truncate(current_doc_id);
-                    II.postings.term_positions[postings_offset] = term_pos;
+                    std.debug.assert(current_doc_id <= II.num_docs);
                 }
             }
             std.debug.assert(
