@@ -66,6 +66,164 @@ inline fn linearLowerBound(slice: []const u32, target: u32) usize {
     return slice.len;
 }
 
+pub const PostingsIteratorV2 = struct {
+    doc_ids: []u32,
+    term_positions: []u16,
+    current_doc_idx: usize,
+    current_term_idx: usize,
+    score: usize,
+    term_id: u32,
+    col_idx: u32,
+    consumed: bool,
+    single_doc: ?flag_u32,
+    single_term: ?flag_u32,
+
+    pub const Result = struct {
+        doc_id: u32,
+        term_pos: u16,
+    };
+
+    pub fn init(
+        postings: PostingsV2,
+        term_id: u32,
+        col_idx: u32,
+        score: usize,
+        ) PostingsIterator {
+
+        const start_idx_doc_id = postings.doc_id_ptrs[term_id];
+        const start_idx_term   = postings.term_pos_ptrs[term_id];
+
+        const end_idx_doc_id = postings.doc_id_ptrs[term_id + 1];
+        const end_idx_term   = postings.term_pos_ptrs[term_id + 1];
+
+        const single_doc_id = if (start_idx_doc_id.is_inline == 1)
+            @as(u32, @bitCast(postings.doc_id_ptrs[term_id]))
+        else null;
+        const single_term   = if (start_idx_term.is_inline == 1)
+            @as(u32, @bitCast(postings.term_pos_ptrs[term_id]))
+        else null;
+
+        return PostingsIteratorV2{ 
+            .doc_ids = postings.doc_ids[start_idx_doc_id..end_idx_doc_id],
+            .term_pos_ptrs = postings.term_pos_ptrs[start_idx_term..end_idx_term],
+            .term_id = term_id,
+            .current_doc_idx = 0,
+            .current_term_idx = 0,
+            .score = score,
+            .col_idx = col_idx,
+            .consumed = false,
+            .single_doc = single_doc_id,
+            .single_term = single_term,
+        };
+    }
+
+    pub inline fn currentDocId(self: *const PostingsIteratorV2) u32 {
+        if (self.single_doc) |d| {
+            return @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111;
+        }
+
+        if (self.current_doc_idx >= self.postings.doc_ids.len) {
+            return std.math.maxInt(u32);
+        }
+        return self.doc_ids[self.current_idx];
+    }
+
+    pub inline fn currentTermPos(self: *const PostingsIterator) u16 {
+        if (self.single_term) |t| {
+            return @truncate(
+                @as(u32, @bitCast(t)) & 0b00000000_00000000_11111111_11111111
+            );
+        }
+
+        if (self.current_idx >= self.term_positions.len) {
+            return std.math.maxInt(u16);
+        }
+
+        return self.term_positions[self.current_idx];
+    }
+
+    pub inline fn next(self: *PostingsIterator) Result {
+        if (self.consumed) {
+            return .{
+                .doc_id = std.math.maxInt(u32),
+                .term_pos = std.math.maxInt(u16),
+            };
+        }
+        if (self.single_doc) |d| {
+            return .{
+                .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                .term_pos = @truncate(@as(u32, @bitCast(self.single_term.?)) & 0b00000000_00000000_11111111_11111111),
+            };
+        }
+
+        self.current_idx += 1;
+
+        if (self.current_idx >= self.doc_ids.len) {
+            self.consumed = true;
+            return .{
+                .doc_id = std.math.maxInt(u32),
+                .term_pos = std.math.maxInt(u16),
+            };
+        }
+
+        return .{
+            .doc_id = self.doc_ids[self.current_idx],
+            .term_pos = self.term_positions[self.current_idx],
+        };
+    }
+
+    pub inline fn advanceTo(self: *PostingsIterator, target_id: u32) Result {
+        if (self.current_idx >= self.doc_ids.len) {
+            return .{
+                .doc_id = std.math.maxInt(u32), 
+                .term_pos = std.math.maxInt(u16),
+            };
+        }
+
+        if (self.single_doc) |d| {
+            return .{
+                .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                .term_pos = @truncate(
+                    @as(u32, @bitCast(self.single_term.?)) & 0b00000000_00000000_01111111_11111111
+                ),
+            };
+        }
+
+        if (self.doc_ids[self.current_idx] >= target_id) {
+            return .{
+                .doc_id   = self.doc_ids[self.current_idx],
+                .term_pos = self.term_positions[self.current_idx],
+            };
+        }
+
+        const found_idx_in_slice = linearLowerBound(
+            self.doc_ids[self.current_idx..],
+            target_id,
+        );
+
+        self.current_idx += found_idx_in_slice;
+
+        if (self.current_idx >= self.doc_ids.len) {
+            self.consumed = true;
+            return .{
+                .doc_id = std.math.maxInt(u32), 
+                .term_pos = std.math.maxInt(u16),
+            };
+        }
+
+        return .{
+            .doc_id = self.doc_ids[self.current_idx], 
+            .term_pos = self.term_positions[self.current_idx],
+        };
+    }
+
+    pub inline fn len(self: *PostingsIterator) usize {
+        if (self.single_doc) |_| return 1;
+        return self.doc_ids.len;
+    }
+};
+
+
 pub const PostingsIterator = struct {
     doc_ids: []u32,
     term_positions: []u16,
@@ -73,7 +231,6 @@ pub const PostingsIterator = struct {
     score: usize,
     term_id: u32,
     col_idx: u32,
-    query_term_pos: u16,
     consumed: bool,
     single_doc: ?flag_u32,
     single_term: ?flag_u32,
@@ -88,7 +245,6 @@ pub const PostingsIterator = struct {
         term_positions: []u16, 
         term_id: u32,
         col_idx: u32,
-        query_term_pos: u16,
         score: usize,
         single_doc_id: ?flag_u32,
         single_term: ?flag_u32,
@@ -100,7 +256,6 @@ pub const PostingsIterator = struct {
             .current_idx = 0,
             .score = score,
             .col_idx = col_idx,
-            .query_term_pos = query_term_pos,
             .consumed = false,
             .single_doc = single_doc_id,
             .single_term = single_term,
@@ -298,8 +453,8 @@ pub const Postings = struct {
 };
 
 pub const flag_u32 = packed struct(u32) {
-    is_inline: u1,
     value: u31,
+    is_inline: u1,
 };
 
 pub const PostingsV2 = struct {
@@ -315,8 +470,8 @@ pub const InvertedIndexV2 = struct {
     postings: PostingsV2,
     vocab: Vocab,
     prt_vocab: RadixTrie(u32),
-    // term_offsets: []usize,
-    doc_freqs: std.ArrayList(u32),
+    doc_freqs: std.ArrayListUnmanaged(u32),
+    term_occurences: std.ArrayListUnmanaged(u32),
     doc_sizes: []u16,
 
     // TODO: Remove num_terms and num_docs.
@@ -338,16 +493,24 @@ pub const InvertedIndexV2 = struct {
             },
             .vocab = undefined,
             .prt_vocab = try RadixTrie(u32).init(allocator),
-            // .term_offsets = &[_]usize{},
-            .doc_freqs = try std.ArrayList(u32).initCapacity(
-                allocator, @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
-                ),
+            .doc_freqs = std.ArrayListUnmanaged(u32){},
+            .term_occurences = std.ArrayListUnmanaged(u32){},
             .doc_sizes = try allocator.alloc(u16, num_docs),
             .num_terms = 0,
             .num_docs = @intCast(num_docs),
             .avg_doc_size = 0.0,
         };
         @memset(II.doc_sizes, 0);
+
+        // Guess capacity.
+        II.doc_freqs = try std.ArrayListUnmanaged(u32).initCapacity(
+            allocator, 
+            @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
+            );
+        II.term_occurences = try std.ArrayListUnmanaged(u32).initCapacity(
+            allocator, 
+            @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
+            );
 
         II.vocab = Vocab.init();
 
@@ -368,8 +531,8 @@ pub const InvertedIndexV2 = struct {
         self.vocab.deinit(allocator);
         self.prt_vocab.deinit();
 
-        // allocator.free(self.term_offsets);
-        self.doc_freqs.deinit();
+        self.doc_freqs.deinit(allocator);
+        self.term_occurences.deinit(allocator);
         allocator.free(self.doc_sizes);
     }
 
@@ -389,52 +552,60 @@ pub const InvertedIndexV2 = struct {
         std.debug.assert(self.num_terms == self.vocab.map.count());
 
         // Num terms is now known.
-        var postings_size: usize = 0;
+        var docs_postings_size:  usize = 0;
+        var terms_postings_size: usize = 0;
         for (0.., self.doc_freqs.items) |idx, doc_freq| {
-            // self.term_offsets[idx] = postings_size;
-
             if (doc_freq == 1) {
                 self.postings.doc_id_ptrs[idx] = flag_u32{
-                    .is_inline = 1,
-                    .value = undefined,
-                };
-                self.postings.term_pos_ptrs[idx] = flag_u32{
                     .is_inline = 1,
                     .value = undefined,
                 };
             } else {
                 self.postings.doc_id_ptrs[idx] = flag_u32{
                     .is_inline = 0,
-                    .value = @truncate(postings_size),
+                    .value = @truncate(docs_postings_size),
                 };
-                self.postings.term_pos_ptrs[idx] = flag_u32{
-                    .is_inline = 0,
-                    .value = @truncate(postings_size),
-                };
-                postings_size += doc_freq;
+                docs_postings_size += doc_freq;
             }
 
-            std.debug.assert(postings_size < (comptime 1 << 31));
+            std.debug.assert(docs_postings_size < (comptime 1 << 31));
+
+            const num_occurences = self.term_occurences.items[idx];
+            if (num_occurences == 1) {
+                self.postings.term_pos_ptrs[idx] = flag_u32{
+                    .is_inline = 1,
+                    .value = undefined,
+                };
+            } else {
+                self.postings.term_pos_ptrs[idx] = flag_u32{
+                    .is_inline = 0,
+                    .value = @truncate(terms_postings_size),
+                };
+                terms_postings_size += num_occurences;
+            }
         }
         self.postings.doc_id_ptrs[self.num_terms] = flag_u32{
             .is_inline = 0,
-            .value = @truncate(postings_size),
+            .value = @truncate(docs_postings_size),
         };
         self.postings.term_pos_ptrs[self.num_terms] = flag_u32{
             .is_inline = 0,
-            .value = @truncate(postings_size),
+            .value = @truncate(terms_postings_size),
         };
-        postings_size += 1;
+
+        docs_postings_size  += 1;
+        terms_postings_size += 1;
 
         self.postings.doc_id_buf     = try allocator.alignedAlloc(
             u32, 
             std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            postings_size,
+            docs_postings_size,
             );
+
         self.postings.term_positions = try allocator.alignedAlloc(
             u16, 
             std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            postings_size,
+            terms_postings_size,
             );
 
         var avg_doc_size: f64 = 0.0;
@@ -535,15 +706,19 @@ pub const BM25Partition = struct {
             gop.value_ptr.* = self.II[col_idx].num_terms;
 
             self.II[col_idx].num_terms += 1;
-            try self.II[col_idx].doc_freqs.append(1);
+            try self.II[col_idx].doc_freqs.append(self.allocator, 1);
+            try self.II[col_idx].term_occurences.append(self.allocator, 1);
             try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*, col_idx);
 
         } else {
 
             const val = gop.value_ptr.*;
+
+            self.II[col_idx].term_occurences.items[val] += 1;
+            try token_stream.addToken(new_doc.*, term_pos, val, col_idx);
+
             if (!terms_seen.checkOrInsertSIMD(val)) {
                 self.II[col_idx].doc_freqs.items[val] += 1;
-                try token_stream.addToken(new_doc.*, term_pos, val, col_idx);
             }
         }
 
@@ -1245,18 +1420,26 @@ pub const BM25Partition = struct {
         token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         ) !void {
 
-        var term_cntr = try self.allocator.alloc(usize, self.II[0].num_terms);
-        defer self.allocator.free(term_cntr);
+        var term_cntr_doc_ids = try self.allocator.alloc(u32, self.II[0].num_terms);
+        var term_cntr_occurences = try self.allocator.alloc(u32, self.II[0].num_terms);
+        defer self.allocator.free(term_cntr_doc_ids);
+        defer self.allocator.free(term_cntr_occurences);
+
         for (0.., self.II) |col_idx, *II| {
             try II.resizePostings(self.allocator);
 
-            if (II.num_terms > term_cntr.len) {
-                term_cntr = try self.allocator.realloc(
-                    term_cntr, 
+            if (II.num_terms > term_cntr_doc_ids.len) {
+                term_cntr_doc_ids = try self.allocator.realloc(
+                    term_cntr_doc_ids, 
+                    @as(usize, @intCast(II.num_terms)),
+                    );
+                term_cntr_occurences = try self.allocator.realloc(
+                    term_cntr_occurences,
                     @as(usize, @intCast(II.num_terms)),
                     );
             }
-            @memset(term_cntr, 0);
+            @memset(term_cntr_doc_ids, 0);
+            @memset(term_cntr_occurences, 0);
 
             // Create index.
             const output_file = &token_stream.output_files[col_idx];
@@ -1269,6 +1452,8 @@ pub const BM25Partition = struct {
 
             var num_tokens: usize = file_utils.TOKEN_STREAM_CAPACITY;
             var current_doc_id: usize = 0;
+
+            var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
 
             while (num_tokens == file_utils.TOKEN_STREAM_CAPACITY) {
                 var _num_tokens: [4]u8 = undefined;
@@ -1284,44 +1469,49 @@ pub const BM25Partition = struct {
                     std.mem.sliceAsBytes(term_pos_tokens[0..num_tokens])
                     );
 
+                terms_seen_bitset.clear();
+
                 for (0..num_tokens) |idx| {
                     if (@as(*u32, @ptrCast(&doc_id_tokens[idx])).* == std.math.maxInt(u32)) {
                         // Null token.
                         current_doc_id += 1;
+                        terms_seen_bitset.clear();
                         continue;
                     }
 
                     const new_doc  = doc_id_tokens[idx].new_doc;
                     const term_pos = term_pos_tokens[idx];
-                    const term_id: usize = @intCast(doc_id_tokens[idx].term_id);
+                    const term_id  = doc_id_tokens[idx].term_id;
 
-                    current_doc_id += @intCast(new_doc);
-
-                    const is_inline_doc_id   = II.postings.doc_id_ptrs[term_id].is_inline;
-                    const is_inline_term_pos = II.postings.term_pos_ptrs[term_id].is_inline;
-
-                    if (is_inline_doc_id == 1) {
-                        II.postings.doc_id_ptrs[term_id].value = @truncate(current_doc_id);
-                    } else {
-                        const doc_id_offset = @as(usize, @intCast(@as(u32, @bitCast(II.postings.doc_id_ptrs[term_id])))) + term_cntr[term_id];
-
-                        std.debug.print("doc_id_offset: {d}, doc_id_buf.len: {d}\n", 
-                            .{doc_id_offset, II.postings.doc_id_buf.len});
-                        std.debug.assert(doc_id_offset < II.postings.doc_id_buf.len);
-
-                        II.postings.doc_id_buf[doc_id_offset] = @truncate(current_doc_id);
+                    if (new_doc == 1) {
+                        current_doc_id += 1;
+                        terms_seen_bitset.clear();
                     }
 
+                    if (!terms_seen_bitset.checkOrInsertSIMD(term_id)) {
+
+                        const is_inline_doc_id = II.postings.doc_id_ptrs[term_id].is_inline;
+                        if (is_inline_doc_id == 1) {
+                            II.postings.doc_id_ptrs[term_id].value = @truncate(current_doc_id);
+                        } else {
+                            const doc_id_offset = @as(usize, @intCast(@as(u32, @bitCast(II.postings.doc_id_ptrs[term_id])))) + term_cntr_doc_ids[term_id];
+                            std.debug.assert(doc_id_offset < II.postings.doc_id_buf.len);
+
+                            II.postings.doc_id_buf[doc_id_offset] = @truncate(current_doc_id);
+                            term_cntr_doc_ids[term_id] += 1;
+                        }
+                    }
+
+                    const is_inline_term_pos = II.postings.term_pos_ptrs[term_id].is_inline;
                     if (is_inline_term_pos == 1) {
                         II.postings.term_pos_ptrs[term_id].value = @intCast(term_pos);
                     } else {
-                        const tp_id_offset = @as(usize, @intCast(@as(u32, @bitCast(II.postings.term_pos_ptrs[term_id])))) + term_cntr[term_id];
+                        const tp_id_offset = @as(usize, @intCast(@as(u32, @bitCast(II.postings.term_pos_ptrs[term_id])))) + term_cntr_occurences[term_id];
                         std.debug.assert(tp_id_offset < II.postings.term_positions.len);
 
                         II.postings.term_positions[tp_id_offset] = term_pos;
+                        term_cntr_occurences[term_id] += 1;
                     }
-
-                    term_cntr[term_id] += 1;
 
                     std.debug.assert(current_doc_id <= II.num_docs);
                 }
