@@ -150,11 +150,24 @@ pub const PostingsIteratorV2 = struct {
             };
         }
         if (self.single_doc) |d| {
-            return .{
-                .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                .term_pos = @truncate(@as(u32, @bitCast(self.single_term.?)) & 0b00000000_00000000_11111111_11111111),
-            };
+            if (self.single_term) |t| {
+                return .{
+                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                    .term_pos = @truncate(@as(u32, @bitCast(t)) & 0b00000000_00000000_11111111_11111111),
+                };
+            } else {
+                const term_pos = self.term_positions[self.current_term_idx];
+                self.current_term_idx += 1;
+                return .{
+                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                    .term_pos = term_pos,
+                };
+            }
         }
+
+        // TODO: Figure out storage mechanism for term_positions which allows iteration and skipping.
+        //       Consider writing current_doc_id every N (~128) elements to allow binary searching.
+        //       Would have low, high of current term's positions.
 
         self.current_idx += 1;
 
