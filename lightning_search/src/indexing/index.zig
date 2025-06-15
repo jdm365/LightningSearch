@@ -487,8 +487,11 @@ pub const PostingsV2 = struct {
     doc_id_buf: []align(std.heap.page_size_min)u32,
 
     term_pos_ptrs:  []align(std.heap.page_size_min)flag_u32,
+    term_positions: []align(std.heap.page_size_min)TP,
     // term_positions: []align(std.heap.page_size_min)u16,
-    term_positions: []align(std.heap.page_size_min)TermPosBlock,
+    // term_positions: []align(std.heap.page_size_min)TermPosBlock,
+
+    block_doc_id_offsets: []align(std.heap.page_size_min)u32,
 
     pub const BlockPair = packed struct(u64) {
         block_idx: u32,
@@ -502,7 +505,7 @@ pub const PostingsV2 = struct {
     //                                             ^greater than doc_id<0>
     // ____________________________________________________________________
 
-    pub inline fn getBlockIdx(_: *const BlockPair, idx: usize) !BlockPair {
+    pub inline fn getBlockIdx(_: *const PostingsV2, idx: usize) !BlockPair {
         // Given an index which represents the TP if this were a giant raw u16 buffer,
         // return the corresponding block_idx and the buffer_idx.
         
@@ -515,44 +518,116 @@ pub const PostingsV2 = struct {
         };
     }
 
-    pub inline fn advanceToBlock(self: *const BlockPair, doc_id: usize, start_pos: BlockPair) !BlockPair {
+    // pub inline fn advanceToBlock(self: *const BlockPair, doc_id: usize, start_pos: BlockPair) !BlockPair {
+        // // Return first position where the doc_id is greater than or equal to the given doc_id.
+       //  
+        // // TODO: Handle boundary condition.
+        // var current_buffer_idx = start_pos.buffer_idx;
+        // var current_block_idx = start_pos.block_idx;
+// 
+        // var current_doc_id = self.term_positions[start_pos.block_idx].current_doc_id;
+        // var next_doc_id = self.term_positions[start_pos.block_idx + 1].current_doc_id;
+// 
+        // while (next_doc_id < doc_id) {
+            // current_block_idx += 1;
+            // current_buffer_idx = 0;
+// 
+            // current_doc_id = next_doc_id;
+            // next_doc_id = self.term_positions[start_pos.block_idx + 1].current_doc_id;
+        // }
+// 
+        // // const current_block = self.term_positions[current_block_idx].term_positions;
+        // const current_block = @as([*]@Vector(16, u16), @ptrCast(
+            // self.term_positions[current_block_idx].term_positions
+        // ));
+        // const mask: @Vector(16, u16) = comptime @splat(0b10000000_00000000);
+// 
+        // while (current_doc_id < doc_id) {
+            // while (current_buffer_idx < 254) {
+                // const skip_docs = @popCount(current_block[@divExact(current_buffer_idx, 16)].* & mask);
+                // if (skip_docs + current_doc_id >= doc_id) {
+                    // while (current_doc_id < doc_id) {
+                        // current_doc_id += @popCount(
+                            // 0b10000000_00000000 & self.term_positions[current_block_idx].term_positions[current_buffer_idx]
+                            // );
+                        // current_buffer_idx += 1;
+                        // if (current_doc_id >= doc_id) {
+                            // return .{
+                                // .block_idx = current_block_idx,
+                                // .buffer_idx = current_buffer_idx,
+                            // };
+                        // }
+                    // }
+                    // unreachable;
+                // }
+// 
+                // current_doc_id += skip_docs;
+                // current_buffer_idx += 16;
+            // }
+        // }
+        // unreachable;
+    // }
+
+    pub inline fn nextTermPos(
+        self: *const PostingsV2, 
+        start_idx: usize,
+        ) !usize {
+        // Return the next doc_id.
+        
+        // TODO: Handle boundary condition.
+        var idx = start_idx + 1;
+        var val = self.term_positions[idx];
+        while (0b10000000_00000000 & val > 0) {
+            idx += 1;
+            val = self.term_positions[idx];
+        }
+        return idx;
+    }
+
+    pub inline fn advanceToBlock(
+        self: *const PostingsV2, 
+        doc_id: usize, 
+        start_idx: usize,
+        ) !usize {
         // Return first position where the doc_id is greater than or equal to the given doc_id.
         
         // TODO: Handle boundary condition.
-        var current_buffer_idx = start_pos.buffer_idx;
-        var current_block_idx = start_pos.block_idx;
+        const start_block_idx  = @divFloor(start_idx, 256);
 
-        var current_doc_id = self.term_positions[start_pos.block_idx].current_doc_id;
-        var next_doc_id = self.term_positions[start_pos.block_idx + 1].current_doc_id;
+        var current_buffer_idx = start_idx % 256;
+        var current_block_idx  = @divFloor(start_idx, 256);
+
+        var current_doc_id = self.block_doc_id_offsets[current_block_idx];
+        var next_doc_id    = self.block_doc_id_offsets[current_block_idx + 1];
 
         while (next_doc_id < doc_id) {
             current_block_idx += 1;
             current_buffer_idx = 0;
 
             current_doc_id = next_doc_id;
-            next_doc_id = self.term_positions[start_pos.block_idx + 1].current_doc_id;
+            next_doc_id = self.block_doc_id_offsets[current_block_idx + 1];
         }
 
-        // const current_block = self.term_positions[current_block_idx].term_positions;
         const current_block = @as([*]@Vector(16, u16), @ptrCast(
-            self.term_positions[current_block_idx].term_positions
+            self.term_positions
         ));
         const mask: @Vector(16, u16) = comptime @splat(0b10000000_00000000);
 
         while (current_doc_id < doc_id) {
-            while (current_buffer_idx < 254) {
-                const skip_docs = @popCount(current_block[@divExact(current_buffer_idx, 16)].* & mask);
+            while (current_buffer_idx < 256) {
+                const skip_docs = @popCount(
+                    current_block[@divExact(current_buffer_idx, 16)].* & mask
+                    );
+
                 if (skip_docs + current_doc_id >= doc_id) {
                     while (current_doc_id < doc_id) {
                         current_doc_id += @popCount(
-                            0b10000000_00000000 & self.term_positions[current_block_idx].term_positions[current_buffer_idx]
+                            0b10000000_00000000 & self.term_positions[current_buffer_idx]
                             );
                         current_buffer_idx += 1;
+
                         if (current_doc_id >= doc_id) {
-                            return .{
-                                .block_idx = current_block_idx,
-                                .buffer_idx = current_buffer_idx,
-                            };
+                            return current_buffer_idx + 256 * (current_block_idx - start_block_idx);
                         }
                     }
                     unreachable;
@@ -1563,7 +1638,6 @@ pub const BM25Partition = struct {
             var current_doc_id: usize = 0;
 
             var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
-            var prev_block_idx: u32 = 0;
 
             while (num_tokens == file_utils.TOKEN_STREAM_CAPACITY) {
                 var _num_tokens: [4]u8 = undefined;
@@ -1621,15 +1695,14 @@ pub const BM25Partition = struct {
                     if (is_inline_term_pos == 1) {
                         II.postings.term_pos_ptrs[term_id].value = @intCast(term_pos);
                     } else {
-                        const tp_block_pos = II.postings.getBlockIdx(
+                        const tp_idx = (
                             @as(usize, @intCast(@as(u32, @bitCast(II.postings.term_pos_ptrs[term_id])))) + term_cntr_occurences[term_id]
                         );
-                        if (tp_block_pos.block_idx > prev_block_idx) {
-                            II.postings.term_positions[tp_block_pos.block_idx].current_doc_id = current_doc_id;
+                        if (tp_idx % 256 == 0) {
+                            II.postings.block_doc_id_offsets[@divExact(tp_idx, 256)] = current_doc_id;
                         }
-                        prev_block_idx = tp_block_pos.block_idx;
 
-                        II.postings.term_positions[tp_block_pos.block_idx][tp_block_pos.buffer_idx] = tp;
+                        II.postings.term_positions[tp_idx] = tp;
                         term_cntr_occurences[term_id] += 1;
                     }
 
