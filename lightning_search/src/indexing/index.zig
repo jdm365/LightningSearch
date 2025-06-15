@@ -470,12 +470,100 @@ pub const flag_u32 = packed struct(u32) {
     is_inline: u1,
 };
 
+pub const TP = packed struct(u16) {
+    term_pos: u15,
+    new_doc: u1,
+};
+
+pub const TermPosBlock = struct {
+    // 512 bytes.
+    // Leading bit of term_positions is `new_doc` flag.
+    current_doc_id: u32,
+    term_positions: [254]TP,
+};
+
 pub const PostingsV2 = struct {
     doc_id_ptrs:  []align(std.heap.page_size_min)flag_u32,
     doc_id_buf: []align(std.heap.page_size_min)u32,
 
     term_pos_ptrs:  []align(std.heap.page_size_min)flag_u32,
-    term_positions: []align(std.heap.page_size_min)u16,
+    // term_positions: []align(std.heap.page_size_min)u16,
+    term_positions: []align(std.heap.page_size_min)TermPosBlock,
+
+    pub const BlockPair = packed struct(u64) {
+        block_idx: u32,
+        buffer_idx: u32,
+    };
+
+
+    // ____________________________________________________________________
+    // term_positions
+    // term <IDX>: | doc_id<0> [tp_0, tp_1, tp_2], doc_id<1> [tp_0, tp_1] |
+    //                                             ^greater than doc_id<0>
+    // ____________________________________________________________________
+
+    pub inline fn getBlockIdx(_: *const BlockPair, idx: usize) !BlockPair {
+        // Given an index which represents the TP if this were a giant raw u16 buffer,
+        // return the corresponding block_idx and the buffer_idx.
+        
+        // block_idx = num_254_buffers.
+        const block_idx = try std.math.divCeil(usize, idx, 254);
+        const buffer_idx = idx % 254;
+        return .{
+            .block_idx = block_idx,
+            .buffer_idx = buffer_idx,
+        };
+    }
+
+    pub inline fn advanceToBlock(self: *const BlockPair, doc_id: usize, start_pos: BlockPair) !BlockPair {
+        // Return first position where the doc_id is greater than or equal to the given doc_id.
+        
+        // TODO: Handle boundary condition.
+        var current_buffer_idx = start_pos.buffer_idx;
+        var current_block_idx = start_pos.block_idx;
+
+        var current_doc_id = self.term_positions[start_pos.block_idx].current_doc_id;
+        var next_doc_id = self.term_positions[start_pos.block_idx + 1].current_doc_id;
+
+        while (next_doc_id < doc_id) {
+            current_block_idx += 1;
+            current_buffer_idx = 0;
+
+            current_doc_id = next_doc_id;
+            next_doc_id = self.term_positions[start_pos.block_idx + 1].current_doc_id;
+        }
+
+        // const current_block = self.term_positions[current_block_idx].term_positions;
+        const current_block = @as([*]@Vector(16, u16), @ptrCast(
+            self.term_positions[current_block_idx].term_positions
+        ));
+        const mask: @Vector(16, u16) = comptime @splat(0b10000000_00000000);
+
+        while (current_doc_id < doc_id) {
+            while (current_buffer_idx < 254) {
+                const skip_docs = @popCount(current_block[@divExact(current_buffer_idx, 16)].* & mask);
+                if (skip_docs + current_doc_id >= doc_id) {
+                    while (current_doc_id < doc_id) {
+                        current_doc_id += @popCount(
+                            0b10000000_00000000 & self.term_positions[current_block_idx].term_positions[current_buffer_idx]
+                            );
+                        current_buffer_idx += 1;
+                        if (current_doc_id >= doc_id) {
+                            return .{
+                                .block_idx = current_block_idx,
+                                .buffer_idx = current_buffer_idx,
+                            };
+                        }
+                    }
+                    unreachable;
+                }
+
+                current_doc_id += skip_docs;
+                current_buffer_idx += 16;
+            }
+        }
+        unreachable;
+    }
 };
 
 
@@ -615,10 +703,18 @@ pub const InvertedIndexV2 = struct {
             docs_postings_size,
             );
 
-        self.postings.term_positions = try allocator.alignedAlloc(
-            u16, 
-            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+        // 254 blocks tp's per block.
+        const blocks_needed = try std.math.divCeil(
+            usize,
             terms_postings_size,
+            254,
+        );
+        self.postings.term_positions = try allocator.alignedAlloc(
+            // u16, 
+            TermPosBlock,
+            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            // terms_postings_size,
+            blocks_needed,
             );
 
         var avg_doc_size: f64 = 0.0;
@@ -1433,7 +1529,7 @@ pub const BM25Partition = struct {
         token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         ) !void {
 
-        var term_cntr_doc_ids = try self.allocator.alloc(u32, self.II[0].num_terms);
+        var term_cntr_doc_ids    = try self.allocator.alloc(u32, self.II[0].num_terms);
         var term_cntr_occurences = try self.allocator.alloc(u32, self.II[0].num_terms);
         defer self.allocator.free(term_cntr_doc_ids);
         defer self.allocator.free(term_cntr_occurences);
@@ -1467,6 +1563,7 @@ pub const BM25Partition = struct {
             var current_doc_id: usize = 0;
 
             var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
+            var prev_block_idx: u32 = 0;
 
             while (num_tokens == file_utils.TOKEN_STREAM_CAPACITY) {
                 var _num_tokens: [4]u8 = undefined;
@@ -1496,6 +1593,11 @@ pub const BM25Partition = struct {
                     const term_pos = term_pos_tokens[idx];
                     const term_id  = doc_id_tokens[idx].term_id;
 
+                    const tp = TP{
+                        .term_pos = @truncate(term_pos),
+                        .new_doc = new_doc,
+                    };
+
                     if (new_doc == 1) {
                         current_doc_id += 1;
                         terms_seen_bitset.clear();
@@ -1519,10 +1621,15 @@ pub const BM25Partition = struct {
                     if (is_inline_term_pos == 1) {
                         II.postings.term_pos_ptrs[term_id].value = @intCast(term_pos);
                     } else {
-                        const tp_id_offset = @as(usize, @intCast(@as(u32, @bitCast(II.postings.term_pos_ptrs[term_id])))) + term_cntr_occurences[term_id];
-                        std.debug.assert(tp_id_offset < II.postings.term_positions.len);
+                        const tp_block_pos = II.postings.getBlockIdx(
+                            @as(usize, @intCast(@as(u32, @bitCast(II.postings.term_pos_ptrs[term_id])))) + term_cntr_occurences[term_id]
+                        );
+                        if (tp_block_pos.block_idx > prev_block_idx) {
+                            II.postings.term_positions[tp_block_pos.block_idx].current_doc_id = current_doc_id;
+                        }
+                        prev_block_idx = tp_block_pos.block_idx;
 
-                        II.postings.term_positions[tp_id_offset] = term_pos;
+                        II.postings.term_positions[tp_block_pos.block_idx][tp_block_pos.buffer_idx] = tp;
                         term_cntr_occurences[term_id] += 1;
                     }
 
