@@ -20,6 +20,7 @@ const TermPos = @import("../server/server.zig").TermPos;
 
 const ID = @import("index.zig").ID;
 const PostingsIterator = @import("index.zig").PostingsIterator;
+const PostingsIteratorV2 = @import("index.zig").PostingsIteratorV2;
 const fetchRecordsDocStore = @import("index.zig").BM25Partition.fetchRecordsDocStore;
 const BM25Partition   = @import("index.zig").BM25Partition;
 const QueryResult     = @import("index.zig").QueryResult;
@@ -1217,7 +1218,8 @@ pub const IndexManager = struct {
 
         // TODO: Figure out meta typing to just map doc_id and term_pos types.
         var iterators = std.ArrayListUnmanaged(
-            PostingsIterator,
+            // PostingsIterator,
+            PostingsIteratorV2,
         ){};
         defer iterators.deinit(self.gpa());
 
@@ -1262,15 +1264,12 @@ pub const IndexManager = struct {
                                 ) * boost_factors.items[II_idx];
 
                             std.debug.assert(II_idx <= self.search_col_idxs.items.len);
-                            const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
-                            const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
 
                             const iterator_ptr = iterators.addOne(
                                 self.gpa(),
                             ) catch @panic("Error adding iterator");
-                            iterator_ptr.* = PostingsIterator.init(
-                                II.postings.doc_id_buf[offset..next_offset],
-                                II.postings.term_positions[offset..next_offset],
+                            iterator_ptr.* = PostingsIteratorV2.init(
+                                II.postings,
                                 _token,
                                 @truncate(II_idx),
                                 @intFromFloat(boost_weighted_idf),
@@ -1315,15 +1314,11 @@ pub const IndexManager = struct {
                                     1.0 + std.math.log2(inner_term)
                                     ) * boost_factors.items[II_idx];
 
-                                const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
-                                const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
-
                                 const iterator_ptr = iterators.addOne(
                                     self.gpa(),
                                 ) catch @panic("Error adding iterator");
-                                iterator_ptr.* = PostingsIterator.init(
-                                    II.postings.doc_id_buf[offset..next_offset],
-                                    II.postings.term_positions[offset..next_offset],
+                                iterator_ptr.* = PostingsIteratorV2.init(
+                                    II.postings,
                                     _token,
                                     @truncate(II_idx),
                                     @intFromFloat(boost_weighted_idf),
@@ -1367,15 +1362,11 @@ pub const IndexManager = struct {
                         1.0 + std.math.log2(inner_term)
                         ) * boost_factors.items[II_idx];
 
-                    const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
-                    const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
-
                     const iterator_ptr = iterators.addOne(
                         self.gpa(),
                     ) catch @panic("Error adding iterator");
-                    iterator_ptr.* = PostingsIterator.init(
-                        II.postings.doc_id_buf[offset..next_offset],
-                        II.postings.term_positions[offset..next_offset],
+                    iterator_ptr.* = PostingsIteratorV2.init(
+                        II.postings,
                         _token,
                         @truncate(II_idx),
                         @intFromFloat(boost_weighted_idf),
@@ -1425,20 +1416,22 @@ pub const IndexManager = struct {
         if (iterators.items.len == 1) {
             const score: f32 = @floatFromInt(iterators.items[0].score);
 
-            var res = iterators.items[0].next();
-            var doc_id:   u32 = res.doc_id;
-            var term_pos: u16 = res.term_pos;
-            while (doc_id != std.math.maxInt(u32)) {
-                const score_add = score + 25.0 * @as(f32, @floatFromInt(@intFromBool(term_pos == 0)));
-                sorted_scores.insert(doc_id, score_add);
+            var score_sum: f32 = 0.0;
+            var res = iterators.items[0].nextSlice();
 
-                res = iterators.items[0].next();
-                doc_id   = res.doc_id;
-                term_pos = res.term_pos;
+            while (res.doc_id != std.math.maxInt(u32)) {
+                score_sum = 0.0;
+                for (res.term_pos) |tp| {
 
+                    // TODO: Assess how we want to do term pos scoring.
+                    tp &= 0b01111111_11111111;
+                    score_sum += score + 25.0 * @as(f32, @floatFromInt(@intFromBool(tp == 0)));
+                }
+                sorted_scores.insert(res.doc_id, score_sum);
+                res = iterators.items[0].nextSlice();
             }
 
-            // std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{iterators.items[0].len()});
+            // std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{iterators.items[0].len});
 
             for (0..sorted_scores.count) |idx| {
 
@@ -1533,7 +1526,8 @@ pub const IndexManager = struct {
                     if (consumed_mask[idx]) continue;
 
                     var iterator = &iterators.items[idx];
-                    const res = iterator.advanceTo(max_doc_id + 1);
+                    // const res = iterator.advanceTo(max_doc_id + 1);
+                    const res = iterator.advanceToSlice(max_doc_id + 1);
 
                     if (res.doc_id == std.math.maxInt(u32)) {
                         consumed_mask[idx] = true;
@@ -1661,7 +1655,8 @@ pub const IndexManager = struct {
 
         // TODO: Figure out meta typing to just map doc_id and term_pos types.
         var iterators = std.ArrayListUnmanaged(
-            PostingsIterator,
+            // PostingsIterator,
+            PostingsIteratorV2,
         ){};
         defer iterators.deinit(self.gpa());
 
@@ -1706,15 +1701,17 @@ pub const IndexManager = struct {
                                 ) * boost_factors.items[II_idx];
 
                             std.debug.assert(II_idx <= self.search_col_idxs.items.len);
-                            const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
-                            const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
+                            // const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
+                            // const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
 
                             const iterator_ptr = iterators.addOne(
                                 self.gpa(),
                             ) catch @panic("Error adding iterator");
-                            iterator_ptr.* = PostingsIterator.init(
-                                II.postings.doc_id_buf[offset..next_offset],
-                                II.postings.term_positions[offset..next_offset],
+                            // iterator_ptr.* = PostingsIterator.init(
+                            iterator_ptr.* = PostingsIteratorV2.init(
+                                // II.postings.doc_id_buf[offset..next_offset],
+                                // II.postings.term_positions[offset..next_offset],
+                                II.postings,
                                 _token,
                                 @truncate(II_idx),
                                 @intFromFloat(boost_weighted_idf),
@@ -1759,15 +1756,17 @@ pub const IndexManager = struct {
                                     1.0 + std.math.log2(inner_term)
                                     ) * boost_factors.items[II_idx];
 
-                                const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
-                                const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
+                                // const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
+                                // const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
 
                                 const iterator_ptr = iterators.addOne(
                                     self.gpa(),
                                 ) catch @panic("Error adding iterator");
-                                iterator_ptr.* = PostingsIterator.init(
-                                    II.postings.doc_id_buf[offset..next_offset],
-                                    II.postings.term_positions[offset..next_offset],
+                                // iterator_ptr.* = PostingsIterator.init(
+                                iterator_ptr.* = PostingsIteratorV2.init(
+                                    // II.postings.doc_id_buf[offset..next_offset],
+                                    // II.postings.term_positions[offset..next_offset],
+                                    II.postings,
                                     _token,
                                     @truncate(II_idx),
                                     @intFromFloat(boost_weighted_idf),
@@ -1811,15 +1810,17 @@ pub const IndexManager = struct {
                         1.0 + std.math.log2(inner_term)
                         ) * boost_factors.items[II_idx];
 
-                    const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
-                    const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
+                    // const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
+                    // const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
 
                     const iterator_ptr = iterators.addOne(
                         self.gpa(),
                     ) catch @panic("Error adding iterator");
-                    iterator_ptr.* = PostingsIterator.init(
-                        II.postings.doc_id_buf[offset..next_offset],
-                        II.postings.term_positions[offset..next_offset],
+                    // iterator_ptr.* = PostingsIterator.init(
+                    iterator_ptr.* = PostingsIteratorV2.init(
+                        // II.postings.doc_id_buf[offset..next_offset],
+                        // II.postings.term_positions[offset..next_offset],
+                        II.postings,
                         _token,
                         @truncate(II_idx),
                         @intFromFloat(boost_weighted_idf),
@@ -1881,7 +1882,7 @@ pub const IndexManager = struct {
 
             }
 
-            std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{iterators.items[0].len()});
+            std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{iterators.items[0].len});
 
             for (0..sorted_scores.count) |idx| {
 
@@ -1897,7 +1898,8 @@ pub const IndexManager = struct {
 
         // Sort iterators by score.
         sortStruct(
-            PostingsIterator,
+            // PostingsIterator,
+            PostingsIteratorV2,
             iterators.items,
             "score",
             true,

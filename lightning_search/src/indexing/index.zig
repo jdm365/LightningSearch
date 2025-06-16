@@ -72,6 +72,9 @@ pub const PostingsIteratorV2 = struct {
     postings: PostingsV2,
     current_doc_idx: usize,
     current_term_idx: usize,
+    end_idx_doc_id: usize,
+    end_idx_term: usize,
+    len: usize,
     score: usize,
     term_id: u32,
     col_idx: u32,
@@ -82,6 +85,11 @@ pub const PostingsIteratorV2 = struct {
     pub const Result = struct {
         doc_id: u32,
         term_pos: u16,
+    };
+
+    pub const ResultSlice = struct {
+        doc_id: u32,
+        term_pos: []u16,
     };
 
     pub fn init(
@@ -104,12 +112,20 @@ pub const PostingsIteratorV2 = struct {
             @as(u32, @bitCast(postings.term_pos_ptrs[term_id]))
         else null;
 
+        const len = if (single_doc_id != null)
+            1
+        else end_idx_doc_id - start_idx_doc_id;
+
         return PostingsIteratorV2{ 
-            .doc_ids = postings.doc_ids[start_idx_doc_id..end_idx_doc_id],
-            .term_pos_ptrs = postings.term_pos_ptrs[start_idx_term..end_idx_term],
+            // .doc_ids = postings.doc_ids[start_idx_doc_id..end_idx_doc_id],
+            // .term_pos_ptrs = postings.term_pos_ptrs[start_idx_term..end_idx_term],
+            .postings = postings,
             .term_id = term_id,
-            .current_doc_idx = 0,
-            .current_term_idx = 0,
+            .current_doc_idx = start_idx_doc_id,
+            .current_term_idx = start_idx_term,
+            .end_idx_doc_id = end_idx_doc_id,
+            .end_idx_term = end_idx_term,
+            .len = len,
             .score = score,
             .col_idx = col_idx,
             .consumed = false,
@@ -123,10 +139,10 @@ pub const PostingsIteratorV2 = struct {
             return @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111;
         }
 
-        if (self.current_doc_idx >= self.postings.doc_ids.len) {
+        if (self.current_doc_idx >= self.postings.doc_id_buf.len) {
             return std.math.maxInt(u32);
         }
-        return self.doc_ids[self.current_idx];
+        return self.postings.doc_id_buf[self.current_idx];
     }
 
     pub inline fn currentTermPos(self: *const PostingsIteratorV2) u16 {
@@ -136,11 +152,14 @@ pub const PostingsIteratorV2 = struct {
             );
         }
 
-        if (self.current_idx >= self.term_positions.len) {
+        if (self.current_term_idx >= self.end_idx_term) {
             return std.math.maxInt(u16);
         }
 
-        return self.term_positions[self.current_idx];
+        return @intCast(
+            self.postings.term_positions[self.current_term_idx] &
+            0b01111111_11111111
+            );
     }
 
     pub inline fn next(self: *PostingsIteratorV2) Result {
@@ -158,18 +177,22 @@ pub const PostingsIteratorV2 = struct {
                     .term_pos = @truncate(@as(u32, @bitCast(t)) & 0b00000000_00000000_11111111_11111111),
                 };
             } else {
-                const term_pos = self.term_positions[self.current_term_idx];
-                self.current_term_idx += 1;
+
+                self.current_term_idx = try self.postings.nextTermPos(self.current_term_idx);
                 return .{
                     .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                    .term_pos = term_pos,
+                    .term_pos = @intCast(
+                        self.postings.term_positions[self.current_term_idx] &
+                        0b01111111_1111111
+                    ),
                 };
             }
         }
 
         self.current_doc_idx += 1;
+        self.current_term_idx = self.postings.nextTermPos(self.current_term_idx);
 
-        if (self.current_idx >= self.doc_ids.len) {
+        if (self.current_doc_idx >= self.end_idx_doc_id) {
             self.consumed = true;
             return .{
                 .doc_id = std.math.maxInt(u32),
@@ -177,16 +200,64 @@ pub const PostingsIteratorV2 = struct {
             };
         }
 
-        self.current_term_idx = self.postings.nextTermPos(self.current_term_idx);
-
         return .{
             .doc_id = self.doc_ids[self.current_doc_idx],
             .term_pos = self.term_positions[self.current_term_idx],
         };
     }
 
+    pub inline fn nextSlice(self: *PostingsIteratorV2) ResultSlice {
+        if (self.consumed) {
+            return .{
+                .doc_id = std.math.maxInt(u32),
+                .term_pos = [_]u16{ std.math.maxInt(u16) },
+            };
+        }
+
+        const prev_term_idx = self.current_term_idx;
+        if (self.single_doc) |d| {
+            if (self.single_term) |t| {
+                return .{
+                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                    .term_pos = [_]u16 {
+                        @truncate(@as(u16, @bitCast(t)) & 0b01111111_11111111),
+                    }
+                };
+            } else {
+
+                self.current_term_idx = try self.postings.nextTermPos(prev_term_idx);
+
+
+                // NOTE: Currently need to zero out top bit of first term_pos
+                //       OUTSIDE of function.
+                return .{
+                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                    .term_pos = (
+                        self.postings.term_positions[prev_term_idx..self.current_term_idx]
+                    ),
+                };
+            }
+        }
+
+        self.current_doc_idx += 1;
+        self.current_term_idx = self.postings.nextTermPos(self.current_term_idx);
+
+        if (self.current_doc_idx >= self.end_idx_doc_id) {
+            self.consumed = true;
+            return .{
+                .doc_id = std.math.maxInt(u32),
+                .term_pos = [_]u16{ std.math.maxInt(u16) },
+            };
+        }
+
+        return .{
+            .doc_id = self.doc_ids[self.current_doc_idx],
+            .term_pos = self.term_positions[prev_term_idx..self.current_term_idx],
+        };
+    }
+
     pub inline fn advanceTo(self: *PostingsIteratorV2, target_id: u32) Result {
-        if (self.current_idx >= self.doc_ids.len) {
+        if (self.current_doc_idx >= self.end_idx_doc_id) {
             return .{
                 .doc_id = std.math.maxInt(u32), 
                 .term_pos = std.math.maxInt(u16),
@@ -194,29 +265,43 @@ pub const PostingsIteratorV2 = struct {
         }
 
         if (self.single_doc) |d| {
-            return .{
-                .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                .term_pos = @truncate(
-                    @as(u32, @bitCast(self.single_term.?)) & 0b00000000_00000000_01111111_11111111
-                ),
-            };
+            if (self.single_term) |t| {
+                return .{
+                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                    .term_pos = @truncate(@as(u32, @bitCast(t)) & 0b00000000_00000000_11111111_11111111),
+                };
+            } else {
+
+                self.current_term_idx = try self.postings.nextTermPos(self.current_term_idx);
+                return .{
+                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                    .term_pos = @intCast(
+                        self.postings.term_positions[self.current_term_idx] &
+                        0b01111111_1111111
+                    ),
+                };
+            }
         }
 
-        if (self.doc_ids[self.current_idx] >= target_id) {
+        if (self.postings.doc_id_buf[self.current_doc_idx] >= target_id) {
             return .{
-                .doc_id   = self.doc_ids[self.current_idx],
-                .term_pos = self.term_positions[self.current_idx],
+                .doc_id   = self.postings.doc_id_buf[self.current_doc_idx],
+                .term_pos = self.postings.term_positions[self.current_term_idx],
             };
         }
 
         const found_idx_in_slice = linearLowerBound(
-            self.doc_ids[self.current_idx..],
+            self.postings.doc_id_buf[self.current_doc_idx..],
             target_id,
         );
 
-        self.current_idx += found_idx_in_slice;
+        self.current_doc_idx += found_idx_in_slice;
+        self.current_term_idx = self.postings.advanceToBlock(
+            self.current_doc_idx,
+            self.current_term_idx,
+        );
 
-        if (self.current_idx >= self.doc_ids.len) {
+        if (self.current_doc_idx >= self.end_idx_doc_id) {
             self.consumed = true;
             return .{
                 .doc_id = std.math.maxInt(u32), 
@@ -225,15 +310,82 @@ pub const PostingsIteratorV2 = struct {
         }
 
         return .{
-            .doc_id = self.doc_ids[self.current_idx], 
-            .term_pos = self.term_positions[self.current_idx],
+            .doc_id = self.postings.doc_id_buf[self.current_doc_idx], 
+            .term_pos = @intCast(
+                self.postings.term_positions[self.current_term_idx] &
+                0b01111111_1111111
+            ),
         };
     }
 
-    pub inline fn len(self: *PostingsIterator) usize {
-        if (self.single_doc) |_| return 1;
-        return self.doc_ids.len;
+    pub inline fn advanceToSlice(self: *PostingsIteratorV2, target_id: u32) ResultSlice {
+        if (self.current_doc_idx >= self.end_idx_doc_id) {
+            return .{
+                .doc_id = std.math.maxInt(u32), 
+                .term_pos = [_]u16{ std.math.maxInt(u16) },
+            };
+        }
+
+        const prev_term_idx = self.current_term_idx;
+        if (self.single_doc) |d| {
+            if (self.single_term) |t| {
+                return .{
+                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                    .term_pos = [_]u16 {
+                        @as(u16, @bitCast(t)) & 0b01111111_11111111
+                    },
+                };
+            } else {
+
+                self.current_term_idx = try self.postings.nextTermPos(prev_term_idx);
+                return .{
+                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
+                    .term_pos = (
+                        self.postings.term_positions[prev_term_idx..self.current_term_idx]
+                    ),
+                };
+            }
+        }
+
+        self.current_term_idx = try self.postings.nextTermPos(prev_term_idx);
+
+        if (self.postings.doc_id_buf[self.current_doc_idx] >= target_id) {
+            // If we were already greater than or equal to the target.
+            return .{
+                .doc_id   = self.postings.doc_id_buf[self.current_doc_idx],
+                .term_pos = self.postings.term_positions[prev_term_idx..self.current_term_idx],
+            };
+        }
+
+        const found_idx_in_slice = linearLowerBound(
+            self.postings.doc_id_buf[self.current_doc_idx..],
+            target_id,
+        );
+
+        self.current_doc_idx += found_idx_in_slice;
+        self.current_term_idx = self.postings.advanceToBlock(
+            self.current_doc_idx,
+            self.current_term_idx,
+        );
+
+        if (self.current_doc_idx >= self.end_idx_doc_id) {
+            self.consumed = true;
+            return .{
+                .doc_id = std.math.maxInt(u32), 
+                .term_pos = [_]u16{ std.math.maxInt(u16) },
+            };
+        }
+
+        // NOTE: Currently need to zero out top bit of first term_pos
+        //       OUTSIDE of function.
+        return .{
+            .doc_id = self.postings.doc_id_buf[self.current_doc_idx], 
+            .term_pos = (
+                self.postings.term_positions[prev_term_idx..self.current_term_idx]
+            ),
+        };
     }
+
 };
 
 
@@ -666,6 +818,8 @@ pub const InvertedIndexV2 = struct {
 
                 .term_pos_ptrs  = undefined,
                 .term_positions = undefined,
+
+                .block_doc_id_offsets = undefined,
             },
             .vocab = undefined,
             .prt_vocab = try RadixTrie(u32).init(allocator),
@@ -777,19 +931,11 @@ pub const InvertedIndexV2 = struct {
             std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
             docs_postings_size,
             );
-
-        // 254 blocks tp's per block.
-        const blocks_needed = try std.math.divCeil(
-            usize,
-            terms_postings_size,
-            254,
-        );
         self.postings.term_positions = try allocator.alignedAlloc(
             // u16, 
-            TermPosBlock,
+            TP,
             std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            // terms_postings_size,
-            blocks_needed,
+            terms_postings_size,
             );
 
         var avg_doc_size: f64 = 0.0;
@@ -1699,7 +1845,7 @@ pub const BM25Partition = struct {
                             @as(usize, @intCast(@as(u32, @bitCast(II.postings.term_pos_ptrs[term_id])))) + term_cntr_occurences[term_id]
                         );
                         if (tp_idx % 256 == 0) {
-                            II.postings.block_doc_id_offsets[@divExact(tp_idx, 256)] = current_doc_id;
+                            II.postings.block_doc_id_offsets[@divExact(tp_idx, 256)] = @truncate(current_doc_id);
                         }
 
                         II.postings.term_positions[tp_idx] = tp;
