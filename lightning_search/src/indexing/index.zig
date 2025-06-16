@@ -67,8 +67,9 @@ inline fn linearLowerBound(slice: []const u32, target: u32) usize {
 }
 
 pub const PostingsIteratorV2 = struct {
-    doc_ids: []u32,
-    term_positions: []u16,
+    // doc_ids: []u32,
+    // term_positions: []u16,
+    postings: PostingsV2,
     current_doc_idx: usize,
     current_term_idx: usize,
     score: usize,
@@ -88,7 +89,7 @@ pub const PostingsIteratorV2 = struct {
         term_id: u32,
         col_idx: u32,
         score: usize,
-        ) PostingsIterator {
+        ) PostingsIteratorV2 {
 
         const start_idx_doc_id = postings.doc_id_ptrs[term_id];
         const start_idx_term   = postings.term_pos_ptrs[term_id];
@@ -128,7 +129,7 @@ pub const PostingsIteratorV2 = struct {
         return self.doc_ids[self.current_idx];
     }
 
-    pub inline fn currentTermPos(self: *const PostingsIterator) u16 {
+    pub inline fn currentTermPos(self: *const PostingsIteratorV2) u16 {
         if (self.single_term) |t| {
             return @truncate(
                 @as(u32, @bitCast(t)) & 0b00000000_00000000_11111111_11111111
@@ -142,13 +143,14 @@ pub const PostingsIteratorV2 = struct {
         return self.term_positions[self.current_idx];
     }
 
-    pub inline fn next(self: *PostingsIterator) Result {
+    pub inline fn next(self: *PostingsIteratorV2) Result {
         if (self.consumed) {
             return .{
                 .doc_id = std.math.maxInt(u32),
                 .term_pos = std.math.maxInt(u16),
             };
         }
+
         if (self.single_doc) |d| {
             if (self.single_term) |t| {
                 return .{
@@ -165,11 +167,7 @@ pub const PostingsIteratorV2 = struct {
             }
         }
 
-        // TODO: Figure out storage mechanism for term_positions which allows iteration and skipping.
-        //       Consider writing current_doc_id every N (~128) elements to allow binary searching.
-        //       Would have low, high of current term's positions.
-
-        self.current_idx += 1;
+        self.current_doc_idx += 1;
 
         if (self.current_idx >= self.doc_ids.len) {
             self.consumed = true;
@@ -179,13 +177,15 @@ pub const PostingsIteratorV2 = struct {
             };
         }
 
+        self.current_term_idx = self.postings.nextTermPos(self.current_term_idx);
+
         return .{
-            .doc_id = self.doc_ids[self.current_idx],
-            .term_pos = self.term_positions[self.current_idx],
+            .doc_id = self.doc_ids[self.current_doc_idx],
+            .term_pos = self.term_positions[self.current_term_idx],
         };
     }
 
-    pub inline fn advanceTo(self: *PostingsIterator, target_id: u32) Result {
+    pub inline fn advanceTo(self: *PostingsIteratorV2, target_id: u32) Result {
         if (self.current_idx >= self.doc_ids.len) {
             return .{
                 .doc_id = std.math.maxInt(u32), 
@@ -573,7 +573,7 @@ pub const PostingsV2 = struct {
         start_idx: usize,
         ) !usize {
         // Return the next doc_id.
-        
+
         // TODO: Handle boundary condition.
         var idx = start_idx + 1;
         var val = self.term_positions[idx];
