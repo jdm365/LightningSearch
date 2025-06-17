@@ -1273,8 +1273,8 @@ pub const IndexManager = struct {
                                 _token,
                                 @truncate(II_idx),
                                 @intFromFloat(boost_weighted_idf),
-                                if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
-                                if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
+                                // if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
+                                // if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
                             );
 
                             term_pos += 1;
@@ -1322,8 +1322,8 @@ pub const IndexManager = struct {
                                     _token,
                                     @truncate(II_idx),
                                     @intFromFloat(boost_weighted_idf),
-                                    if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
-                                    if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
+                                    // if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
+                                    // if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
                                 );
 
                                 term_pos += 1;
@@ -1370,8 +1370,8 @@ pub const IndexManager = struct {
                         _token,
                         @truncate(II_idx),
                         @intFromFloat(boost_weighted_idf),
-                        if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
-                        if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
+                        // if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
+                        // if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
                     );
 
                     term_pos += 1;
@@ -1424,7 +1424,6 @@ pub const IndexManager = struct {
                 for (res.term_pos) |tp| {
 
                     // TODO: Assess how we want to do term pos scoring.
-                    tp &= 0b01111111_11111111;
                     score_sum += score + 25.0 * @as(f32, @floatFromInt(@intFromBool(tp == 0)));
                 }
                 sorted_scores.insert(res.doc_id, score_sum);
@@ -1557,15 +1556,20 @@ pub const IndexManager = struct {
 
                 std.debug.assert(it.currentDocId() == current_doc_id);
 
-                base_score += @as(f32, @floatFromInt(it.score)) +
-                              25.0 * @as(f32, @floatFromInt(@intFromBool(it.currentTermPos() == 0)));
+                const res = it.nextSlice();
+                for (0.., res.term_pos) |tp_idx, tp| {
+                    if (tp_idx == 64) {
+                        @branchHint(.cold);
+                        break;
+                    }
+                    base_score += @as(f32, @floatFromInt(it.score)) +
+                                  25.0 * @as(f32, @floatFromInt(@intFromBool(tp == 0)));
+                    doc_term_positions[it.col_idx].insert(
+                        it.term_id,
+                        tp & 0b01111111_11111111,
+                    );
+                }
 
-                doc_term_positions[it.col_idx].insert(
-                    it.term_id,
-                    it.currentTermPos(),
-                );
-
-                const res = it.next();
                 if (res.doc_id == std.math.maxInt(u32)) {
                     consumed_mask[idx] = true;
                 }
@@ -1578,6 +1582,7 @@ pub const IndexManager = struct {
 
                 std.debug.assert(pos.count < 1024);
 
+                // TODO: Double check this logic with multiple vals.
                 for (0..(pos.count - 1)) |idx| {
                     const diff = pos.values[idx + 1] - pos.values[idx];
                     if (diff != 1) continue;
@@ -1701,22 +1706,17 @@ pub const IndexManager = struct {
                                 ) * boost_factors.items[II_idx];
 
                             std.debug.assert(II_idx <= self.search_col_idxs.items.len);
-                            // const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
-                            // const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
 
                             const iterator_ptr = iterators.addOne(
                                 self.gpa(),
                             ) catch @panic("Error adding iterator");
-                            // iterator_ptr.* = PostingsIterator.init(
                             iterator_ptr.* = PostingsIteratorV2.init(
-                                // II.postings.doc_id_buf[offset..next_offset],
-                                // II.postings.term_positions[offset..next_offset],
                                 II.postings,
                                 _token,
                                 @truncate(II_idx),
                                 @intFromFloat(boost_weighted_idf),
-                                if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
-                                if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
+                                // if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
+                                // if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
                             );
 
                             term_pos += 1;
@@ -1756,22 +1756,17 @@ pub const IndexManager = struct {
                                     1.0 + std.math.log2(inner_term)
                                     ) * boost_factors.items[II_idx];
 
-                                // const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
-                                // const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
 
                                 const iterator_ptr = iterators.addOne(
                                     self.gpa(),
                                 ) catch @panic("Error adding iterator");
-                                // iterator_ptr.* = PostingsIterator.init(
                                 iterator_ptr.* = PostingsIteratorV2.init(
-                                    // II.postings.doc_id_buf[offset..next_offset],
-                                    // II.postings.term_positions[offset..next_offset],
                                     II.postings,
                                     _token,
                                     @truncate(II_idx),
                                     @intFromFloat(boost_weighted_idf),
-                                    if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
-                                    if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
+                                    // if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
+                                    // if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
                                 );
 
                                 term_pos += 1;
@@ -1810,21 +1805,15 @@ pub const IndexManager = struct {
                         1.0 + std.math.log2(inner_term)
                         ) * boost_factors.items[II_idx];
 
-                    // const offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token]);
-                    // const next_offset: u32 = @bitCast(II.postings.doc_id_ptrs[_token + 1]);
-
                     const iterator_ptr = iterators.addOne(
                         self.gpa(),
                     ) catch @panic("Error adding iterator");
-                    // iterator_ptr.* = PostingsIterator.init(
                     iterator_ptr.* = PostingsIteratorV2.init(
-                        // II.postings.doc_id_buf[offset..next_offset],
-                        // II.postings.term_positions[offset..next_offset],
                         II.postings,
                         _token,
                         @truncate(II_idx),
                         @intFromFloat(boost_weighted_idf),
-                        if (II.doc_freqs.items.len == 1) II.doc_freqs.items[_token] else null,
+                        // if (II.doc_freqs.items.len == 1) II.doc_freqs.items[_token] else null,
                     );
 
                     term_pos += 1;
@@ -1869,20 +1858,22 @@ pub const IndexManager = struct {
         if (iterators.items.len == 1) {
             const score: f32 = @floatFromInt(iterators.items[0].score);
 
-            var res = iterators.items[0].next();
-            var doc_id:  u32 = res.doc_id;
-            var term_pos: u8 = res.term_pos;
-            while (doc_id != std.math.maxInt(u32)) {
-                const score_add = score + 25.0 * @as(f32, @floatFromInt(@intFromBool(term_pos == 0)));
-                sorted_scores.insert(doc_id, score_add);
+            var score_sum: f32 = 0.0;
+            var res = iterators.items[0].nextSlice();
 
-                res = iterators.items[0].next();
-                doc_id   = res.doc_id;
-                term_pos = res.term_pos;
+            while (res.doc_id != std.math.maxInt(u32)) {
+                score_sum = 0.0;
+                for (res.term_pos) |tp| {
 
+                    // TODO: Assess how we want to do term pos scoring.
+                    tp &= 0b01111111_11111111;
+                    score_sum += score + 25.0 * @as(f32, @floatFromInt(@intFromBool(tp == 0)));
+                }
+                sorted_scores.insert(res.doc_id, score_sum);
+                res = iterators.items[0].nextSlice();
             }
 
-            std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{iterators.items[0].len});
+            // std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{iterators.items[0].len});
 
             for (0..sorted_scores.count) |idx| {
 
@@ -1926,6 +1917,7 @@ pub const IndexManager = struct {
             };
         }
 
+        // TODO: Fix rest of this function to work with PostingsV2
         var lead_iter = &iterators.items[0];
         var total_docs_scored: usize = 0;
         while (true) {
