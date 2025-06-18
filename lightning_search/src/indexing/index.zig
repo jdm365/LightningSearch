@@ -302,12 +302,6 @@ pub const PostingsIteratorV2 = struct {
         );
 
         self.current_doc_idx += found_idx_in_slice;
-        self.current_term_idx = try self.postings.advanceToBlock(
-            self.current_doc_idx,
-            self.current_term_idx,
-            self.end_idx_term,
-        );
-
         if (self.current_doc_idx >= self.end_idx_doc_id) {
             self.consumed = true;
             return .{
@@ -315,6 +309,14 @@ pub const PostingsIteratorV2 = struct {
                 .term_pos = std.math.maxInt(u16),
             };
         }
+
+        std.debug.assert(self.current_term_idx < self.end_idx_term);
+        self.current_term_idx = try self.postings.advanceToBlock(
+            self.current_doc_idx - found_idx_in_slice,
+            self.current_doc_idx,
+            self.current_term_idx,
+            self.end_idx_term,
+        );
 
         return .{
             .doc_id = self.postings.doc_id_buf[self.current_doc_idx], 
@@ -372,12 +374,6 @@ pub const PostingsIteratorV2 = struct {
         );
 
         self.current_doc_idx += found_idx_in_slice;
-        self.current_term_idx = try self.postings.advanceToBlock(
-            self.current_doc_idx,
-            self.current_term_idx,
-            self.end_idx_term,
-        );
-
         if (self.current_doc_idx >= self.end_idx_doc_id) {
             self.consumed = true;
             return .{
@@ -385,6 +381,14 @@ pub const PostingsIteratorV2 = struct {
                 .term_pos = &[_]u16{ std.math.maxInt(u16) },
             };
         }
+
+        self.current_term_idx = try self.postings.advanceToBlock(
+            self.current_doc_idx - found_idx_in_slice,
+            self.current_doc_idx,
+            self.current_term_idx,
+            self.end_idx_term,
+        );
+
 
         // NOTE: Currently need to zero out top bit of first term_pos
         //       OUTSIDE of function.
@@ -749,7 +753,8 @@ pub const PostingsV2 = struct {
 
     pub inline fn advanceToBlock(
         self: *const PostingsV2, 
-        doc_id: usize, 
+        init_doc_id_idx: usize,
+        target_doc_id_idx: usize,
         start_idx: usize,
         max_idx: usize,
         ) !usize {
@@ -759,29 +764,49 @@ pub const PostingsV2 = struct {
         //       Can just check next block's max id.
         //       Only do that if this term's range extends beyond the current block.
         //       Else force linear scan.
-        const start_block_idx  = @divFloor(start_idx, 256);
-
-        const block_range_rem = start_idx % 256;
+        std.debug.print(
+            "Current idx: {d} | Max idx: {d}\n",
+            .{start_idx, max_idx},
+        );
+        std.debug.assert(max_idx >= start_idx);
+        const block_range_rem = 256 - (start_idx % 256);
         const range_rem = max_idx - start_idx;
         if (range_rem > block_range_rem) {
-            // current one
+            std.debug.print("BLOCK\n", .{});
+            return try self.advanceToBlockSkipping(
+                init_doc_id_idx, 
+                target_doc_id_idx, 
+                start_idx,
+                );
         } else {
-            // inline forced linear one
+            std.debug.print("INLINE\n", .{});
+            return try self.advanceToBlockInline(
+                init_doc_id_idx, 
+                target_doc_id_idx, 
+                start_idx, 
+                max_idx,
+                );
         }
+    }
 
-        var current_buffer_idx = start_idx % 256;
+    inline fn advanceToBlockSkipping(
+        self: *const PostingsV2, 
+        init_doc_id_idx: usize,
+        target_doc_id_idx: usize, 
+        start_idx: usize,
+    ) !usize {
+        var current_buffer_idx = start_idx;
         var current_block_idx  = @divFloor(start_idx, 256);
 
-        var current_doc_id = self.block_doc_id_offsets[current_block_idx];
-        var next_doc_id    = self.block_doc_id_offsets[current_block_idx + 1];
+        var current_doc_id_idx = init_doc_id_idx;
+        const end_doc_id = self.doc_id_buf[target_doc_id_idx];
 
-        while (next_doc_id < doc_id) {
+        var block_skipped: usize = 0;
+        while (self.doc_id_buf[current_block_idx] < end_doc_id) {
             current_block_idx += 1;
-            current_buffer_idx = 0;
-
-            current_doc_id = next_doc_id;
-            next_doc_id = self.block_doc_id_offsets[current_block_idx + 1];
+            block_skipped += 1;
         }
+        const block_end_idx = start_idx + (256 - (start_idx % 256)) + (256 * block_skipped);
 
         const current_block = @as([*]@Vector(16, u16), @ptrCast(
             self.term_positions
@@ -789,30 +814,134 @@ pub const PostingsV2 = struct {
         const vec_mask: @Vector(16, u16) = comptime @splat(0b10000000_00000000);
         const mask: u16 = 0b10000000_00000000;
 
-        while (current_doc_id < doc_id) {
-            while (current_buffer_idx < 256) {
-                const skip_docs: usize = @truncate(@as(u80, @bitCast(@popCount(
-                    current_block[@divExact(current_buffer_idx, 16)] & vec_mask
-                    ))));
+        if (current_buffer_idx % 16 != 0) {
+            const start_simd_idx = std.mem.alignForward(
+                usize,
+                current_buffer_idx,
+                16,
+            );
+            while ((current_doc_id_idx < target_doc_id_idx) and (current_buffer_idx < start_simd_idx)) {
+                current_doc_id_idx += @popCount(
+                    mask & @as(u16, @bitCast(self.term_positions[current_buffer_idx]))
+                    );
+                current_buffer_idx += 1;
 
-                if (skip_docs + current_doc_id >= doc_id) {
-                    while (current_doc_id < doc_id) {
-                        current_doc_id += @popCount(
+                if (current_doc_id_idx >= target_doc_id_idx) {
+                    return current_buffer_idx;
+                }
+            }
+        }
+
+        while (current_doc_id_idx < target_doc_id_idx) {
+            while (current_buffer_idx < block_end_idx) {
+                const skip_docs: usize = std.simd.countTrues(
+                    vec_mask == (
+                        current_block[@divExact(current_buffer_idx, 16)] & vec_mask
+                        )
+                    );
+
+                if (skip_docs + current_doc_id_idx >= target_doc_id_idx) {
+                    while (current_doc_id_idx < target_doc_id_idx) {
+                        current_doc_id_idx += @popCount(
                             mask & @as(u16, @bitCast(self.term_positions[current_buffer_idx]))
                             );
                         current_buffer_idx += 1;
 
-                        if (current_doc_id >= doc_id) {
-                            return current_buffer_idx + 256 * (current_block_idx - start_block_idx);
+                        if (current_doc_id_idx >= target_doc_id_idx) {
+                            return current_buffer_idx;
                         }
                     }
                     unreachable;
                 }
 
-                current_doc_id += @truncate(skip_docs);
+                current_doc_id_idx += @truncate(skip_docs);
                 current_buffer_idx += 16;
             }
+            return current_buffer_idx;
         }
+        unreachable;
+    }
+
+    inline fn advanceToBlockInline(
+        self: *const PostingsV2, 
+        init_doc_id_idx: usize,
+        target_doc_id_idx: usize, 
+        start_idx: usize,
+        max_idx: usize,
+    ) !usize {
+        // Fix here.
+        // NOTE: NEXT DOC ISN'T NEXT, IT'S NEXT FOR TERM.
+        //       NEED NUM TERM_DOCS ADVANCED
+        var current_doc_id_idx = init_doc_id_idx;
+
+        const start_simd_idx = std.mem.alignForward(
+            usize,
+            start_idx,
+            16,
+        );
+        const mask: u16 = 0b10000000_00000000;
+        var current_buffer_idx = start_idx;
+
+        if (max_idx >= start_simd_idx) {
+            while ((current_doc_id_idx < target_doc_id_idx) and (current_buffer_idx < max_idx)) {
+                current_doc_id_idx += @popCount(
+                    mask & @as(u16, @bitCast(self.term_positions[current_buffer_idx]))
+                    );
+                current_buffer_idx += 1;
+
+                if (current_doc_id_idx >= target_doc_id_idx) {
+                    return current_buffer_idx;
+                }
+            }
+        }
+
+        while ((current_doc_id_idx < target_doc_id_idx) and (current_buffer_idx < start_simd_idx)) {
+            current_doc_id_idx += @popCount(
+                mask & @as(u16, @bitCast(self.term_positions[current_buffer_idx]))
+                );
+            current_buffer_idx += 1;
+
+            if (current_doc_id_idx >= target_doc_id_idx) {
+                return current_buffer_idx;
+            }
+        }
+
+        const current_block = @as([*]@Vector(16, u16), @ptrCast(
+            self.term_positions
+        ));
+        const vec_mask: @Vector(16, u16) = comptime @splat(0b10000000_00000000);
+        std.debug.print(
+            "Current idx: {d} | Max idx: {d}\n",
+            .{current_buffer_idx, max_idx},
+        );
+
+        while (current_doc_id_idx < target_doc_id_idx) {
+            while (current_buffer_idx < max_idx) {
+                const skip_docs: usize = std.simd.countTrues(
+                    vec_mask == (current_block[@divExact(current_buffer_idx, 16)] & vec_mask)
+                    );
+                std.debug.assert(skip_docs <= 16);
+
+                if (skip_docs + current_doc_id_idx >= target_doc_id_idx) {
+                    while (current_doc_id_idx < target_doc_id_idx) {
+                        current_doc_id_idx += @popCount(
+                            mask & @as(u16, @bitCast(self.term_positions[current_buffer_idx]))
+                            );
+                        current_buffer_idx += 1;
+                    }
+                    return current_buffer_idx;
+                }
+
+                current_doc_id_idx += skip_docs;
+                current_buffer_idx += 16;
+            }
+            // unreachable;
+            return current_buffer_idx;
+        }
+        std.debug.print(
+            "Current idx: {d} | Max idx: {d} | Doc id: {d}\n",
+            .{current_buffer_idx, max_idx, current_doc_id_idx},
+        );
         unreachable;
     }
 };
@@ -895,12 +1024,12 @@ pub const InvertedIndexV2 = struct {
         self.num_terms = @intCast(self.doc_freqs.items.len);
         self.postings.doc_id_ptrs = try allocator.alignedAlloc(
             flag_u32,
-            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
             self.num_terms + 1,
         );
         self.postings.term_pos_ptrs = try allocator.alignedAlloc(
             flag_u32,
-            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
             self.num_terms + 1,
         );
 
@@ -953,13 +1082,13 @@ pub const InvertedIndexV2 = struct {
 
         self.postings.doc_id_buf     = try allocator.alignedAlloc(
             u32, 
-            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
             docs_postings_size,
             );
         self.postings.term_positions = try allocator.alignedAlloc(
             // u16, 
             TP,
-            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
             terms_postings_size,
             );
 
@@ -970,7 +1099,7 @@ pub const InvertedIndexV2 = struct {
         );
         self.postings.block_doc_id_offsets = try allocator.alignedAlloc(
             u32,
-            std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
             num_blocks,
         );
 
