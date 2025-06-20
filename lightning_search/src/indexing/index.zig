@@ -331,7 +331,7 @@ inline fn putBits(buf: []u8, bit_pos: usize, value: u32, lo_bits: u8) void {
     }
 }
 
-const DeltaBitpacked = struct {
+const DeltaBitpackedBlock = struct {
     min_val: u32,
     buffer: []u8 align(512),
 
@@ -340,8 +340,8 @@ const DeltaBitpacked = struct {
         allocator: std.mem.Allocator,
         scratch_arr: [NUM_BLOCKS]@Vector(u32, 16),
         sorted_vals: [BLOCK_SIZE]u32,
-        ) !DeltaBitpacked {
-        var dbp = DeltaBitpacked{
+        ) !DeltaBitpackedBlock {
+        var dbp = DeltaBitpackedBlock{
             .min_val = sorted_vals[0],
             .buffer = undefined,
         };
@@ -395,15 +395,15 @@ const DeltaBitpacked = struct {
     }
 };
 
-const Bitpacked = struct {
+const BitpackedBlock = struct {
     max_val: u32,
     buffer: []u8 align(512),
 
     pub fn build(
         allocator: std.mem.Allocator,
         vals: [BLOCK_SIZE]u32,
-        ) !DeltaBitpacked {
-        var dbp = DeltaBitpacked{
+        ) !BitpackedBlock {
+        var dbp = BitpackedBlock{
             .max_val = vals[0],
             .buffer = undefined,
         };
@@ -445,11 +445,89 @@ const Bitpacked = struct {
     }
 };
 
-
 pub const PostingsBlockFull = struct {
-    num_docs: u32,
-    doc_ids: DeltaBitpacked,
-    tfs: Bitpacked,
+    doc_ids: DeltaBitpackedBlock,
+    tfs:     BitpackedBlock,
+};
+
+
+const DeltaVByteBlock = struct {
+    // TODO: Consider making these page aligned.
+    //       Reconsider alignment and allocations in these structs
+    //       to try to minimize faults and prevent fragmentation.
+    buffer: []u8 align(512),
+
+    pub fn build(
+        allocator: std.mem.Allocator,
+        sorted_vals: []u32,
+        ) !DeltaVByteBlock {
+        var dvb = DeltaVByteBlock{
+            .buffer = undefined,
+        };
+
+        var bytes_needed: usize = 0;
+        for (sorted_vals) |val| {
+            const delta = if (val == 0) 0 else val - sorted_vals[0];
+            bytes_needed += pq.getVbyteSize(@intCast(delta));
+        }
+        dvb.buffer = try allocator.alignedAlloc(
+            u8,
+            bytes_needed,
+            512,
+        );
+
+        var buf_idx: usize = 0;
+        for (sorted_vals) |val| {
+            const delta = if (val == 0) 0 else val - sorted_vals[0];
+            pq.encodeVbyte(
+                dvb.buffer.ptr,
+                &buf_idx,
+                @intCast(delta),
+            );
+        }
+
+        return dvb;
+    }
+};
+
+const VByteBlock = struct {
+    buffer: []u8 align(512),
+
+    pub fn build(
+        allocator: std.mem.Allocator,
+        vals: [BLOCK_SIZE]u32,
+        ) !VByteBlock {
+        var vb = VByteBlock{
+            .buffer = undefined,
+        };
+
+        var bytes_needed: usize = 0;
+        for (vals) |val| {
+            bytes_needed += pq.getVbyteSize(@intCast(val));
+        }
+        vb.buffer = try allocator.alignedAlloc(
+            u8,
+            bytes_needed,
+            512,
+        );
+
+        var buf_idx: usize = 0;
+        for (vals) |val| {
+            pq.encodeVbyte(
+                vb.buffer.ptr,
+                &buf_idx,
+                @intCast(val),
+            );
+        }
+
+        return vb;
+    }
+};
+
+pub const PostingsBlockPartial = struct {
+    num_docs: u8,
+    doc_ids: DeltaVByteBlock,
+    tfs:     VByteBlock,
 };
 
 pub const TPList = struct {
