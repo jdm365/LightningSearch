@@ -66,347 +66,12 @@ inline fn linearLowerBound(slice: []const u32, target: u32) usize {
     return slice.len;
 }
 
-pub const PostingsIteratorV2 = struct {
-    // doc_ids: []u32,
-    // term_positions: []u16,
-    postings: PostingsV2,
-    current_doc_idx: usize,
-    current_term_idx: usize,
-    end_idx_doc_id: usize,
-    end_idx_term: usize,
-    len: usize,
-    score: usize,
-    term_id: u32,
-    col_idx: u32,
-    consumed: bool,
-    single_doc: ?u32,
-    single_term: ?u32,
-
-    pub const Result = struct {
-        doc_id: u32,
-        term_pos: u16,
-    };
-
-    pub const ResultSlice = struct {
-        doc_id: u32,
-        term_pos: []const u16,
-    };
-
-    pub fn init(
-        postings: PostingsV2,
-        term_id: u32,
-        col_idx: u32,
-        score: usize,
-        ) PostingsIteratorV2 {
-
-        const start_idx_doc_id = postings.doc_id_ptrs[term_id];
-        const start_idx_term   = postings.term_pos_ptrs[term_id];
-
-        const end_idx_doc_id = postings.doc_id_ptrs[term_id + 1];
-        const end_idx_term   = postings.term_pos_ptrs[term_id + 1];
-
-        const single_doc_id = if (start_idx_doc_id.is_inline == 1)
-            @as(u32, @bitCast(postings.doc_id_ptrs[term_id]))
-        else null;
-        const single_term   = if (start_idx_term.is_inline == 1)
-            @as(u32, @bitCast(postings.term_pos_ptrs[term_id]))
-        else null;
-
-        const start_idx_doc_id_u32: u32 = @bitCast(start_idx_doc_id);
-        const end_idx_doc_id_u32: u32   = @bitCast(end_idx_doc_id);
-
-        const start_idx_term_u32: u32 = @bitCast(start_idx_term);
-        const end_idx_term_u32: u32   = @bitCast(end_idx_term);
-
-        const len = if (single_doc_id != null)
-            1
-        else end_idx_doc_id_u32 - start_idx_doc_id_u32;
-
-        return PostingsIteratorV2{ 
-            .postings = postings,
-            .term_id = term_id,
-            .current_doc_idx = @intCast(start_idx_doc_id_u32),
-            .current_term_idx = @intCast(start_idx_term_u32),
-            .end_idx_doc_id = @intCast(end_idx_doc_id_u32),
-            .end_idx_term = @intCast(end_idx_term_u32),
-            .len = len,
-            .score = score,
-            .col_idx = col_idx,
-            .consumed = false,
-            .single_doc = single_doc_id,
-            .single_term = single_term,
-        };
-    }
-
-    pub inline fn currentDocId(self: *const PostingsIteratorV2) u32 {
-        if (self.single_doc) |d| {
-            return @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111;
-        }
-
-        if (self.current_doc_idx >= self.postings.doc_id_buf.len) {
-            return std.math.maxInt(u32);
-        }
-        return self.postings.doc_id_buf[self.current_doc_idx];
-    }
-
-    pub inline fn currentTermPos(self: *const PostingsIteratorV2) u16 {
-        if (self.single_term) |t| {
-            return @truncate(
-                @as(u32, @bitCast(t)) & 0b00000000_00000000_11111111_11111111
-            );
-        }
-
-        if (self.current_term_idx >= self.end_idx_term) {
-            return std.math.maxInt(u16);
-        }
-
-        return @intCast(
-            self.postings.term_positions[self.current_term_idx] &
-            0b01111111_11111111
-            );
-    }
-
-    pub inline fn next(self: *PostingsIteratorV2) Result {
-        if (self.consumed) {
-            return .{
-                .doc_id = std.math.maxInt(u32),
-                .term_pos = std.math.maxInt(u16),
-            };
-        }
-
-        if (self.single_doc) |d| {
-            if (self.single_term) |t| {
-                return .{
-                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                    .term_pos = @truncate(@as(u32, @bitCast(t)) & 0b00000000_00000000_11111111_11111111),
-                };
-            } else {
-
-                self.current_term_idx = try self.postings.nextTermPos(self.current_term_idx);
-                return .{
-                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                    .term_pos = @intCast(
-                        self.postings.term_positions[self.current_term_idx] &
-                        0b01111111_1111111
-                    ),
-                };
-            }
-        }
-
-        self.current_doc_idx += 1;
-        self.current_term_idx = self.postings.nextTermPos(self.current_term_idx);
-
-        if (self.current_doc_idx >= self.end_idx_doc_id) {
-            self.consumed = true;
-            return .{
-                .doc_id = std.math.maxInt(u32),
-                .term_pos = std.math.maxInt(u16),
-            };
-        }
-
-        return .{
-            .doc_id = self.doc_ids[self.current_doc_idx],
-            .term_pos = self.term_positions[self.current_term_idx],
-        };
-    }
-
-    pub inline fn nextSlice(self: *PostingsIteratorV2) ResultSlice {
-        if (self.consumed) {
-            return .{
-                .doc_id = std.math.maxInt(u32),
-                .term_pos = &[_]u16 { std.math.maxInt(u16) },
-            };
-        }
-
-        const prev_term_idx = self.current_term_idx;
-        if (self.single_doc) |d| {
-            if (self.single_term) |t| {
-                return .{
-                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                    .term_pos = &[_]u16 {
-                        @truncate(@as(u32, @bitCast(t)) & 0b00000000_00000000_01111111_11111111),
-                    }
-                };
-            } else {
-
-                self.current_term_idx = try self.postings.nextTermPos(prev_term_idx);
-
-
-                // NOTE: Currently need to zero out top bit of first term_pos
-                //       OUTSIDE of function.
-                return .{
-                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                    .term_pos = @ptrCast(
-                        self.postings.term_positions[prev_term_idx..self.current_term_idx]
-                    ),
-                };
-            }
-        }
-
-        self.current_doc_idx += 1;
-        self.current_term_idx = try self.postings.nextTermPos(self.current_term_idx);
-
-        if (self.current_doc_idx >= self.end_idx_doc_id) {
-            self.consumed = true;
-            return .{
-                .doc_id = std.math.maxInt(u32),
-                .term_pos = &[_]u16 { std.math.maxInt(u16) },
-            };
-        }
-
-        return .{
-            .doc_id = self.postings.doc_id_buf[self.current_doc_idx],
-            .term_pos = @ptrCast(
-                self.postings.term_positions[prev_term_idx..self.current_term_idx]
-            ),
-        };
-    }
-
-    pub inline fn advanceTo(self: *PostingsIteratorV2, target_id: u32) Result {
-        if (self.current_doc_idx >= self.end_idx_doc_id) {
-            return .{
-                .doc_id = std.math.maxInt(u32), 
-                .term_pos = std.math.maxInt(u16),
-            };
-        }
-
-        if (self.single_doc) |d| {
-            if (self.single_term) |t| {
-                return .{
-                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                    .term_pos = @truncate(@as(u32, @bitCast(t)) & 0b00000000_00000000_11111111_11111111),
-                };
-            } else {
-
-                self.current_term_idx = try self.postings.nextTermPos(self.current_term_idx);
-                return .{
-                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                    .term_pos = @intCast(
-                        self.postings.term_positions[self.current_term_idx] &
-                        0b01111111_1111111
-                    ),
-                };
-            }
-        }
-
-        if (self.postings.doc_id_buf[self.current_doc_idx] >= target_id) {
-            return .{
-                .doc_id   = self.postings.doc_id_buf[self.current_doc_idx],
-                .term_pos = self.postings.term_positions[self.current_term_idx],
-            };
-        }
-
-        const found_idx_in_slice = linearLowerBound(
-            self.postings.doc_id_buf[self.current_doc_idx..],
-            target_id,
-        );
-
-        self.current_doc_idx += found_idx_in_slice;
-        if (self.current_doc_idx >= self.end_idx_doc_id) {
-            self.consumed = true;
-            return .{
-                .doc_id = std.math.maxInt(u32), 
-                .term_pos = std.math.maxInt(u16),
-            };
-        }
-
-        std.debug.assert(self.current_term_idx < self.end_idx_term);
-        self.current_term_idx = try self.postings.advanceToBlock(
-            self.current_doc_idx - found_idx_in_slice,
-            self.current_doc_idx,
-            self.current_term_idx,
-            self.end_idx_term,
-        );
-
-        return .{
-            .doc_id = self.postings.doc_id_buf[self.current_doc_idx], 
-            .term_pos = @intCast(
-                self.postings.term_positions[self.current_term_idx] &
-                0b01111111_1111111
-            ),
-        };
-    }
-
-    pub inline fn advanceToSlice(self: *PostingsIteratorV2, target_id: u32) ResultSlice {
-        if (self.current_doc_idx >= self.end_idx_doc_id) {
-            return .{
-                .doc_id = std.math.maxInt(u32), 
-                .term_pos = &[_]u16{ std.math.maxInt(u16) },
-            };
-        }
-
-        const prev_term_idx = self.current_term_idx;
-        if (self.single_doc) |d| {
-            if (self.single_term) |t| {
-                return .{
-                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                    .term_pos = &[_]u16 {
-                        @as(u16, @truncate(@as(u32, @bitCast(t)))) & 0b01111111_11111111
-                    },
-                };
-            } else {
-
-                self.current_term_idx = try self.postings.nextTermPos(prev_term_idx);
-                return .{
-                    .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                    .term_pos = @ptrCast(
-                        self.postings.term_positions[prev_term_idx..self.current_term_idx]
-                    ),
-                };
-            }
-        }
-
-        self.current_term_idx = try self.postings.nextTermPos(prev_term_idx);
-
-        if (self.postings.doc_id_buf[self.current_doc_idx] >= target_id) {
-            // If we were already greater than or equal to the target.
-            return .{
-                .doc_id   = self.postings.doc_id_buf[self.current_doc_idx],
-                .term_pos = @ptrCast(
-                    self.postings.term_positions[prev_term_idx..self.current_term_idx]
-                ),
-            };
-        }
-
-        const found_idx_in_slice = linearLowerBound(
-            self.postings.doc_id_buf[self.current_doc_idx..],
-            target_id,
-        );
-
-        self.current_doc_idx += found_idx_in_slice;
-        if (self.current_doc_idx >= self.end_idx_doc_id) {
-            self.consumed = true;
-            return .{
-                .doc_id = std.math.maxInt(u32), 
-                .term_pos = &[_]u16{ std.math.maxInt(u16) },
-            };
-        }
-
-        self.current_term_idx = try self.postings.advanceToBlock(
-            self.current_doc_idx - found_idx_in_slice,
-            self.current_doc_idx,
-            self.current_term_idx,
-            self.end_idx_term,
-        );
-
-
-        // NOTE: Currently need to zero out top bit of first term_pos
-        //       OUTSIDE of function.
-        return .{
-            .doc_id = self.postings.doc_id_buf[self.current_doc_idx], 
-            .term_pos = @ptrCast(
-                self.postings.term_positions[prev_term_idx..self.current_term_idx]
-            ),
-        };
-    }
-
-};
-
 
 pub const PostingsIterator = struct {
     doc_ids: []u32,
     term_positions: []u16,
-    current_idx: usize,
+    doc_idx: usize,
+    tp_idx: usize,
     score: usize,
     term_id: u32,
     col_idx: u32,
@@ -636,28 +301,170 @@ pub const flag_u32 = packed struct(u32) {
     is_inline: u1,
 };
 
-pub const TP = packed struct(u16) {
-    term_pos: u15,
-    new_doc: u1,
+pub const flag_tp_u32 = packed struct(u32) {
+    second: u15,
+    _: u1,
+
+    first: u15,
+    is_inline: u1,
 };
 
-pub const TermPosBlock = struct {
-    // 512 bytes.
-    // Leading bit of term_positions is `new_doc` flag.
-    current_doc_id: u32,
-    term_positions: [254]TP,
+
+pub const BLOCK_SIZE: usize = 64;
+pub const NUM_BLOCKS: usize = @divExact(BLOCK_SIZE, 16);
+
+inline fn putBits(buf: []u8, bit_pos: usize, value: u32, lo_bits: u8) void {
+    var v: u32 = value;
+    var written: u8 = 0;
+
+    while (written < lo_bits) {
+        const byte_idx = (bit_pos + written) >> 3;
+        const bit_idx  = (bit_pos + written) & 7;
+        const chunk: u8 = @min(8 - bit_idx, lo_bits - written);
+
+        const mask: u32 = (1 << chunk) - 1;
+        const bits: u8  = @truncate((v & mask) << bit_idx);
+
+        buf[byte_idx] |= bits;
+        v >>= chunk;
+        written += chunk;
+    }
+}
+
+const DeltaBitpacked = struct {
+    min_val: u32,
+    buffer: []u8 align(512),
+
+
+    pub fn build(
+        allocator: std.mem.Allocator,
+        scratch_arr: [NUM_BLOCKS]@Vector(u32, 16),
+        sorted_vals: [BLOCK_SIZE]u32,
+        ) !DeltaBitpacked {
+        var dbp = DeltaBitpacked{
+            .min_val = sorted_vals[0],
+            .buffer = undefined,
+        };
+        var block_maxes: @Vector(u32, BLOCK_SIZE) = undefined;
+
+        const sv_vec: *@Vector(u32, 16) = @ptrCast(sorted_vals[0..BLOCK_SIZE]);
+        inline for (0..NUM_BLOCKS) |block_idx| {
+            const start_idx = comptime block_idx * 16;
+            const shift_in_idx = comptime if (block_idx == NUM_BLOCKS - 1) {
+                BLOCK_SIZE - 1;
+            } else {
+                start_idx + 16;
+            };
+
+            scratch_arr[block_idx] = sv_vec - std.simd.shiftElementsLeft(
+                @Vector(u32, 16),
+                sv_vec[block_idx],
+                sorted_vals[shift_in_idx],
+            );
+            block_maxes[block_idx] = @reduce(.Max, scratch_arr[block_idx]);
+        }
+
+        const max_gap = @reduce(.Max, block_maxes);
+        const bits_per_value = std.math.log2_int_ceil(
+            usize,
+            max_gap,
+        );
+        const buffer_size = try std.math.divCeil(
+            usize, 
+            BLOCK_SIZE * bits_per_value, 
+            8,
+            );
+
+        dbp.buffer = try allocator.alignedAlloc(
+            u8,
+            buffer_size,
+            512,
+            );
+
+        var bit_pos: usize = 0;
+        inline for (0..BLOCK_SIZE) |idx| {
+            const block_idx = comptime @divExact(idx, 16);
+            const lane_idx  = comptime idx % 16;
+            const gap: u32  = scratch_arr[block_idx][lane_idx];
+
+            putBits(dbp.buffer, bit_pos, gap, @truncate(bits_per_value));
+            bit_pos += bits_per_value;
+        }
+
+        return dbp;
+    }
+};
+
+const Bitpacked = struct {
+    max_val: u32,
+    buffer: []u8 align(512),
+
+    pub fn build(
+        allocator: std.mem.Allocator,
+        vals: [BLOCK_SIZE]u32,
+        ) !DeltaBitpacked {
+        var dbp = DeltaBitpacked{
+            .max_val = vals[0],
+            .buffer = undefined,
+        };
+        var block_maxes: @Vector(u32, BLOCK_SIZE) = undefined;
+
+        const sv_vec: *@Vector(u32, 16) = @ptrCast(vals[0..BLOCK_SIZE]);
+        inline for (0..NUM_BLOCKS) |block_idx| {
+            block_maxes[block_idx] = @reduce(.Max, sv_vec[block_idx]);
+        }
+
+        const max_val = @reduce(.Max, block_maxes);
+        const bits_per_value = std.math.log2_int_ceil(
+            usize,
+            max_val,
+        );
+        const buffer_size = try std.math.divCeil(
+            usize, 
+            BLOCK_SIZE * bits_per_value, 
+            8,
+            );
+
+        dbp.buffer = try allocator.alignedAlloc(
+            u8,
+            buffer_size,
+            512,
+            );
+
+        var bit_pos: usize = 0;
+        inline for (0..BLOCK_SIZE) |idx| {
+            const block_idx = comptime @divExact(idx, 16);
+            const lane_idx  = comptime idx % 16;
+            const val: u32  = sv_vec[block_idx][lane_idx];
+
+            putBits(dbp.buffer, bit_pos, val, @truncate(bits_per_value));
+            bit_pos += bits_per_value;
+        }
+
+        return dbp;
+    }
+};
+
+
+pub const PostingsBlockFull = struct {
+    num_docs: u32,
+    doc_ids: DeltaBitpacked,
+    tfs: Bitpacked,
+};
+
+pub const TPList = struct {
+    // TODO: Add compression.
+    term_positions: []u16,
 };
 
 pub const PostingsV2 = struct {
     doc_id_ptrs:  []align(std.heap.page_size_min)flag_u32,
     doc_id_buf: []align(std.heap.page_size_min)u32,
 
-    term_pos_ptrs:  []align(std.heap.page_size_min)flag_u32,
-    term_positions: []align(std.heap.page_size_min)TP,
-    // term_positions: []align(std.heap.page_size_min)u16,
-    // term_positions: []align(std.heap.page_size_min)TermPosBlock,
+    term_pos_ptrs:  []align(std.heap.page_size_min)flag_tp_u32,
 
-    block_doc_id_offsets: []align(std.heap.page_size_min)u32,
+    // Max value means TF > 1. Look up in hash map.
+    term_positions: []align(std.heap.page_size_min)u16,
 
     pub const BlockPair = packed struct(u64) {
         block_idx: u32,
