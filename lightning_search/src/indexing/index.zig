@@ -455,6 +455,9 @@ const DeltaVByteBlock = struct {
     // TODO: Consider making these page aligned.
     //       Reconsider alignment and allocations in these structs
     //       to try to minimize faults and prevent fragmentation.
+    //
+    //       Also consider using raw pointer with size as a smaller
+    //       integer type.
     buffer: []u8 align(512),
 
     pub fn build(
@@ -528,7 +531,21 @@ pub const PostingsBlockPartial = struct {
     num_docs: u8,
     doc_ids: DeltaVByteBlock,
     tfs:     VByteBlock,
+
+    pub fn partialToFull(
+        self: *PostingsBlockPartial,
+    ) PostingsBlockFull {
+    }
 };
+
+pub const PostingV3 = struct {
+    full_blocks: std.ArrayListAlignedUnmanaged(
+                     PostingsBlockFull,
+                     512,
+                 ),
+    partial_block: PostingsBlockPartial,
+};
+
 
 pub const TPList = struct {
     // TODO: Add compression.
@@ -793,7 +810,8 @@ pub const PostingsV2 = struct {
 
 
 pub const InvertedIndexV2 = struct {
-    postings: PostingsV2,
+    // postings: PostingsV2,
+    postings: []PostingV3,
     vocab: Vocab,
     prt_vocab: RadixTrie(u32),
     doc_freqs: std.ArrayListUnmanaged(u32),
