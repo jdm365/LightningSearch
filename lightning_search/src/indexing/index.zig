@@ -393,6 +393,38 @@ const DeltaBitpackedBlock = struct {
 
         return dbp;
     }
+
+    pub fn buildFromDeltaVByte(
+        allocator: std.mem.Allocator,
+        scratch_arr: [NUM_BLOCKS]@Vector(u32, 16),
+        dvb: []u8,
+        ) !DeltaBitpackedBlock {
+        // Optimize later. For now, just convert to u32 buf, then call above func.
+
+        // TODO: Thread local static arrays.
+        var tmp_arr = try allocator.alignedAlloc(
+            u32,
+            comptime std.mem.Alignment.fromByteUnits(512),
+            64,
+        );
+        defer allocator.free(tmp_arr);
+
+        var prev_val: u32 = 0;
+        var byte_ptr: usize = 0;
+        for (0..64) |idx| {
+            tmp_arr[idx] = @as(u32, @truncate(pq.decodeVbyte(
+                dvb.ptr,
+                &byte_ptr,
+            ))) + prev_val;
+            prev_val = tmp_arr[idx];
+        }
+
+        return try DeltaBitpackedBlock.build(
+            allocator,
+            scratch_arr,
+            tmp_arr,
+        );
+    }
 };
 
 const BitpackedBlock = struct {
@@ -442,6 +474,37 @@ const BitpackedBlock = struct {
         }
 
         return dbp;
+    }
+
+    pub fn buildFromVByte(
+        allocator: std.mem.Allocator,
+        vb: []u8,
+        ) !VByteBlock {
+        // Optimize later. For now, just convert to u32 buf, then call above func.
+
+        // TODO: Thread local static arrays.
+        var tmp_arr = try allocator.alignedAlloc(
+            u32,
+            comptime std.mem.Alignment.fromByteUnits(512),
+            64,
+        );
+        defer allocator.free(tmp_arr);
+
+        var byte_ptr: usize = 0;
+        for (0..(comptime @divExact(BLOCK_SIZE, 4))) |idx| {
+            inline for (0..4) |inner_idx| {
+                const i = comptime (idx * 4) + inner_idx;
+                tmp_arr[i] = @truncate(pq.decodeVbyte(
+                    vb.ptr,
+                    &byte_ptr,
+                ));
+            }
+        }
+
+        return try VByteBlock.build(
+            allocator,
+            tmp_arr,
+        );
     }
 };
 
@@ -534,7 +597,20 @@ pub const PostingsBlockPartial = struct {
 
     pub fn partialToFull(
         self: *PostingsBlockPartial,
+        allocator: std.mem.Allocator,
+        scratch_arr: [NUM_BLOCKS]@Vector(u32, 16),
     ) PostingsBlockFull {
+        return PostingsBlockFull{
+            .doc_ids = try DeltaBitpackedBlock.buildFromDeltaVByte(
+                allocator,
+                scratch_arr,
+                self.doc_ids.buffer,
+            ),
+            .tfs = try BitpackedBlock.buildFromVByte(
+                allocator,
+                self.tfs.buffer,
+            ),
+        };
     }
 };
 
@@ -544,6 +620,12 @@ pub const PostingV3 = struct {
                      512,
                  ),
     partial_block: PostingsBlockPartial,
+
+    pub inline fn add(
+        self: *PostingV3,
+        doc_id: u32,
+    ) !void {
+    }
 };
 
 
