@@ -479,7 +479,7 @@ const BitpackedBlock = struct {
     pub fn buildFromVByte(
         allocator: std.mem.Allocator,
         vb: []u8,
-        ) !VByteBlock {
+        ) !BitpackedBlock {
         // Optimize later. For now, just convert to u32 buf, then call above func.
 
         // TODO: Thread local static arrays.
@@ -501,7 +501,7 @@ const BitpackedBlock = struct {
             }
         }
 
-        return try VByteBlock.build(
+        return try BitpackedBlock.build(
             allocator,
             tmp_arr,
         );
@@ -521,32 +521,38 @@ const DeltaVByteBlock = struct {
     //
     //       Also consider using raw pointer with size as a smaller
     //       integer type.
-    buffer: []u8 align(512),
+    buffer: std.ArrayListAlignedUnmanaged(u8, std.mem.Alignment.fromByteUnits(512)),
+
+    pub fn init() DeltaVByteBlock {
+        return DeltaVByteBlock{
+            .buffer = std.ArrayListAlignedUnmanaged(u8, std.mem.Alignment.fromByteUnits(512)){},
+        };
+    }
 
     pub fn build(
         allocator: std.mem.Allocator,
         sorted_vals: []u32,
         ) !DeltaVByteBlock {
-        var dvb = DeltaVByteBlock{
-            .buffer = undefined,
-        };
 
         var bytes_needed: usize = 0;
         for (sorted_vals) |val| {
             const delta = if (val == 0) 0 else val - sorted_vals[0];
             bytes_needed += pq.getVbyteSize(@intCast(delta));
         }
-        dvb.buffer = try allocator.alignedAlloc(
-            u8,
-            bytes_needed,
-            512,
-        );
-
+        const dvb = DeltaVByteBlock{
+            .buffer = try std.ArrayListAlignedUnmanaged(
+                u8, 
+                std.mem.Alignment.fromByteUnits(512),
+                ).initCapacity(
+                allocator,
+                bytes_needed,
+                ),
+        };
         var buf_idx: usize = 0;
         for (sorted_vals) |val| {
             const delta = if (val == 0) 0 else val - sorted_vals[0];
             pq.encodeVbyte(
-                dvb.buffer.ptr,
+                dvb.buffer.items.ptr,
                 &buf_idx,
                 @intCast(delta),
             );
@@ -554,33 +560,64 @@ const DeltaVByteBlock = struct {
 
         return dvb;
     }
+
+    pub inline fn add(
+        self: *DeltaVByteBlock,
+        allocator: std.mem.Alignment,
+        value: u32,
+        prev_val: u32,
+    ) !void {
+        const bytes_needed = pq.getVbyteSize(value - prev_val);
+        var init_ptr = self.buffer.items.len;
+        try self.buffer.resize(
+            allocator,
+            init_ptr + bytes_needed
+        );
+        pq.encodeVbyte(
+            self.buffer.items.ptr,
+            &init_ptr,
+            @intCast(value - prev_val),
+        );
+    }
 };
 
 const VByteBlock = struct {
-    buffer: []u8 align(512),
+    buffer: std.ArrayListAlignedUnmanaged(
+                u8, 
+                std.mem.Alignment.fromByteUnits(512),
+                ),
+
+    pub fn init() VByteBlock {
+        return VByteBlock{
+            .buffer = std.ArrayListAlignedUnmanaged(
+                u8, 
+                std.mem.Alignment.fromByteUnits(512),
+                ){},
+        };
+    }
 
     pub fn build(
         allocator: std.mem.Allocator,
         vals: [BLOCK_SIZE]u32,
         ) !VByteBlock {
-        var vb = VByteBlock{
-            .buffer = undefined,
-        };
-
         var bytes_needed: usize = 0;
         for (vals) |val| {
             bytes_needed += pq.getVbyteSize(@intCast(val));
         }
-        vb.buffer = try allocator.alignedAlloc(
-            u8,
-            bytes_needed,
-            512,
-        );
+        const vb = VByteBlock{
+            .buffer = try std.ArrayListAlignedUnmanaged(
+                u8, 
+                std.mem.Alignment.fromByteUnits(512),
+                ).initCapacity(
+                allocator,
+                bytes_needed,
+                ),
+        };
 
         var buf_idx: usize = 0;
         for (vals) |val| {
             pq.encodeVbyte(
-                vb.buffer.ptr,
+                vb.buffer.items.ptr,
                 &buf_idx,
                 @intCast(val),
             );
@@ -588,12 +625,43 @@ const VByteBlock = struct {
 
         return vb;
     }
+
+    pub inline fn add(
+        self: *VByteBlock,
+        allocator: std.mem.Alignment,
+        value: u32,
+    ) !void {
+        const bytes_needed = pq.getVbyteSize(value);
+        var init_ptr = self.buffer.items.len;
+        try self.buffer.resize(
+            allocator,
+            init_ptr + bytes_needed
+        );
+        pq.encodeVbyte(
+            self.buffer.items.ptr,
+            &init_ptr,
+            @intCast(value),
+        );
+    }
+
 };
 
 pub const PostingsBlockPartial = struct {
     num_docs: u8,
     doc_ids: DeltaVByteBlock,
     tfs:     VByteBlock,
+
+    prev_doc_id: u32,
+
+    pub fn init() PostingsBlockPartial {
+        return PostingsBlockPartial{
+            .num_docs = 0,
+            .doc_ids = DeltaVByteBlock.init(),
+            .tfs = VByteBlock.init(),
+
+            .prev_doc_id = 0,
+        };
+    }
 
     pub fn partialToFull(
         self: *PostingsBlockPartial,
@@ -611,6 +679,20 @@ pub const PostingsBlockPartial = struct {
                 self.tfs.buffer,
             ),
         };
+    }
+
+    pub inline fn add(
+        self: *PostingsBlockPartial,
+        allocator: std.mem.Allocator,
+        doc_id: u32,
+    ) !void {
+        try self.doc_ids.add(
+            allocator,
+            doc_id,
+            self.prev_doc_id,
+        );
+
+        self.num_docs += 1;
     }
 };
 
@@ -893,7 +975,10 @@ pub const PostingsV2 = struct {
 
 pub const InvertedIndexV2 = struct {
     // postings: PostingsV2,
-    postings: []PostingV3,
+    postings: std.ArrayListAlignedUnmanaged(
+                  PostingV3,
+                  std.mem.Alignment.fromByteUnits(512),
+              ),
     vocab: Vocab,
     prt_vocab: RadixTrie(u32),
     doc_freqs: std.ArrayListUnmanaged(u32),
@@ -910,15 +995,19 @@ pub const InvertedIndexV2 = struct {
         num_docs: usize,
         ) !InvertedIndexV2 {
         var II = InvertedIndexV2{
-            .postings = PostingsV2{
-                .doc_id_ptrs = undefined,
-                .doc_id_buf  = undefined,
-
-                .term_pos_ptrs  = undefined,
-                .term_positions = undefined,
-
-                .block_doc_id_offsets = undefined,
-            },
+            // .postings = PostingsV2{
+                // .doc_id_ptrs = undefined,
+                // .doc_id_buf  = undefined,
+// 
+                // .term_pos_ptrs  = undefined,
+                // .term_positions = undefined,
+// 
+                // .block_doc_id_offsets = undefined,
+            // },
+            .postings = std.ArrayListAlignedUnmanaged(
+                  PostingV3,
+                  std.mem.Alignment.fromByteUnits(512),
+              ){},
             .vocab = undefined,
             .prt_vocab = try RadixTrie(u32).init(allocator),
             .doc_freqs = std.ArrayListUnmanaged(u32){},
@@ -951,11 +1040,12 @@ pub const InvertedIndexV2 = struct {
 
     pub fn deinit(self: *InvertedIndexV2, allocator: std.mem.Allocator) void {
 
-        allocator.free(self.postings.doc_id_ptrs);
-        allocator.free(self.postings.doc_id_buf);
-        allocator.free(self.postings.term_pos_ptrs);
-        allocator.free(self.postings.term_positions);
-        allocator.free(self.postings.block_doc_id_offsets);
+        // allocator.free(self.postings.doc_id_ptrs);
+        // allocator.free(self.postings.doc_id_buf);
+        // allocator.free(self.postings.term_pos_ptrs);
+        // allocator.free(self.postings.term_positions);
+        // allocator.free(self.postings.block_doc_id_offsets);
+        self.postings.deinit(allocator);
 
         self.vocab.deinit(allocator);
         self.prt_vocab.deinit();
