@@ -579,6 +579,10 @@ const DeltaVByteBlock = struct {
             @intCast(value - prev_val),
         );
     }
+
+    pub inline fn clear(self: *DeltaVByteBlock) void {
+        self.buffer.clearRetainingCapacity();
+    }
 };
 
 const VByteBlock = struct {
@@ -644,6 +648,9 @@ const VByteBlock = struct {
         );
     }
 
+    pub inline fn clear(self: *DeltaVByteBlock) void {
+        self.buffer.clearRetainingCapacity();
+    }
 };
 
 pub const PostingsBlockPartial = struct {
@@ -663,7 +670,21 @@ pub const PostingsBlockPartial = struct {
         };
     }
 
-    pub fn partialToFull(
+    pub fn flush(
+        self: *PostingsBlockPartial,
+        allocator: std.mem.Allocator,
+        scratch_arr: [NUM_BLOCKS]@Vector(u32, 16),
+    ) PostingsBlockFull {
+        const full_map = self.partialToFull(allocator, scratch_arr);
+
+        self.num_docs = 0;
+        self.doc_ids.clear();
+        self.tfs.clear();
+
+        return full_map;
+    }
+
+    fn partialToFull(
         self: *PostingsBlockPartial,
         allocator: std.mem.Allocator,
         scratch_arr: [NUM_BLOCKS]@Vector(u32, 16),
@@ -705,8 +726,55 @@ pub const PostingV3 = struct {
 
     pub inline fn add(
         self: *PostingV3,
+        allocator: std.mem.Allocator,
         doc_id: u32,
+        scratch_arr: [NUM_BLOCKS]@Vector(u32, 16),
     ) !void {
+        try self.partial_block.add(
+            allocator,
+            doc_id,
+        );
+        if (self.partial_block.num_docs == BLOCK_SIZE) {
+            const new_val = try self.full_blocks.addOne(allocator);
+            new_val.* = self.partial_block.flush(allocator, scratch_arr);
+        }
+    }
+
+    pub fn serialize(
+        self: *PostingV3, 
+        buffer: []u8,
+        current_pos: *usize,
+        ) void {
+        // Copy full_blocks then partial_block.
+        // TODO: Assess need for metadata.
+
+        for (self.full_blocks.items) |block| {
+            @memcpy(
+                buffer[current_pos.*..],
+                block.doc_ids.items,
+            );
+            current_pos.* += block.doc_ids.items.len;
+
+            @memcpy(
+                buffer[current_pos.*..],
+                block.tfs.items,
+            );
+            current_pos.* += block.tfs.items.len;
+        }
+        buffer[current_pos.*] = self.num_docs;
+        current_pos.* += 1;
+
+        @memcpy(
+            buffer[current_pos.*..],
+            self.partial_block.doc_ids.buffer.items,
+        );
+        current_pos.* += self.partial_block.doc_ids.buffer.items;
+
+        @memcpy(
+            buffer[current_pos.*..],
+            self.partial_block.tfs.buffer.items,
+        );
+        current_pos.* += self.partial_block.tfs.buffer.items;
     }
 };
 
@@ -980,10 +1048,10 @@ pub const InvertedIndexV2 = struct {
                   std.mem.Alignment.fromByteUnits(512),
               ),
     vocab: Vocab,
-    prt_vocab: RadixTrie(u32),
-    doc_freqs: std.ArrayListUnmanaged(u32),
-    term_occurences: std.ArrayListUnmanaged(u32),
-    doc_sizes: []u16,
+    // prt_vocab: RadixTrie(u32),
+    doc_freqs: std.ArrayListUnmanaged(u32), // Should be needed soon. Visible in posting.
+    // term_occurences: std.ArrayListUnmanaged(u32),
+    doc_sizes: []u16, // Consider PFOR encoding w/ blocks.
 
     // TODO: Remove num_terms and num_docs.
     num_terms: u32,
@@ -1009,9 +1077,9 @@ pub const InvertedIndexV2 = struct {
                   std.mem.Alignment.fromByteUnits(512),
               ){},
             .vocab = undefined,
-            .prt_vocab = try RadixTrie(u32).init(allocator),
+            // .prt_vocab = try RadixTrie(u32).init(allocator),
             .doc_freqs = std.ArrayListUnmanaged(u32){},
-            .term_occurences = std.ArrayListUnmanaged(u32){},
+            // .term_occurences = std.ArrayListUnmanaged(u32){},
             .doc_sizes = try allocator.alloc(u16, num_docs),
             .num_terms = 0,
             .num_docs = @intCast(num_docs),
@@ -1024,10 +1092,10 @@ pub const InvertedIndexV2 = struct {
             allocator, 
             @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
             );
-        II.term_occurences = try std.ArrayListUnmanaged(u32).initCapacity(
-            allocator, 
-            @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
-            );
+        // II.term_occurences = try std.ArrayListUnmanaged(u32).initCapacity(
+            // allocator, 
+            // @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
+            // );
 
         II.vocab = Vocab.init();
 
@@ -1048,103 +1116,143 @@ pub const InvertedIndexV2 = struct {
         self.postings.deinit(allocator);
 
         self.vocab.deinit(allocator);
-        self.prt_vocab.deinit();
+        // self.prt_vocab.deinit();
 
         self.doc_freqs.deinit(allocator);
-        self.term_occurences.deinit(allocator);
+        // self.term_occurences.deinit(allocator);
         allocator.free(self.doc_sizes);
     }
 
-    pub fn resizePostings(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
-        self.num_terms = @intCast(self.doc_freqs.items.len);
-        self.postings.doc_id_ptrs = try allocator.alignedAlloc(
-            flag_u32,
-            comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            self.num_terms + 1,
-        );
-        self.postings.term_pos_ptrs = try allocator.alignedAlloc(
-            flag_u32,
-            comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            self.num_terms + 1,
-        );
-
-        std.debug.assert(self.num_terms == self.vocab.map.count());
-
-        // Num terms is now known.
-        var docs_postings_size:  usize = 0;
-        var terms_postings_size: usize = 0;
-        for (0.., self.doc_freqs.items) |idx, doc_freq| {
-            if (doc_freq == 1) {
-                self.postings.doc_id_ptrs[idx] = flag_u32{
-                    .is_inline = 1,
-                    .value = undefined,
-                };
-            } else {
-                self.postings.doc_id_ptrs[idx] = flag_u32{
-                    .is_inline = 0,
-                    .value = @truncate(docs_postings_size),
-                };
-                docs_postings_size += doc_freq;
-            }
-
-            std.debug.assert(docs_postings_size < (comptime 1 << 31));
-
-            const num_occurences = self.term_occurences.items[idx];
-            if (num_occurences == 1) {
-                self.postings.term_pos_ptrs[idx] = flag_u32{
-                    .is_inline = 1,
-                    .value = undefined,
-                };
-            } else {
-                self.postings.term_pos_ptrs[idx] = flag_u32{
-                    .is_inline = 0,
-                    .value = @truncate(terms_postings_size),
-                };
-                terms_postings_size += num_occurences;
-            }
+    pub fn commit(
+        self: *InvertedIndexV2,
+        // allocator: std.mem.Allocator,
+        _: std.mem.Allocator,
+        buf: []u8,
+    ) !void {
+        // This will serialize all.
+        // Assume buf w/ capacity or mmapped buf for now.
+        var current_pos: usize = 0;
+        for (self.postings.items) |pos| {
+            pos.serialize(buf, &current_pos);
         }
-        self.postings.doc_id_ptrs[self.num_terms] = flag_u32{
-            .is_inline = 0,
-            .value = @truncate(docs_postings_size),
-        };
-        self.postings.term_pos_ptrs[self.num_terms] = flag_u32{
-            .is_inline = 0,
-            .value = @truncate(terms_postings_size),
-        };
 
-        docs_postings_size  += 1;
-        terms_postings_size += 1;
-
-        self.postings.doc_id_buf     = try allocator.alignedAlloc(
-            u32, 
-            comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            docs_postings_size,
-            );
-        self.postings.term_positions = try allocator.alignedAlloc(
-            // u16, 
-            TP,
-            comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            terms_postings_size,
-            );
-
-        const num_blocks = try std.math.divCeil(
-            usize,
-            terms_postings_size,
-            256,
+        // Now vocab.
+        @memcpy(
+            buf[current_pos..],
+            self.vocab.string_bytes.items,
         );
-        self.postings.block_doc_id_offsets = try allocator.alignedAlloc(
-            u32,
-            comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            num_blocks,
-        );
+        current_pos += self.vocab.string_bytes.items.len;
 
-        var avg_doc_size: f64 = 0.0;
-        for (self.doc_sizes) |doc_size| {
-            avg_doc_size += @floatFromInt(doc_size);
+        var map_iterator = self.vocab.map.iterator();
+        while (map_iterator.next()) |item| {
+            std.mem.writePackedInt(
+                u32,
+                buf[current_pos..][0..4],
+                0,
+                item.key_ptr.*,
+                ENDIANESS,
+            );
+            std.mem.writePackedInt(
+                u32,
+                buf[current_pos..][4..8],
+                0,
+                item.value_ptr.*,
+                ENDIANESS,
+            );
+            current_pos += 8;
         }
-        avg_doc_size /= @floatFromInt(self.num_docs);
-        self.avg_doc_size = @floatCast(avg_doc_size);
     }
+
+    // pub fn resizePostings(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
+        // self.num_terms = @intCast(self.doc_freqs.items.len);
+        // self.postings.doc_id_ptrs = try allocator.alignedAlloc(
+            // flag_u32,
+            // comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            // self.num_terms + 1,
+        // );
+        // self.postings.term_pos_ptrs = try allocator.alignedAlloc(
+            // flag_u32,
+            // comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            // self.num_terms + 1,
+        // );
+// 
+        // std.debug.assert(self.num_terms == self.vocab.map.count());
+// 
+        // // Num terms is now known.
+        // var docs_postings_size:  usize = 0;
+        // var terms_postings_size: usize = 0;
+        // for (0.., self.doc_freqs.items) |idx, doc_freq| {
+            // if (doc_freq == 1) {
+                // self.postings.doc_id_ptrs[idx] = flag_u32{
+                    // .is_inline = 1,
+                    // .value = undefined,
+                // };
+            // } else {
+                // self.postings.doc_id_ptrs[idx] = flag_u32{
+                    // .is_inline = 0,
+                    // .value = @truncate(docs_postings_size),
+                // };
+                // docs_postings_size += doc_freq;
+            // }
+// 
+            // std.debug.assert(docs_postings_size < (comptime 1 << 31));
+// 
+            // const num_occurences = self.term_occurences.items[idx];
+            // if (num_occurences == 1) {
+                // self.postings.term_pos_ptrs[idx] = flag_u32{
+                    // .is_inline = 1,
+                    // .value = undefined,
+                // };
+            // } else {
+                // self.postings.term_pos_ptrs[idx] = flag_u32{
+                    // .is_inline = 0,
+                    // .value = @truncate(terms_postings_size),
+                // };
+                // terms_postings_size += num_occurences;
+            // }
+        // }
+        // self.postings.doc_id_ptrs[self.num_terms] = flag_u32{
+            // .is_inline = 0,
+            // .value = @truncate(docs_postings_size),
+        // };
+        // self.postings.term_pos_ptrs[self.num_terms] = flag_u32{
+            // .is_inline = 0,
+            // .value = @truncate(terms_postings_size),
+        // };
+// 
+        // docs_postings_size  += 1;
+        // terms_postings_size += 1;
+// 
+        // self.postings.doc_id_buf     = try allocator.alignedAlloc(
+            // u32, 
+            // comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            // docs_postings_size,
+            // );
+        // self.postings.term_positions = try allocator.alignedAlloc(
+            // // u16, 
+            // TP,
+            // comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            // terms_postings_size,
+            // );
+// 
+        // const num_blocks = try std.math.divCeil(
+            // usize,
+            // terms_postings_size,
+            // 256,
+        // );
+        // self.postings.block_doc_id_offsets = try allocator.alignedAlloc(
+            // u32,
+            // comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
+            // num_blocks,
+        // );
+// 
+        // var avg_doc_size: f64 = 0.0;
+        // for (self.doc_sizes) |doc_size| {
+            // avg_doc_size += @floatFromInt(doc_size);
+        // }
+        // avg_doc_size /= @floatFromInt(self.num_docs);
+        // self.avg_doc_size = @floatCast(avg_doc_size);
+    // }
 };
 
 pub const BM25Partition = struct {
