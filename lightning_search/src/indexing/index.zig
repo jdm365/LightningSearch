@@ -724,6 +724,16 @@ pub const PostingV3 = struct {
                  ),
     partial_block: PostingsBlockPartial,
 
+    pub inline fn init() PostingV3 {
+        return PostingV3{
+            .full_blocks = std.ArrayListAlignedUnmanaged(
+                PostingsBlockFull,
+                512,
+            ){},
+            .partial_block = PostingsBlockPartial.init(),
+        };
+    }
+
     pub inline fn add(
         self: *PostingV3,
         allocator: std.mem.Allocator,
@@ -1040,13 +1050,36 @@ pub const PostingsV2 = struct {
     }
 };
 
-
-pub const InvertedIndexV2 = struct {
-    // postings: PostingsV2,
+pub const PostingsList = struct {
     postings: std.ArrayListAlignedUnmanaged(
                   PostingV3,
                   std.mem.Alignment.fromByteUnits(512),
               ),
+
+    pub fn init() PostingsList {
+        return PostingsList{
+            .postings = std.ArrayListAlignedUnmanaged(
+                  PostingV3,
+                  std.mem.Alignment.fromByteUnits(512),
+              ){},
+        };
+    }
+
+    pub inline fn append(
+        self: *PostingsList, 
+        allocator: std.mem.Allocator,
+        doc_id: u32,
+        scratch_arr: [NUM_BLOCKS]@Vector(u32, 16),
+        ) !void {
+        const val = try self.postings.addOne(allocator);
+        val.* = PostingV3.init();
+        try val.*.add(allocator, doc_id, scratch_arr);
+    }
+};
+
+pub const InvertedIndexV2 = struct {
+    // postings: PostingsV2,
+    posting_list: PostingsList,
     vocab: Vocab,
     // prt_vocab: RadixTrie(u32),
     doc_freqs: std.ArrayListUnmanaged(u32), // Should be needed soon. Visible in posting.
@@ -1057,6 +1090,8 @@ pub const InvertedIndexV2 = struct {
     num_terms: u32,
     num_docs: u32,
     avg_doc_size: f32,
+
+    file_handle: std.fs.File,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -1072,14 +1107,9 @@ pub const InvertedIndexV2 = struct {
 // 
                 // .block_doc_id_offsets = undefined,
             // },
-            .postings = std.ArrayListAlignedUnmanaged(
-                  PostingV3,
-                  std.mem.Alignment.fromByteUnits(512),
-              ){},
+            .posting_list = PostingsList.init(),
             .vocab = undefined,
-            // .prt_vocab = try RadixTrie(u32).init(allocator),
             .doc_freqs = std.ArrayListUnmanaged(u32){},
-            // .term_occurences = std.ArrayListUnmanaged(u32){},
             .doc_sizes = try allocator.alloc(u16, num_docs),
             .num_terms = 0,
             .num_docs = @intCast(num_docs),
@@ -1113,7 +1143,7 @@ pub const InvertedIndexV2 = struct {
         // allocator.free(self.postings.term_pos_ptrs);
         // allocator.free(self.postings.term_positions);
         // allocator.free(self.postings.block_doc_id_offsets);
-        self.postings.deinit(allocator);
+        self.posting_list.deinit(allocator);
 
         self.vocab.deinit(allocator);
         // self.prt_vocab.deinit();
@@ -1127,12 +1157,28 @@ pub const InvertedIndexV2 = struct {
         self: *InvertedIndexV2,
         // allocator: std.mem.Allocator,
         _: std.mem.Allocator,
-        buf: []u8,
-    ) !void {
+    ) !u64 {
         // This will serialize all.
         // Assume buf w/ capacity or mmapped buf for now.
-        var current_pos: usize = 0;
-        for (self.postings.items) |pos| {
+        const buf = try std.posix.mmap(
+            null,
+            1 << 32,
+            std.posix.PROT.WRITE | std.posix.PROT.READ,
+            .{ 
+                .TYPE = .SHARED, 
+                .SYNC = false, 
+            },
+            self.file_handle.handle,
+            0,
+        );
+
+        // const huffman_row_data_file = try std.fs.cwd().createFile(
+            // huffman_row_data_filename,
+            // .{ .read = true }
+            // );
+
+        var current_pos: u64 = 0;
+        for (self.posting_list.postings.items) |pos| {
             pos.serialize(buf, &current_pos);
         }
 
@@ -1161,6 +1207,22 @@ pub const InvertedIndexV2 = struct {
             );
             current_pos += 8;
         }
+
+        @memcpy(
+            buf[current_pos..],
+            std.mem.sliceAsBytes(self.doc_sizes),
+        );
+        current_pos += self.doc_sizes.len * @sizeOf(u16);
+
+        buf.resize(current_pos);
+
+        try self.file_handle.setEndPos(current_pos);
+        try std.posix.msync(
+                buf.ptr,
+                std.posix.MSF.ASYNC,
+                );
+
+        return current_pos;
     }
 
     // pub fn resizePostings(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
@@ -1262,6 +1324,8 @@ pub const BM25Partition = struct {
 
     doc_store: DocStore,
 
+    scratch_arr: [NUM_BLOCKS]@Vector(u32, 16),
+
     pub fn init(
         allocator: std.mem.Allocator,
         num_search_cols: usize,
@@ -1272,7 +1336,12 @@ pub const BM25Partition = struct {
             .num_records = num_records,
             .allocator = allocator,
             .doc_store = undefined,
+
+            .scratch_arr = undefined,
         };
+        for (0..NUM_BLOCKS) |block_idx| {
+            partition.scratch_arr[block_idx] = @splat(0);
+        }
 
         for (0..num_search_cols) |idx| {
             partition.II[idx] = try InvertedIndexV2.init(
@@ -1345,19 +1414,30 @@ pub const BM25Partition = struct {
 
             self.II[col_idx].num_terms += 1;
             try self.II[col_idx].doc_freqs.append(self.allocator, 1);
-            try self.II[col_idx].term_occurences.append(self.allocator, 1);
-            try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*, col_idx);
+            // try self.II[col_idx].term_occurences.append(self.allocator, 1);
+            // try token_stream.addToken(new_doc.*, term_pos, gop.value_ptr.*, col_idx);
+            try self.II[col_idx].posting_list.append(
+                self.allocator,
+                doc_id,
+                self.scratch_arr,
+            );
 
         } else {
 
             const val = gop.value_ptr.*;
 
-            self.II[col_idx].term_occurences.items[val] += 1;
-            try token_stream.addToken(new_doc.*, term_pos, val, col_idx);
+            // self.II[col_idx].term_occurences.items[val] += 1;
+            // try token_stream.addToken(new_doc.*, term_pos, val, col_idx);
 
             if (!terms_seen.checkOrInsertSIMD(val)) {
                 self.II[col_idx].doc_freqs.items[val] += 1;
-            }
+
+                try self.II[col_idx].posting_list.postings.items[val].add(
+                    self.allocator,
+                    doc_id,
+                    self.scratch_arr,
+                    );
+                }
         }
 
         self.II[col_idx].doc_sizes[doc_id] += 1;

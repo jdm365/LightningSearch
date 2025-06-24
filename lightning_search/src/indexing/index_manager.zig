@@ -730,7 +730,10 @@ pub const IndexManager = struct {
 
         // Flush remaining tokens.
         for (0..token_stream.num_terms.len) |_search_col_idx| {
-            try token_stream.flushTokenStream(_search_col_idx);
+            // try token_stream.flushTokenStream(_search_col_idx);
+            try current_IP.II[_search_col_idx].commit(
+                current_IP.allocator,
+            );
         }
         _ = total_docs_read.fetchAdd(end_doc - (start_doc + prev_doc_id), .monotonic);
 
