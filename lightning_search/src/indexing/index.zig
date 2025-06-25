@@ -1444,7 +1444,6 @@ pub const BM25Partition = struct {
                 );
             gop.value_ptr.* = self.II[col_idx].num_terms;
 
-            self.II[col_idx].num_terms += 1;
             try self.II[col_idx].doc_freqs.append(self.allocator, 1);
             try self.II[col_idx].posting_list.append(self.allocator,
                 doc_id,

@@ -85,12 +85,12 @@ pub inline fn decodeVbyte(buffer: [*]u8, idx: *usize) u64 {
 }
 
 pub inline fn getVbyteSize(value: u64) usize {
-    if (value == 0) return 1;
+    // if (value == 0) return 1;
 
     const num_bits = 64 - @clz(value);
     const num_bytes = @divFloor((num_bits + 6), 7);
 
-    return num_bytes;
+    return @max(1, num_bytes);
 }
 
 pub fn getParquetCols(

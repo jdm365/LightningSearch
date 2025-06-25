@@ -10,11 +10,13 @@ pub fn StaticIntegerSet(comptime n: u32) type {
 
         values: [n]u32 align(16),
         count: usize,
+        full: bool,
 
         pub fn init() Self {
             return Self{
                 .values = undefined,
                 .count = 0,
+                .full = false,
             };
         }
 
@@ -40,13 +42,14 @@ pub fn StaticIntegerSet(comptime n: u32) type {
 
         pub inline fn checkOrInsertSIMD(self: *Self, new_value: u32) bool {
             // Don't allow new insertions if full.
-            if (self.count == n) return true;
+            // if (self.count == n) return true;
+            std.debug.assert(self.count < n);
 
             // If element already exists return true, else return false.
             // If element doesn't exist also insert.
             const floor_loop_idx = self.count - (self.count % VEC_SIZE);
 
-            const valueSIMD: VEC= @splat(new_value);
+            const valueSIMD: VEC = @splat(new_value);
 
             var idx: usize = 0;
             while (idx < floor_loop_idx) {
