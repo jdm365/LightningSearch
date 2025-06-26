@@ -365,10 +365,10 @@ const DeltaBitpackedBlock = struct {
         }
 
         const max_gap = @reduce(.Max, block_maxes);
-        const bits_per_value = std.math.log2_int_ceil(
+        const bits_per_value: u8 = @intCast(std.math.log2_int_ceil(
             usize,
             max_gap,
-        );
+        ));
         // std.debug.print(
             // "Block maxes: {d} | Max gap: {d} | Bits per value: {d}\n",
             // .{block_maxes, max_gap, bits_per_value},
@@ -381,17 +381,13 @@ const DeltaBitpackedBlock = struct {
             // "Diff: {d}\n",
             // .{ scratch_arr },
         // );
-        const buffer_size = try std.math.divCeil(
-            usize, 
-            BLOCK_SIZE * bits_per_value, 
-            8,
-            );
-
+        const buffer_size = (BLOCK_SIZE * bits_per_value) + 1;
         dbp.buffer = try allocator.alignedAlloc(
             u8,
             std.mem.Alignment.fromByteUnits(512),
             buffer_size,
             );
+        dbp.buffer[0] = bits_per_value;
 
         var bit_pos: usize = 0;
         inline for (0..BLOCK_SIZE) |idx| {
@@ -399,7 +395,7 @@ const DeltaBitpackedBlock = struct {
             const lane_idx  = comptime idx % 16;
             const gap: u32  = scratch_arr[block_idx][lane_idx];
 
-            putBits(dbp.buffer, bit_pos, gap, @intCast(bits_per_value));
+            putBits(dbp.buffer[1..], bit_pos, gap, @intCast(bits_per_value));
             bit_pos += bits_per_value;
         }
 
@@ -427,21 +423,18 @@ const BitpackedBlock = struct {
         }
 
         const max_val = @reduce(.Max, block_maxes);
-        const bits_per_value = std.math.log2_int_ceil(
+        const bits_per_value: u8 = @intCast(std.math.log2_int_ceil(
             usize,
             max_val,
-        );
-        const buffer_size = try std.math.divCeil(
-            usize, 
-            BLOCK_SIZE * bits_per_value, 
-            8,
-            );
+        ));
+        const buffer_size = (BLOCK_SIZE * bits_per_value) + 1;
 
         dbp.buffer = try allocator.alignedAlloc(
             u8,
             comptime std.mem.Alignment.fromByteUnits(512),
             buffer_size,
             );
+        dbp.buffer[0] = bits_per_value;
 
         var bit_pos: usize = 0;
         inline for (0..BLOCK_SIZE) |idx| {
@@ -449,7 +442,7 @@ const BitpackedBlock = struct {
             const lane_idx  = comptime idx % 16;
             const val: u32  = sv_vec[block_idx][lane_idx];
 
-            putBits(dbp.buffer, bit_pos, val, @intCast(bits_per_value));
+            putBits(dbp.buffer[1..], bit_pos, val, @intCast(bits_per_value));
             bit_pos += bits_per_value;
         }
 
@@ -758,37 +751,52 @@ pub const PostingV3 = struct {
 
     pub fn serialize(
         self: *PostingV3, 
-        buffer: []u8,
+        // buffer: []u8,
+        buffer: *std.ArrayListUnmanaged(u8),
+        allocator: std.mem.Allocator,
         current_pos: *usize,
-        ) void {
+        ) !void {
         // Copy full_blocks then partial_block.
         // TODO: Assess need for metadata.
 
         for (self.full_blocks.items) |block| {
+            const max_range = current_pos.* + (block.doc_ids.buffer.len + block.tfs.buffer.len);
+            if (max_range > buffer.items.len) {
+                @branchHint(.unlikely);
+                try buffer.resize(allocator, 2 * max_range);
+            }
+
             @memcpy(
-                buffer[current_pos.*..][0..block.doc_ids.buffer.len],
+                buffer.items[current_pos.*..][0..block.doc_ids.buffer.len],
                 block.doc_ids.buffer,
             );
             current_pos.* += block.doc_ids.buffer.len;
 
             @memcpy(
-                buffer[current_pos.*..][0..block.tfs.buffer.len],
+                buffer.items[current_pos.*..][0..block.tfs.buffer.len],
                 block.tfs.buffer,
             );
             current_pos.* += block.tfs.buffer.len;
         }
 
-        buffer[current_pos.*] = self.partial_block.num_docs;
+        const max_range = current_pos.* + 1 + 
+            (self.partial_block.doc_ids.buffer.items.len + self.partial_block.tfs.buffer.items.len);
+        if (max_range > buffer.items.len) {
+            @branchHint(.unlikely);
+            try buffer.resize(allocator, 2 * max_range);
+        }
+
+        buffer.items[current_pos.*] = self.partial_block.num_docs;
         current_pos.* += 1;
 
         @memcpy(
-            buffer[current_pos.*..][0..self.partial_block.doc_ids.buffer.items.len],
+            buffer.items[current_pos.*..][0..self.partial_block.doc_ids.buffer.items.len],
             self.partial_block.doc_ids.buffer.items,
         );
         current_pos.* += self.partial_block.doc_ids.buffer.items.len;
 
         @memcpy(
-            buffer[current_pos.*..][0..self.partial_block.tfs.buffer.items.len],
+            buffer.items[current_pos.*..][0..self.partial_block.tfs.buffer.items.len],
             self.partial_block.tfs.buffer.items,
         );
         current_pos.* += self.partial_block.tfs.buffer.items.len;
@@ -1159,79 +1167,66 @@ pub const InvertedIndexV2 = struct {
 
     pub fn commit(
         self: *InvertedIndexV2,
-        _: std.mem.Allocator,
+        allocator: std.mem.Allocator,
     ) !void {
-        // This will serialize all.
-        // Assume buf w/ capacity or mmapped buf for now.
-        const buf = std.posix.mmap(
-            null,
-            @as(u64, 1) << 32,
-            std.posix.PROT.WRITE | std.posix.PROT.READ,
-            .{ 
-                .TYPE = .PRIVATE, 
-                .ANONYMOUS = true,
-            },
-            self.file_handle.handle,
-            0,
-        ) catch |err| {
-            std.debug.print("MMap failed on commit: {any}\n", .{err});
-            return err;
-        };
-        defer std.posix.munmap(buf);
-        buf[0] = 0;
+        var buf = std.ArrayListUnmanaged(u8){};
+        try buf.resize(allocator, 1 << 22);
+        defer buf.deinit(allocator);
 
-        // const huffman_row_data_file = try std.fs.cwd().createFile(
-            // huffman_row_data_filename,
-            // .{ .read = true }
-            // );
+        buf.items[0] = 0;
 
         var current_pos: u64 = 0;
         for (self.posting_list.postings.items) |*pos| {
-            pos.serialize(buf, &current_pos);
+            try pos.serialize(&buf, allocator, &current_pos);
         }
-        std.debug.print("Postings serialized. Current pos: {d}KB\n", .{@divFloor(current_pos, 1024)});
 
-        // Now vocab.
+        if (current_pos + self.vocab.string_bytes.items.len > buf.items.len) {
+            try buf.resize(allocator, buf.items.len + 2 * self.vocab.string_bytes.items.len);
+        }
         @memcpy(
-            buf[current_pos..][0..self.vocab.string_bytes.items.len],
+            buf.items[current_pos..][0..self.vocab.string_bytes.items.len],
             self.vocab.string_bytes.items,
         );
         current_pos += self.vocab.string_bytes.items.len;
 
+        if (current_pos + (self.vocab.map.count() * 2 * @sizeOf(u32)) > buf.items.len) {
+            try buf.resize(allocator, buf.items.len + (2 * self.vocab.map.count() * 2 * @sizeOf(u32)));
+        }
         var map_iterator = self.vocab.map.iterator();
         while (map_iterator.next()) |item| {
             std.mem.writePackedInt(
                 u32,
-                buf[current_pos..][0..4],
+                buf.items[current_pos..][0..4],
                 0,
                 item.key_ptr.*,
                 ENDIANESS,
             );
             std.mem.writePackedInt(
                 u32,
-                buf[current_pos..][4..8],
+                buf.items[current_pos..][4..8],
                 0,
                 item.value_ptr.*,
                 ENDIANESS,
             );
             current_pos += 8;
         }
+        std.debug.print(
+            "\nVocab size: {d}KB\n",
+            .{@divFloor((5 * @divFloor(self.vocab.map.count() * 2 * @sizeOf(u32), 4)) + (self.vocab.string_bytes.items.len), 1024)},
+        );
 
+        if (current_pos + (self.doc_sizes.len * @sizeOf(u16)) > buf.items.len) {
+            try buf.resize(allocator, buf.items.len + (self.doc_sizes.len * @sizeOf(u16)));
+        }
         @memcpy(
-            buf[current_pos..][0..self.doc_sizes.len * @sizeOf(u16)],
+            buf.items[current_pos..][0..(self.doc_sizes.len * @sizeOf(u16))],
             std.mem.sliceAsBytes(self.doc_sizes),
         );
         current_pos += self.doc_sizes.len * @sizeOf(u16);
 
-        try self.file_handle.setEndPos(current_pos);
-        std.posix.msync(
-                buf,
-                std.posix.MSF.ASYNC,
-                ) catch |err| {
-            std.debug.print("Msync failed on commit: {any}\n", .{err});
-            return err;
-        };
-        std.debug.print("Commit done. Current pos: {d}KB\n", .{@divFloor(current_pos, 1024)});
+        try self.file_handle.writeAll(
+            buf.items[0..current_pos],
+        );
     }
 
     // pub fn resizePostings(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
@@ -1340,6 +1335,7 @@ pub const BM25Partition = struct {
         num_search_cols: usize,
         num_records: usize,
         tmp_dir: []const u8,
+        partition_idx: usize,
     ) !BM25Partition {
         var partition = BM25Partition{
             .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
@@ -1356,8 +1352,8 @@ pub const BM25Partition = struct {
         for (0..num_search_cols) |idx| {
             const output_filename = try std.fmt.allocPrint(
                 allocator, 
-                "{s}/posting_{d}.bin", 
-                .{tmp_dir, idx}
+                "{s}/posting_{d}_{d}.bin", 
+                .{tmp_dir, idx, partition_idx}
                 );
             defer allocator.free(output_filename);
 
@@ -1384,6 +1380,7 @@ pub const BM25Partition = struct {
         self: *BM25Partition, 
         num_search_cols: usize,
         tmp_dir: []const u8,
+        partition_idx: usize,
         ) !void {
         const current_length = self.II.len;
         if (num_search_cols <= current_length) return;
@@ -1392,8 +1389,8 @@ pub const BM25Partition = struct {
         for (current_length..num_search_cols) |idx| {
             const output_filename = try std.fmt.allocPrint(
                 self.allocator, 
-                "{s}/posting_{d}.bin", 
-                .{tmp_dir, idx}
+                "{s}/posting_{d}_{d}.bin", 
+                .{tmp_dir, idx, partition_idx}
                 );
             defer self.allocator.free(output_filename);
 
@@ -1414,9 +1411,8 @@ pub const BM25Partition = struct {
         _: u16,
         col_idx: usize,
         // token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
-        _: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
-        new_doc: *bool,
+        // new_doc: *bool,
     ) !void {
         std.debug.assert(
             self.II[col_idx].vocab.map.count() < (1 << 32),
@@ -1466,7 +1462,7 @@ pub const BM25Partition = struct {
         }
 
         self.II[col_idx].doc_sizes[doc_id] += 1;
-        new_doc.* = false;
+        // new_doc.* = false;
     }
 
     inline fn addToken(
@@ -1476,9 +1472,9 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: *u16,
         col_idx: usize,
-        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
+        // token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
-        new_doc: *bool,
+        // new_doc: *bool,
     ) !void {
         if (cntr.* == 0) {
             return;
@@ -1490,9 +1486,9 @@ pub const BM25Partition = struct {
             doc_id, 
             term_pos.*, 
             col_idx, 
-            token_stream, 
+            // token_stream, 
             terms_seen,
-            new_doc,
+            // new_doc,
             );
 
         term_pos.* += @intFromBool(term_pos.* != std.math.maxInt(u16));
@@ -1528,7 +1524,7 @@ pub const BM25Partition = struct {
 
     pub fn processDocRfc4180(
         self: *BM25Partition,
-        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
+        // token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         buffer: []u8,
         byte_idx: *usize,
         doc_id: u32,
@@ -1542,12 +1538,12 @@ pub const BM25Partition = struct {
                 or 
             (buffer[buffer_idx] == '\n')
             ) {
-            try token_stream.addToken(
-                true,
-                std.math.maxInt(u16),
-                std.math.maxInt(u31),
-                col_idx,
-            );
+            // try token_stream.addToken(
+                // true,
+                // std.math.maxInt(u16),
+                // std.math.maxInt(u31),
+                // col_idx,
+            // );
             byte_idx.* += 1;
             return;
         }
@@ -1557,7 +1553,7 @@ pub const BM25Partition = struct {
         buffer_idx += @intFromBool(is_quoted);
 
         var cntr: usize = 0;
-        var new_doc: bool = (doc_id != 0);
+        // var new_doc: bool = (doc_id != 0);
 
         terms_seen.clear();
 
@@ -1572,15 +1568,24 @@ pub const BM25Partition = struct {
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
 
-                    try self.flushLargeToken(
+                    // try self.flushLargeToken(
+                        // buffer[buffer_idx - cntr..], 
+                        // &cntr, 
+                        // doc_id, 
+                        // &term_pos, 
+                        // col_idx, 
+                        // token_stream, 
+                        // terms_seen,
+                        // &new_doc,
+                        // );
+                    try self.addToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
                         doc_id, 
                         &term_pos, 
                         col_idx, 
-                        token_stream, 
                         terms_seen,
-                        &new_doc,
+                        // &new_doc,
                         );
                     buffer_idx += 1;
                     continue;
@@ -1605,9 +1610,9 @@ pub const BM25Partition = struct {
                                         doc_id, 
                                         &term_pos, 
                                         col_idx, 
-                                        token_stream, 
+                                        // token_stream, 
                                         terms_seen,
-                                        &new_doc,
+                                        // &new_doc,
                                         );
                                 }
                                 buffer_idx += 1;
@@ -1630,9 +1635,9 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             col_idx, 
-                            token_stream, 
+                            // token_stream, 
                             terms_seen,
-                            &new_doc,
+                            // &new_doc,
                             );
                     },
                     else => {
@@ -1649,15 +1654,25 @@ pub const BM25Partition = struct {
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
-                    try self.flushLargeToken(
+                    // try self.flushLargeToken(
+                        // buffer[buffer_idx - cntr..], 
+                        // &cntr, 
+                        // doc_id, 
+                        // &term_pos, 
+                        // col_idx, 
+                        // token_stream, 
+                        // terms_seen,
+                        // &new_doc,
+                        // );
+                    try self.addToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
                         doc_id, 
                         &term_pos, 
                         col_idx, 
-                        token_stream, 
+                        // token_stream, 
                         terms_seen,
-                        &new_doc,
+                        // &new_doc,
                         );
                     buffer_idx += 1;
                     continue;
@@ -1684,9 +1699,9 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             col_idx, 
-                            token_stream, 
+                            // token_stream, 
                             terms_seen,
-                            &new_doc,
+                            // &new_doc,
                             );
                     },
                     else => {
@@ -1709,21 +1724,21 @@ pub const BM25Partition = struct {
                 doc_id, 
                 term_pos, 
                 col_idx, 
-                token_stream, 
+                // token_stream, 
                 terms_seen,
-                &new_doc,
+                // &new_doc,
                 );
         }
 
-        if (new_doc) {
-            // No terms found. Add null token.
-            try token_stream.addToken(
-                true,
-                std.math.maxInt(u16),
-                std.math.maxInt(u31),
-                col_idx,
-            );
-        }
+        // if (new_doc) {
+            // // No terms found. Add null token.
+            // try token_stream.addToken(
+                // true,
+                // std.math.maxInt(u16),
+                // std.math.maxInt(u31),
+                // col_idx,
+            // );
+        // }
 
         byte_idx.* = buffer_idx;
     }
@@ -1731,7 +1746,7 @@ pub const BM25Partition = struct {
 
     pub fn processDocVbyte(
         self: *BM25Partition,
-        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
+        // token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         buffer: []u8,
         doc_id: u32,
         search_col_idx: usize,
@@ -1743,19 +1758,19 @@ pub const BM25Partition = struct {
             );
 
         if (buffer.len == 0) {
-            try token_stream.addToken(
-                true,
-                std.math.maxInt(u16),
-                std.math.maxInt(u31),
-                search_col_idx,
-            );
+            // try token_stream.addToken(
+                // true,
+                // std.math.maxInt(u16),
+                // std.math.maxInt(u31),
+                // search_col_idx,
+            // );
             return;
         }
 
         var term_pos: u16 = 0;
 
         var cntr: usize = 0;
-        var new_doc: bool = (doc_id != 0);
+        // var new_doc: bool = (doc_id != 0);
 
         terms_seen.clear();
 
@@ -1767,15 +1782,24 @@ pub const BM25Partition = struct {
 
             if (cntr > MAX_TERM_LENGTH - 4) {
                 @branchHint(.cold);
-                try self.flushLargeToken(
+                // try self.flushLargeToken(
+                    // buffer[buffer_idx - cntr..], 
+                    // &cntr, 
+                    // doc_id, 
+                    // &term_pos, 
+                    // search_col_idx, 
+                    // token_stream, 
+                    // terms_seen,
+                    // &new_doc,
+                    // );
+                try self.addToken(
                     buffer[buffer_idx - cntr..], 
                     &cntr, 
                     doc_id, 
                     &term_pos, 
                     search_col_idx, 
-                    token_stream, 
                     terms_seen,
-                    &new_doc,
+                    // &new_doc,
                     );
                 buffer_idx += 1;
                 continue;
@@ -1797,9 +1821,8 @@ pub const BM25Partition = struct {
                         doc_id, 
                         &term_pos, 
                         search_col_idx, 
-                        token_stream, 
                         terms_seen,
-                        &new_doc,
+                        // &new_doc,
                         );
                 },
                 else => {
@@ -1821,26 +1844,25 @@ pub const BM25Partition = struct {
                 doc_id, 
                 term_pos, 
                 search_col_idx, 
-                token_stream, 
                 terms_seen,
-                &new_doc,
+                // &new_doc,
                 );
         }
 
-        if (new_doc) {
-            // No terms found. Add null token.
-            try token_stream.addToken(
-                true,
-                std.math.maxInt(u16),
-                std.math.maxInt(u31),
-                search_col_idx,
-            );
-        }
+        // if (new_doc) {
+            // // No terms found. Add null token.
+            // try token_stream.addToken(
+                // true,
+                // std.math.maxInt(u16),
+                // std.math.maxInt(u31),
+                // search_col_idx,
+            // );
+        // }
     }
 
     pub fn processDocRfc8259(
         self: *BM25Partition,
-        token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
+        // token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         buffer: []u8,
         trie: *const RadixTrie(u32),
         search_col_idxs: *const std.ArrayListUnmanaged(u32),
@@ -1897,12 +1919,12 @@ pub const BM25Partition = struct {
                 or 
             (buffer[buffer_idx] == '}')
             ) {
-            try token_stream.addToken(
-                true,
-                std.math.maxInt(u16),
-                std.math.maxInt(u31),
-                II_idx,
-            );
+            // try token_stream.addToken(
+                // true,
+                // std.math.maxInt(u16),
+                // std.math.maxInt(u31),
+                // II_idx,
+            // );
 
             buffer_idx += 1;
             switch (buffer[buffer_idx - 1]) {
@@ -1932,7 +1954,7 @@ pub const BM25Partition = struct {
         buffer_idx += @intFromBool(is_quoted);
 
         var cntr: usize   = 0;
-        var new_doc: bool = (doc_id != 0);
+        // var new_doc: bool = (doc_id != 0);
 
         terms_seen.clear();
 
@@ -1948,15 +1970,24 @@ pub const BM25Partition = struct {
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
-                    try self.flushLargeToken(
+                    // try self.flushLargeToken(
+                        // buffer[buffer_idx - cntr..], 
+                        // &cntr, 
+                        // doc_id, 
+                        // &term_pos, 
+                        // II_idx, 
+                        // token_stream, 
+                        // terms_seen,
+                        // &new_doc,
+                        // );
+                    try self.addToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
                         doc_id, 
                         &term_pos, 
                         II_idx, 
-                        token_stream, 
                         terms_seen,
-                        &new_doc,
+                        // &new_doc,
                         );
                     buffer_idx += 1;
                     continue;
@@ -1982,9 +2013,8 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
-                            token_stream, 
                             terms_seen,
-                            &new_doc,
+                            // &new_doc,
                             );
                     },
                     '\\' => buffer_idx += 2,
@@ -2001,15 +2031,23 @@ pub const BM25Partition = struct {
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
-                    try self.flushLargeToken(
+                    // try self.flushLargeToken(
+                        // buffer[buffer_idx - cntr..], 
+                        // &cntr, 
+                        // doc_id, 
+                        // &term_pos, 
+                        // II_idx, 
+                        // terms_seen,
+                        // &new_doc,
+                        // );
+                    try self.addToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
                         doc_id, 
                         &term_pos, 
                         II_idx, 
-                        token_stream, 
                         terms_seen,
-                        &new_doc,
+                        // &new_doc,
                         );
                     buffer_idx += 1;
                     continue;
@@ -2030,9 +2068,8 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
-                            token_stream, 
                             terms_seen,
-                            &new_doc,
+                            // &new_doc,
                             );
                         json.nextPoint(buffer, &buffer_idx);
                         break: outer_loop;
@@ -2048,9 +2085,8 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
-                            token_stream, 
                             terms_seen,
-                            &new_doc,
+                            // &new_doc,
                             );
                         json.nextPoint(buffer, &buffer_idx);
                         break: outer_loop;
@@ -2066,9 +2102,8 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
-                            token_stream, 
                             terms_seen,
-                            &new_doc,
+                            // &new_doc,
                             );
                         json.nextPoint(buffer, &buffer_idx);
                         break: outer_loop;
@@ -2100,9 +2135,8 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
-                            token_stream, 
                             terms_seen,
-                            &new_doc,
+                            // &new_doc,
                             );
                         json.nextPoint(buffer, &buffer_idx);
                         break :outer_loop;
@@ -2128,21 +2162,20 @@ pub const BM25Partition = struct {
                 doc_id,
                 term_pos,
                 II_idx,
-                token_stream,
                 terms_seen,
-                &new_doc,
+                // &new_doc,
                 );
         }
 
-        if (new_doc) {
-            // No terms found. Add null token.
-            try token_stream.addToken(
-                true,
-                std.math.maxInt(u16),
-                std.math.maxInt(u31),
-                II_idx,
-            );
-        }
+        // if (new_doc) {
+            // // No terms found. Add null token.
+            // try token_stream.addToken(
+                // true,
+                // std.math.maxInt(u16),
+                // std.math.maxInt(u31),
+                // II_idx,
+            // );
+        // }
 
         switch (buffer[buffer_idx]) {
             ',' => {

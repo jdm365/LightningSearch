@@ -41,8 +41,8 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 const IDF_THRESHOLD: f32  = 1.0 + std.math.log2(100);
 
-// const MAX_NUM_THREADS: usize = 1;
-const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+const MAX_NUM_THREADS: usize = 1;
+// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -541,11 +541,11 @@ pub const IndexManager = struct {
         const start_byte = self.partitions.byte_offsets[partition_idx];
         // const end_byte   = self.partitions.byte_offsets[partition_idx + 1];
 
-        const output_filename = try std.fmt.allocPrint(
-            self.scratchArena(), 
-            "{s}/output_{d}", 
-            .{self.file_data.tmp_dir, partition_idx}
-            );
+        // const output_filename = try std.fmt.allocPrint(
+            // self.scratchArena(), 
+            // "{s}/output_{d}", 
+            // .{self.file_data.tmp_dir, partition_idx}
+            // );
 
         const end_token: u8 = switch (self.file_data.file_type) {
             fu.FileType.CSV => '\n',
@@ -567,12 +567,12 @@ pub const IndexManager = struct {
         defer reader.deinit(self.gpa());
 
 
-        var token_stream = try fu.TokenStreamV2(fu.token_32t_v2).init(
-            output_filename,
-            self.gpa(),
-            self.search_col_idxs.items.len,
-        );
-        defer token_stream.deinit();
+        // var token_stream = try fu.TokenStreamV2(fu.token_32t_v2).init(
+            // output_filename,
+            // self.gpa(),
+            // self.search_col_idxs.items.len,
+        // );
+        // defer token_stream.deinit();
 
         var freq_table: [256]u32 = undefined;
         @memset(freq_table[0..], 0);
@@ -667,7 +667,7 @@ pub const IndexManager = struct {
                         is_quoted = buffer[init_byte_idx] == '"';
 
                         try current_IP.processDocRfc4180(
-                            &token_stream,
+                            // &token_stream,
                             buffer,
                             &row_byte_idx,
                             @intCast(doc_id), 
@@ -705,7 +705,7 @@ pub const IndexManager = struct {
 
                     while (true) {
                         current_IP.processDocRfc8259(
-                            &token_stream,
+                            // &token_stream,
                             buffer,
                             &self.columns,
                             &self.search_col_idxs,
@@ -729,7 +729,7 @@ pub const IndexManager = struct {
         self.indexing_state.partition_is_indexing[partition_idx] = false;
 
         // Flush remaining tokens.
-        for (0..token_stream.num_terms.len) |_search_col_idx| {
+        for (0..current_IP.II.len) |_search_col_idx| {
             // try token_stream.flushTokenStream(_search_col_idx);
             try current_IP.II[_search_col_idx].commit(
                 current_IP.allocator,
@@ -760,20 +760,20 @@ pub const IndexManager = struct {
         var timer = try std.time.Timer.start();
         const interval_ns: u64 = 1_000_000_000 / 30;
 
-        const output_filename = try std.fmt.allocPrint(
-            self.scratchArena(), 
-            "{s}/output_{d}", 
-            .{self.file_data.tmp_dir, partition_idx}
-            );
+        // const output_filename = try std.fmt.allocPrint(
+            // self.scratchArena(), 
+            // "{s}/output_{d}", 
+            // .{self.file_data.tmp_dir, partition_idx}
+            // );
 
         const current_IP = &self.partitions.index_partitions[partition_idx];
 
-        var token_stream = try fu.TokenStreamV2(fu.token_32t_v2).init(
-            output_filename,
-            self.gpa(),
-            self.search_col_idxs.items.len,
-        );
-        defer token_stream.deinit();
+        // var token_stream = try fu.TokenStreamV2(fu.token_32t_v2).init(
+            // output_filename,
+            // self.gpa(),
+            // self.search_col_idxs.items.len,
+        // );
+        // defer token_stream.deinit();
 
         var freq_table: [256]u32 = undefined;
         @memset(freq_table[0..], 0);
@@ -860,7 +860,7 @@ pub const IndexManager = struct {
                     positions[col_idx].field_len = @truncate(field_length);
 
                     try current_IP.processDocVbyte(
-                        &token_stream,
+                        // &token_stream,
                         buffer[byte_idx..][0..field_length],
                         @truncate(doc_id), 
                         search_col_idx,
@@ -917,8 +917,11 @@ pub const IndexManager = struct {
         pq.freeRowGroup(buffer);
 
         // Flush remaining tokens.
-        for (0..self.search_col_idxs.items.len) |_search_col_idx| {
-            try token_stream.flushTokenStream(_search_col_idx);
+        for (0..current_IP.II.len) |_search_col_idx| {
+            // try token_stream.flushTokenStream(_search_col_idx);
+            try current_IP.II[_search_col_idx].commit(
+                current_IP.allocator,
+            );
         }
 
         // Flush remaining doc storage.
@@ -1058,6 +1061,7 @@ pub const IndexManager = struct {
                 1, 
                 num_rows,
                 self.file_data.tmp_dir,
+                idx,
                 );
         }
     }
@@ -1086,6 +1090,7 @@ pub const IndexManager = struct {
                 1, 
                 num_rows,
                 self.file_data.tmp_dir,
+                idx,
                 );
         }
     }
@@ -1126,6 +1131,7 @@ pub const IndexManager = struct {
             try self.partitions.index_partitions[partition_idx].resizeNumSearchCols(
                 num_search_cols,
                 self.file_data.tmp_dir,
+                partition_idx,
                 );
 
             if (self.file_data.file_type == .PARQUET) {
