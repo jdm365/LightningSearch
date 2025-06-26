@@ -1071,6 +1071,7 @@ pub const PostingsList = struct {
                   PostingV3,
                   std.mem.Alignment.fromByteUnits(512),
               ),
+    arena: std.heap.ArenaAllocator,
 
     pub fn init() PostingsList {
         return PostingsList{
@@ -1078,18 +1079,22 @@ pub const PostingsList = struct {
                   PostingV3,
                   std.mem.Alignment.fromByteUnits(512),
               ){},
+            .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
         };
+    }
+
+    pub fn deinit(self: *PostingsList) void {
+        self.arena.deinit();
     }
 
     pub inline fn append(
         self: *PostingsList, 
-        allocator: std.mem.Allocator,
         doc_id: u32,
         scratch_arr: *[NUM_BLOCKS]@Vector(16, u32),
         ) !void {
-        const val = try self.postings.addOne(allocator);
+        const val = try self.postings.addOne(self.arena.allocator());
         val.* = PostingV3.init();
-        try val.*.add(allocator, doc_id, scratch_arr);
+        try val.*.add(self.arena.allocator(), doc_id, scratch_arr);
     }
 };
 
@@ -1210,10 +1215,6 @@ pub const InvertedIndexV2 = struct {
             );
             current_pos += 8;
         }
-        std.debug.print(
-            "\nVocab size: {d}KB\n",
-            .{@divFloor((5 * @divFloor(self.vocab.map.count() * 2 * @sizeOf(u32), 4)) + (self.vocab.string_bytes.items.len), 1024)},
-        );
 
         if (current_pos + (self.doc_sizes.len * @sizeOf(u16)) > buf.items.len) {
             try buf.resize(allocator, buf.items.len + (self.doc_sizes.len * @sizeOf(u16)));
@@ -1441,7 +1442,7 @@ pub const BM25Partition = struct {
             gop.value_ptr.* = self.II[col_idx].num_terms;
 
             try self.II[col_idx].doc_freqs.append(self.allocator, 1);
-            try self.II[col_idx].posting_list.append(self.allocator,
+            try self.II[col_idx].posting_list.append(
                 doc_id,
                 &self.scratch_arr,
             );
