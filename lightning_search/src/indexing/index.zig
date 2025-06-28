@@ -212,6 +212,138 @@ pub const PostingsIterator = struct {
     }
 };
 
+pub const PostingsIteratorV2 = struct {
+    posting: PostingV3,
+    posting_len: usize,
+    uncompressed_doc_ids_buffer: [BLOCK_SIZE]u32,
+    uncompressed_tfs_buffer: [BLOCK_SIZE]u16,
+    current_doc_idx: usize,
+    tp_idx: usize,
+    score: usize,
+    term_id: u32,
+    col_idx: u32,
+    consumed: bool,
+
+    pub const Result = packed struct(u64) {
+        doc_id:    u32,
+        term_freq: u16,
+        term_pos:  u16,
+    };
+
+    pub fn init(
+        posting: PostingV3,
+        term_id: u32,
+        col_idx: u32,
+        score: usize,
+        ) PostingsIteratorV2 {
+        const posting_len = (BLOCK_SIZE * posting.full_blocks.items.len) + 
+                             posting.partial_block.num_docs;
+        return PostingsIteratorV2{ 
+            .posting = posting,
+            .posting_len = posting_len,
+            .uncompressed_doc_ids_buffer = &[_]u32{0} ** BLOCK_SIZE,
+            .uncompressed_tfs_buffer = &[_]u16{0} ** BLOCK_SIZE,
+            .current_doc_idx = undefined,
+            .tp_idx = undefined,
+            .score = score,
+            .term_id = term_id,
+            .col_idx = col_idx,
+            .consumed = false,
+        };
+    }
+
+    pub inline fn currentDocId(self: *const PostingsIteratorV2) ?u32 {
+        if (self.current_idx >= self.posting_len) {
+            return null;
+        }
+        return self.uncompressed_doc_ids_buffer[self.current_doc_idx % 64];
+    }
+
+    // pub inline fn currentTermPos(self: *const PostingsIteratorV2) ?u16 {
+        // if (self.current_idx >= self.term_positions.len) {
+            // return null;
+        // }
+// 
+        // return self.term_positions[self.current_idx];
+    // }
+
+    pub inline fn next(self: *PostingsIteratorV2) ?Result {
+        if (self.consumed) {
+            return null;
+        }
+
+        self.current_doc_idx += 1;
+
+        if (self.current_doc_idx >= self.posting_len) {
+            self.consumed = true;
+            return null;
+        }
+
+        return .{
+            .doc_id = self.uncompressed_doc_ids_buffer[self.current_doc_idx % 64],
+            .tf = self.uncompressed_tfs_buffer[self.current_doc_idx % 64],
+            .term_pos = undefined,
+        };
+    }
+
+    pub inline fn advanceTo(self: *PostingsIteratorV2, target_id: u32) ?Result {
+        if (self.current_idx >= self.posting_len) {
+            return null;
+        }
+
+        const idx = self.current_doc_idx % BLOCK_SIZE;
+        if (self.uncompressed_doc_ids_buffer[idx] >= target_id) {
+            return .{
+                .doc_id   = self.uncompressed_doc_ids_buffer[idx],
+                .tfs      = self.uncompressed_tfs_buffer[idx],
+                .term_pos = undefined,
+            };
+        }
+
+        const num_full_blocks = self.posting.full_blocks;
+        var block_idx = idx >> 7;
+        while (block_idx < num_full_blocks) {
+            if (linearLowerBoundSIMD(
+                self.uncompressed_doc_ids_buffer[idx..],
+                target_id,
+            )) |matched_idx| {
+
+                return null;
+            }
+
+            // TODO: Decompress full blocks
+
+            idx = std.mem.alignBackward(
+                usize,
+                idx + BLOCK_SIZE,
+                BLOCK_SIZE,
+            );
+            block_idx += 1;
+        }
+        // If here we need to search partial_block.
+
+        self.current_idx += found_idx_in_slice;
+
+        if (self.current_idx >= self.doc_ids.len) {
+            self.consumed = true;
+            return .{
+                .doc_id = std.math.maxInt(u32), 
+                .term_pos = std.math.maxInt(u16),
+            };
+        }
+
+        return .{
+            .doc_id = self.doc_ids[self.current_idx], 
+            .term_pos = self.term_positions[self.current_idx],
+        };
+    }
+
+    pub inline fn len(self: *PostingsIteratorV2) usize {
+        if (self.single_doc) |_| return 1;
+        return self.doc_ids.len;
+    }
+};
+
 pub const QueryResult = packed struct(u64){
     doc_id: u32,
     partition_idx: u32,
@@ -1073,13 +1205,13 @@ pub const PostingsList = struct {
               ),
     arena: std.heap.ArenaAllocator,
 
-    pub fn init() PostingsList {
+    pub fn init(child_allocator: std.mem.Allocator) PostingsList {
         return PostingsList{
             .postings = std.ArrayListAlignedUnmanaged(
                   PostingV3,
                   std.mem.Alignment.fromByteUnits(512),
               ){},
-            .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+            .arena = std.heap.ArenaAllocator.init(child_allocator),
         };
     }
 
@@ -1117,7 +1249,7 @@ pub const InvertedIndexV2 = struct {
         filename: []const u8,
         ) !InvertedIndexV2 {
         var II = InvertedIndexV2{
-            .posting_list = PostingsList.init(),
+            .posting_list = PostingsList.init(allocator),
             .vocab = undefined,
             .doc_freqs = std.ArrayListUnmanaged(u32){},
             .doc_sizes = try allocator.alloc(u16, num_docs),
@@ -1194,8 +1326,9 @@ pub const InvertedIndexV2 = struct {
         );
         current_pos += self.vocab.string_bytes.items.len;
 
-        if (current_pos + (self.vocab.map.count() * 2 * @sizeOf(u32)) > buf.items.len) {
-            try buf.resize(allocator, buf.items.len + (2 * self.vocab.map.count() * 2 * @sizeOf(u32)));
+        var max_range = current_pos + (self.vocab.map.count() * 2 * @sizeOf(u32));
+        if (max_range > buf.items.len) {
+            try buf.resize(allocator, 2 * max_range);
         }
         var map_iterator = self.vocab.map.iterator();
         while (map_iterator.next()) |item| {
@@ -1215,9 +1348,21 @@ pub const InvertedIndexV2 = struct {
             );
             current_pos += 8;
         }
+        std.debug.print("\nVocab size: {d}MB for {d} terms\n",
+            .{
+                @divFloor(
+                    self.vocab.string_bytes.items.len + 8 * self.vocab.map.count(),
+                    1 << 20,
+                ),
+                self.vocab.map.count(),
+            });
 
-        if (current_pos + (self.doc_sizes.len * @sizeOf(u16)) > buf.items.len) {
-            try buf.resize(allocator, buf.items.len + (self.doc_sizes.len * @sizeOf(u16)));
+        max_range = current_pos + self.doc_sizes.len * @sizeOf(u16);
+        if (max_range > buf.items.len) {
+            try buf.resize(
+                allocator, 
+                max_range,
+                );
         }
         @memcpy(
             buf.items[current_pos..][0..(self.doc_sizes.len * @sizeOf(u16))],
