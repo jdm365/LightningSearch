@@ -289,6 +289,9 @@ pub const PostingsIteratorV2 = struct {
             .on_partial_block = posting_len < BLOCK_SIZE,
         };
 
+        // TODO: Consider storing max_doc_id in metadata to potentially
+        //       skip decompressing blocks.
+
         if (it.on_partial_block) {
             // Decompress partial
             it.posting.partial_block.decompressToBuffers(
@@ -675,6 +678,8 @@ const BitpackedBlock = struct {
 pub const PostingsBlockFull = struct {
     doc_ids: DeltaBitpackedBlock,
     tfs:     BitpackedBlock,
+    max_score: f32,
+    max_doc_id: u32,
 
     pub inline fn decompressToBuffers(
         self: *const PostingsBlockFull,
@@ -882,6 +887,7 @@ const VByteBlock = struct {
     pub fn buildIntoBitpacked(
         self: *VByteBlock,
         allocator: std.mem.Allocator,
+        max_val: *u16,
         ) !BitpackedBlock {
         // Optimize later. For now, just convert to u32 buf, then call above func.
 
@@ -894,6 +900,7 @@ const VByteBlock = struct {
                 self.buffer.items.ptr,
                 &byte_ptr,
             ));
+            max_val.* = @max(@as(u16, @truncate(tmp_arr[idx])), max_val.*);
         }
 
         return try BitpackedBlock.build(
@@ -942,16 +949,28 @@ pub const PostingsBlockPartial = struct {
         self: *PostingsBlockPartial,
         allocator: std.mem.Allocator,
         scratch_arr: *[NUM_BLOCKS]@Vector(16, u32),
+        idf: f32,
     ) !PostingsBlockFull {
-        return PostingsBlockFull{
+        var max_tf: u16 = 1;
+        var fb = PostingsBlockFull{
             .doc_ids = try self.doc_ids.buildIntoDeltaBitpacked(
                 allocator,
                 scratch_arr,
             ),
             .tfs = try self.tfs.buildIntoBitpacked(
                 allocator,
+                &max_tf,
             ),
+            .max_score = undefined,
+            .max_doc_id = scratch_arr[NUM_BLOCKS - 1][BLOCK_SIZE - 1],
         };
+
+        // TODO: MODIFY STANDARD BM25 HERE.
+        //       1. For short docs, don't use tf.
+        //       2. For medium docs, cap tf score incluence.
+        fb.max_score = idf * @as(f32, @floatFromInt(max_tf));
+
+        return fb;
     }
 
     pub inline fn add(
@@ -1048,6 +1067,21 @@ pub const PostingV3 = struct {
                 @branchHint(.unlikely);
                 try buffer.resize(allocator, 2 * max_range);
             }
+
+            std.mem.writePackedInt(
+                u32,
+                buffer.items[current_pos.*..][0..4],
+                0,
+                block.max_doc_id,
+                ENDIANESS,
+            );
+            current_pos.* += 4;
+
+            @memcpy(
+                buffer.items[current_pos.*..][0..4],
+                @as([4]u8, @bitCast(block.max_score)),
+            );
+            current_pos.* += 4;
 
             std.mem.writePackedInt(
                 u32,
