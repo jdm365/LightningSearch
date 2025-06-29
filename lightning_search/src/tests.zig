@@ -1,71 +1,80 @@
 const std = @import("std");
 
-const DocStore = @import("storage/doc_store.zig").DocStore;
-const TermPos  = @import("server/server.zig").TermPos;
+const idx = @import("indexing/index.zig");
 
+test "PostingFullBlock compression/decompression" {
+    const allocator = std.testing.allocator;
 
-test "DocStore" {
-    // TODO: Actually implement.
-    // Use sample csv rows and test that read/write returns the expected result.
-    const test_csv_rows = "hello,one,two,three\nworld,four,five,six\nzig,seven,eight,nine\n";
-    const byte_positions = [_]TermPos{
-        TermPos{ .start_pos = 0, .field_len = 5 },
-        TermPos{ .start_pos = 6, .field_len = 3 },
-        TermPos{ .start_pos = 10, .field_len = 3 },
-        TermPos{ .start_pos = 14, .field_len = 5 },
+    var sorted_vals: [idx.BLOCK_SIZE]u32 align(512) = .{
+        0, 2, 5, 8, 12, 16, 20, 24,
+        30, 35, 40, 45, 50, 55, 60, 65,
 
-        TermPos{ .start_pos = 20, .field_len = 5 },
-        TermPos{ .start_pos = 26, .field_len = 4 },
-        TermPos{ .start_pos = 31, .field_len = 4 },
-        TermPos{ .start_pos = 36, .field_len = 3 },
+        70, 75, 80, 85, 90, 95, 100, 105,
+        110, 115, 120, 125, 130, 135, 140, 145,
 
-        TermPos{ .start_pos = 40, .field_len = 3 },
-        TermPos{ .start_pos = 44, .field_len = 5 },
-        TermPos{ .start_pos = 50, .field_len = 5 },
-        TermPos{ .start_pos = 56, .field_len = 4 },
+        150, 155, 160, 165, 170, 175, 180, 185,
+        190, 195, 200, 205, 210, 215, 220, 225,
+
+        230, 235, 240, 245, 250, 255, 260, 265,
+        270, 275, 280, 285, 290, 295, 300, 305,
     };
-
-    var gpa = std.heap.DebugAllocator(.{}){};
-    const doc_store = try DocStore.init(
-        &gpa,
-        &std.ArrayListUnmanaged(usize){},
-        &std.ArrayListUnmanaged(usize){},
-        &std.ArrayListUnmanaged(usize){},
-        "test_dir",
-        0,
+    var sorted_vals_cpy: [idx.BLOCK_SIZE]u32 align(512) = undefined;
+    @memcpy(
+        sorted_vals_cpy[0..idx.BLOCK_SIZE],
+        sorted_vals[0..idx.BLOCK_SIZE],
     );
-    defer doc_store.deinit() catch {};
 
-    // Test adding a row
-    try doc_store.addRow(byte_positions[0..], test_csv_rows[0..]);
 
-    // Test flushing
-    try doc_store.flush();
+    var scratch_arr: [idx.BLOCK_SIZE]u32 align(512) = undefined;
+    @memcpy(
+        scratch_arr[0..idx.BLOCK_SIZE],
+        sorted_vals[0..idx.BLOCK_SIZE],
+    );
 
-    // Test getting a row
-    var retrieved_row_data = try doc_store.gpa.allocator().alloc(
-        u8, 
-        doc_store.literal_byte_size_sum,
-        );
-    defer doc_store.gpa.allocator().free(retrieved_row_data);
+    var tf_arr: [idx.BLOCK_SIZE]u16 align(512) = .{
+        1, 1, 1, 1, 2, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1,
 
-    var retrieved_byte_positions = [_]TermPos{
-        TermPos{ .start_pos = 0, .field_len = 0 },
-        TermPos{ .start_pos = 0, .field_len = 0 },
-        TermPos{ .start_pos = 0, .field_len = 0 },
-        TermPos{ .start_pos = 0, .field_len = 0 },
+        1, 1, 1, 1, 1, 4, 1, 1,
+        1, 1, 1, 1, 1, 1, 2, 1,
 
-        TermPos{ .start_pos = 0, .field_len = 0 },
-        TermPos{ .start_pos = 0, .field_len = 0 },
-        TermPos{ .start_pos = 0, .field_len = 0 },
-        TermPos{ .start_pos = 0, .field_len = 0 },
+        1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1,
 
-        TermPos{ .start_pos = 0, .field_len = 0 },
-        TermPos{ .start_pos = 0, .field_len = 0 },
-        TermPos{ .start_pos = 0, .field_len = 0 },
-        TermPos{ .start_pos = 0, .field_len = 0 },
+        1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 3,
     };
-    try doc_store.getRow(0, retrieved_row_data[0..], retrieved_byte_positions[0..]);
+    var tf_arr_cpy: [idx.BLOCK_SIZE]u16 align(512) = undefined;
+    @memcpy(
+        tf_arr_cpy[0..idx.BLOCK_SIZE],
+        tf_arr[0..idx.BLOCK_SIZE],
+    );
 
-    std.debug.print("Retrieved Row Data: {s}\n", .{retrieved_row_data});
+    const fb = idx.PostingsBlockFull{
+        .doc_ids = try idx.DeltaBitpackedBlock.build(
+                allocator,
+                &scratch_arr,
+                &sorted_vals,
+            ),
+            .tfs = try idx.BitpackedBlock.build(
+                allocator,
+                &tf_arr,
+            ),
+            .max_score = 0.0,
+            .max_doc_id = scratch_arr[idx.BLOCK_SIZE - 1],
+        };
+
+    @memset(sorted_vals[0..idx.BLOCK_SIZE], 0);
+    @memset(tf_arr[0..idx.BLOCK_SIZE], 0);
+
+    try fb.decompressToBuffers(
+        &sorted_vals,
+        &tf_arr,
+    );
+
+
+    for (0..idx.BLOCK_SIZE) |i| {
+        try std.testing.expectEqual(sorted_vals[i], sorted_vals_cpy[i]);
+        try std.testing.expectEqual(tf_arr[i], tf_arr_cpy[i]);
+    }
 }

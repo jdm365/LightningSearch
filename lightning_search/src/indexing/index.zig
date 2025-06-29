@@ -371,6 +371,11 @@ pub const PostingsIteratorV2 = struct {
 
         var skipped = false;
         while (self.currentBlockMaxScore() <= min_score) {
+            if (self.on_partial_block) {
+                self.consumed = true;
+                return null;
+            }
+
             skipped = true;
 
             self.current_doc_idx = std.mem.alignBackward(
@@ -379,7 +384,7 @@ pub const PostingsIteratorV2 = struct {
                 64,
             );
             const block_idx = self.current_doc_idx >> (comptime std.math.log2(BLOCK_SIZE));
-            if (block_idx == NUM_BLOCKS) {
+            if (block_idx == self.posting.full_blocks.items.len) {
                 self.on_partial_block = true;
             }
             continue;
@@ -688,7 +693,7 @@ inline fn getBits32(
     return @as(u32, @truncate(value));
 }
 
-const DeltaBitpackedBlock = struct {
+pub const DeltaBitpackedBlock = struct {
     min_val: u32,
     bit_size: u8,
     buffer: []u8 align(512),
@@ -696,8 +701,8 @@ const DeltaBitpackedBlock = struct {
 
     pub fn build(
         allocator: std.mem.Allocator,
-        scratch_arr: *[NUM_BLOCKS]@Vector(16, u32),
-        sorted_vals: *[BLOCK_SIZE]u32,
+        scratch_arr: *align(512) [BLOCK_SIZE]u32,
+        sorted_vals: *align(512) [BLOCK_SIZE]u32,
         ) !DeltaBitpackedBlock {
         var dbp = DeltaBitpackedBlock{
             .min_val = sorted_vals[0],
@@ -706,7 +711,9 @@ const DeltaBitpackedBlock = struct {
         };
         var block_maxes: @Vector(NUM_BLOCKS, u32) = @splat(0);
 
-        const sv_vec: [*]@Vector(16, u32) = @constCast(@alignCast(@ptrCast(sorted_vals)));
+        const sv_vec: [*]@Vector(16, u32) = @ptrCast(sorted_vals);
+        var scratch_vec: [*]@Vector(16, u32) = @ptrCast(sorted_vals);
+
         inline for (0..NUM_BLOCKS) |block_idx| {
             const start_idx = comptime block_idx * 16;
             const shift_in_idx = comptime if (block_idx == NUM_BLOCKS - 1) 
@@ -715,12 +722,12 @@ const DeltaBitpackedBlock = struct {
                 start_idx + 16;
             
 
-            scratch_arr[block_idx] = std.simd.shiftElementsLeft(
+            scratch_vec[block_idx] = std.simd.shiftElementsLeft(
                 sv_vec[block_idx],
                 1,
                 sorted_vals[shift_in_idx],
             ) - sv_vec[block_idx];
-            block_maxes[block_idx] = @reduce(.Max, scratch_arr[block_idx]);
+            block_maxes[block_idx] = @reduce(.Max, scratch_vec[block_idx]);
         }
 
         const max_gap = @reduce(.Max, block_maxes);
@@ -737,9 +744,7 @@ const DeltaBitpackedBlock = struct {
 
         var bit_pos: usize = 0;
         inline for (0..BLOCK_SIZE) |idx| {
-            const block_idx = comptime @divFloor(idx, 16);
-            const lane_idx  = comptime idx % 16;
-            const gap: u32  = scratch_arr[block_idx][lane_idx];
+            const gap: u32  = scratch_arr[idx];
 
             putBits(dbp.buffer, bit_pos, gap, dbp.bit_size);
             bit_pos += dbp.bit_size;
@@ -749,23 +754,23 @@ const DeltaBitpackedBlock = struct {
     }
 };
 
-const BitpackedBlock = struct {
+pub const BitpackedBlock = struct {
     max_val: u32,
     bit_size: u8,
     buffer: []u8 align(512),
 
     pub fn build(
         allocator: std.mem.Allocator,
-        vals: *[BLOCK_SIZE]u32,
+        vals: *align(512) [BLOCK_SIZE]u16,
         ) !BitpackedBlock {
         var dbp = BitpackedBlock{
             .max_val = vals[0],
             .buffer = undefined,
             .bit_size = undefined,
         };
-        var block_maxes: @Vector(NUM_BLOCKS, u32) = @splat(0);
+        var block_maxes: @Vector(NUM_BLOCKS, u16) = @splat(0);
 
-        const sv_vec: [*]@Vector(16, u32) = @constCast(@alignCast(@ptrCast(vals)));
+        const sv_vec: [*]@Vector(16, u16) = @ptrCast(vals);
         inline for (0..NUM_BLOCKS) |block_idx| {
             block_maxes[block_idx] = @reduce(.Max, sv_vec[block_idx]);
         }
@@ -787,7 +792,7 @@ const BitpackedBlock = struct {
         inline for (0..BLOCK_SIZE) |idx| {
             const block_idx = comptime @divFloor(idx, 16);
             const lane_idx  = comptime idx % 16;
-            const val: u32  = sv_vec[block_idx][lane_idx];
+            const val: u16  = sv_vec[block_idx][lane_idx];
 
             putBits(dbp.buffer, bit_pos, val, dbp.bit_size);
             bit_pos += dbp.bit_size;
@@ -819,8 +824,8 @@ pub const PostingsBlockFull = struct {
             @branchHint(.cold);
             for (1..BLOCK_SIZE) |i| doc_ids[i] = prev;
         } else {
-            inline for (1..BLOCK_SIZE) |i| {
-                @setEvalBranchQuota(1600);
+            for (1..BLOCK_SIZE) |i| {
+                // @setEvalBranchQuota(1600);
 
                 const gap: u32 = getBits32(self.doc_ids.buffer, bit_pos, d_bits);
                 bit_pos += d_bits;
@@ -917,7 +922,7 @@ const DeltaVByteBlock = struct {
     pub fn buildIntoDeltaBitpacked(
         self: *DeltaVByteBlock,
         allocator: std.mem.Allocator,
-        scratch_arr: *[NUM_BLOCKS]@Vector(16, u32),
+        scratch_arr: *align(512) [BLOCK_SIZE]u32,
         ) !DeltaBitpackedBlock {
         // Optimize later. For now, just convert to u32 buf, then call above func.
 
@@ -1016,7 +1021,7 @@ const VByteBlock = struct {
         // Optimize later. For now, just convert to u32 buf, then call above func.
 
         // TODO: Thread local static arrays.
-        var tmp_arr: [BLOCK_SIZE]u32 align(512) = undefined;
+        var tmp_arr: [BLOCK_SIZE]u16 align(512) = undefined;
 
         var byte_ptr: usize = 0;
         for (0..BLOCK_SIZE) |idx| {
@@ -1059,7 +1064,7 @@ pub const PostingsBlockPartial = struct {
     pub fn flush(
         self: *PostingsBlockPartial,
         allocator: std.mem.Allocator,
-        scratch_arr: *[NUM_BLOCKS]@Vector(16, u32),
+        scratch_arr: *align(512) [BLOCK_SIZE]u32,
     ) !PostingsBlockFull {
         const full_map = try self.partialToFull(allocator, scratch_arr, self.max_score);
 
@@ -1074,7 +1079,7 @@ pub const PostingsBlockPartial = struct {
     fn partialToFull(
         self: *PostingsBlockPartial,
         allocator: std.mem.Allocator,
-        scratch_arr: *[NUM_BLOCKS]@Vector(16, u32),
+        scratch_arr: *align(512) [BLOCK_SIZE]u32,
         max_score: f32,
     ) !PostingsBlockFull {
         // TODO: CONSIDER MODIFYING STANDARD BM25 HERE.
@@ -1090,7 +1095,7 @@ pub const PostingsBlockPartial = struct {
                 allocator,
             ),
             .max_score = max_score,
-            .max_doc_id = scratch_arr[NUM_BLOCKS - 1][15],
+            .max_doc_id = scratch_arr[BLOCK_SIZE - 1],
         };
     }
 
@@ -1161,7 +1166,7 @@ pub const PostingV3 = struct {
         self: *PostingV3,
         allocator: std.mem.Allocator,
         doc_id: u32,
-        scratch_arr: *[NUM_BLOCKS]@Vector(16, u32),
+        scratch_arr: *align(512) [BLOCK_SIZE]u32,
     ) !void {
         try self.partial_block.add(
             allocator,
@@ -1186,8 +1191,8 @@ pub const PostingV3 = struct {
 
         for (self.full_blocks.items) |*block| {
             const max_range = current_pos.* + 
-                (block.doc_ids.buffer.len + block.tfs.buffer.len) + @sizeOf(u32)
-                + @sizeOf(u8);
+                (block.doc_ids.buffer.len + block.tfs.buffer.len) + @sizeOf(u32) * 3
+                + @sizeOf(u8) * 2;
 
             if (max_range > buffer.items.len) {
                 @branchHint(.unlikely);
@@ -1550,7 +1555,7 @@ pub const PostingsList = struct {
         self: *PostingsList, 
         term_id: u32,
         doc_id: u32,
-        scratch_arr: *[NUM_BLOCKS]@Vector(16, u32),
+        scratch_arr: *align(512) [BLOCK_SIZE]u32,
         ) !void {
         try self.postings.items[term_id].add(
             self.arena.allocator(), 
@@ -1562,7 +1567,7 @@ pub const PostingsList = struct {
     pub inline fn append(
         self: *PostingsList, 
         doc_id: u32,
-        scratch_arr: *[NUM_BLOCKS]@Vector(16, u32),
+        scratch_arr: *align(512) [BLOCK_SIZE]u32,
         ) !void {
         const val = try self.postings.addOne(self.arena.allocator());
         val.* = PostingV3.init();
@@ -1814,7 +1819,7 @@ pub const BM25Partition = struct {
 
     doc_store: DocStore,
 
-    scratch_arr: [NUM_BLOCKS]@Vector(16, u32),
+    scratch_arr: [BLOCK_SIZE]u32 align(512),
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -1831,9 +1836,7 @@ pub const BM25Partition = struct {
 
             .scratch_arr = undefined,
         };
-        for (0..NUM_BLOCKS) |block_idx| {
-            partition.scratch_arr[block_idx] = @splat(0);
-        }
+        @memset(partition.scratch_arr[0..BLOCK_SIZE], 0);
 
         for (0..num_search_cols) |idx| {
             const output_filename = try std.fmt.allocPrint(
@@ -1921,8 +1924,7 @@ pub const BM25Partition = struct {
             gop.key_ptr.* = @truncate(
                 self.II[col_idx].vocab.string_bytes.items.len - term_len - 1,
                 );
-            gop.value_ptr.* = self.II[col_idx].num_terms;
-            self.II[col_idx].num_terms += 1;
+            gop.value_ptr.* = self.II[col_idx].vocab.map.count() - 1;
 
             try self.II[col_idx].doc_freqs.append(self.allocator, 1);
             try self.II[col_idx].posting_list.append(

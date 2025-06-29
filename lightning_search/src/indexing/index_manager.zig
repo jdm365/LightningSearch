@@ -1281,14 +1281,15 @@ pub const IndexManager = struct {
                                 idf,
                                 boost_factors.items[II_idx],
                             );
-                            // std.debug.print(
-                                // "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
-                                // .{
-                                    // term_buffer[0..term_len],
-                                    // _token,
-                                    // II.doc_freqs.items[_token],
-                                // },
-                            // );
+
+                            std.debug.print(
+                                "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
+                                .{
+                                    term_buffer[0..term_len],
+                                    _token,
+                                    II.doc_freqs.items[_token],
+                                },
+                            );
 
                             term_pos += 1;
                             empty_query = false;
@@ -1337,14 +1338,15 @@ pub const IndexManager = struct {
                                     idf,
                                     boost_factors.items[II_idx],
                                 );
-                                // std.debug.print(
-                                    // "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
-                                    // .{
-                                        // term_buffer[0..term_len],
-                                        // _token,
-                                        // II.doc_freqs.items[_token],
-                                    // },
-                                // );
+
+                                std.debug.print(
+                                    "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
+                                    .{
+                                        term_buffer[0..term_len],
+                                        _token,
+                                        II.doc_freqs.items[_token],
+                                    },
+                                );
 
                                 term_pos += 1;
                                 empty_query = false;
@@ -1393,14 +1395,14 @@ pub const IndexManager = struct {
                         boost_factors.items[II_idx],
                     );
 
-                    // std.debug.print(
-                        // "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
-                        // .{
-                            // term_buffer[0..term_len],
-                            // _token,
-                            // II.doc_freqs.items[_token],
-                        // },
-                    // );
+                    std.debug.print(
+                        "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
+                        .{
+                            term_buffer[0..term_len],
+                            _token,
+                            II.doc_freqs.items[_token],
+                        },
+                    );
 
                     term_pos += 1;
                     empty_query = false;
@@ -1496,15 +1498,6 @@ pub const IndexManager = struct {
         std.debug.assert(iterators.items.len <= 8);
 
 
-        inline for (0..8) |idx| {
-            if (!consumed_mask[idx]) {
-                score_vec[idx] = @as(
-                    u16, 
-                    @intFromFloat(50.0 * iterators.items[idx].currentBlockMaxScore()),
-                    );
-            }
-        }
-
         // PROCESS
         // 1. Do (doc_id_vec < doc_id) for each iterator, to identify iterators which could potentially
         //    contain `doc_id`, and could impact the score.
@@ -1544,12 +1537,8 @@ pub const IndexManager = struct {
                 // If True, we need to consider the candidates. 
                 // `THEORETICAL MAX SCORE > MIN SCORE NEEDED TO BREAK INTO TOP K`
                 // Else we can safely skip this block.
-                // TODO: Only skip block now.
+                // TODO: Need to change to only skip block now.
                 if (@as(f32, @floatFromInt(upper_bound)) > 50.0 * sorted_scores.lastScore()) continue;
-                // std.debug.print(
-                    // "UPPER BOUND: {d} | LAST SCORE: {d}\n", 
-                    // .{@as(f32, @floatFromInt(upper_bound)), 50.0 * sorted_scores.lastScore()},
-                // );
 
                 if (c_doc_id > max_doc_id) {
                     max_doc_id = c_doc_id;
@@ -1565,11 +1554,9 @@ pub const IndexManager = struct {
                     const _res = try iterator.advanceTo(max_doc_id + 1);
 
                     if (_res) |res| {
-                        if (res.doc_id == std.math.maxInt(u32)) {
-                            consumed_mask[idx] = true;
-                        } else {
-                            current_doc_id = @min(res.doc_id, current_doc_id);
-                        }
+                        current_doc_id = @min(res.doc_id, current_doc_id);
+                    } else {
+                        consumed_mask[idx] = true;
                     }
                 }
             } else {
@@ -1652,7 +1639,7 @@ pub const IndexManager = struct {
             }
         }
 
-        // std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{total_docs_scored});
+        std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{total_docs_scored});
 
         for (0..sorted_scores.count) |idx| {
             const result = QueryResult{
