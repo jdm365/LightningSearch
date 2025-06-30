@@ -3,7 +3,7 @@ const std = @import("std");
 const idx = @import("indexing/index.zig");
 
 test "PostingFullBlock compression/decompression" {
-    const allocator = std.testing.allocator;
+    const allocator = std.heap.page_allocator;
 
     var sorted_vals: [idx.BLOCK_SIZE]u32 align(512) = .{
         0, 2, 5, 8, 12, 16, 20, 24,
@@ -63,6 +63,8 @@ test "PostingFullBlock compression/decompression" {
             .max_score = 0.0,
             .max_doc_id = scratch_arr[idx.BLOCK_SIZE - 1],
         };
+    defer allocator.free(fb.doc_ids.buffer);
+    defer allocator.free(fb.tfs.buffer);
 
     @memset(sorted_vals[0..idx.BLOCK_SIZE], 0);
     @memset(tf_arr[0..idx.BLOCK_SIZE], 0);
@@ -71,7 +73,6 @@ test "PostingFullBlock compression/decompression" {
         &sorted_vals,
         &tf_arr,
     );
-
 
     for (0..idx.BLOCK_SIZE) |i| {
         try std.testing.expectEqual(sorted_vals[i], sorted_vals_cpy[i]);

@@ -712,7 +712,7 @@ pub const DeltaBitpackedBlock = struct {
         var block_maxes: @Vector(NUM_BLOCKS, u32) = @splat(0);
 
         const sv_vec: [*]@Vector(16, u32) = @ptrCast(sorted_vals);
-        var scratch_vec: [*]@Vector(16, u32) = @ptrCast(sorted_vals);
+        var scratch_vec: [*]@Vector(16, u32) = @ptrCast(scratch_arr);
 
         inline for (0..NUM_BLOCKS) |block_idx| {
             const start_idx = comptime block_idx * 16;
@@ -730,17 +730,15 @@ pub const DeltaBitpackedBlock = struct {
             block_maxes[block_idx] = @reduce(.Max, scratch_vec[block_idx]);
         }
 
-        const max_gap = @reduce(.Max, block_maxes);
-        dbp.bit_size = @intCast(std.math.log2_int_ceil(
-            usize,
-            max_gap,
-        ));
-        const buffer_size = BLOCK_SIZE * dbp.bit_size;
+        const max_gap: u32 = @reduce(.Max, block_maxes);
+        dbp.bit_size = 32 - @clz(max_gap);
+        const buffer_size = ((BLOCK_SIZE * dbp.bit_size) + 7) >> 3;
         dbp.buffer = try allocator.alignedAlloc(
             u8,
             std.mem.Alignment.fromByteUnits(512),
             buffer_size,
             );
+        @memset(dbp.buffer, 0);
 
         var bit_pos: usize = 0;
         inline for (0..BLOCK_SIZE) |idx| {
@@ -775,24 +773,20 @@ pub const BitpackedBlock = struct {
             block_maxes[block_idx] = @reduce(.Max, sv_vec[block_idx]);
         }
 
-        const max_val = @reduce(.Max, block_maxes);
-        dbp.bit_size = @intCast(std.math.log2_int_ceil(
-            usize,
-            max_val,
-        ));
-        const buffer_size = BLOCK_SIZE * dbp.bit_size;
+        const max_val: u16 = @reduce(.Max, block_maxes);
+        dbp.bit_size = 16 - @clz(max_val);
+        const buffer_size = ((BLOCK_SIZE * dbp.bit_size) + 7) >> 3;
 
         dbp.buffer = try allocator.alignedAlloc(
             u8,
             comptime std.mem.Alignment.fromByteUnits(512),
             buffer_size,
             );
+        @memset(dbp.buffer, 0);
 
         var bit_pos: usize = 0;
         inline for (0..BLOCK_SIZE) |idx| {
-            const block_idx = comptime @divFloor(idx, 16);
-            const lane_idx  = comptime idx % 16;
-            const val: u16  = sv_vec[block_idx][lane_idx];
+            const val: u16  = vals[idx];
 
             putBits(dbp.buffer, bit_pos, val, dbp.bit_size);
             bit_pos += dbp.bit_size;
