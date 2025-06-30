@@ -1447,7 +1447,7 @@ pub const IndexManager = struct {
         if (iterators.items.len == 1) {
             var it = &iterators.items[0];
 
-            while (it.nextSkipping(sorted_scores.lastScore()) catch { return error.PostingsIteratorV2Error; }) |res| {
+            while (it.nextSkipping(sorted_scores.lastScoreCapacity()) catch { return error.PostingsIteratorV2Error; }) |res| {
                 const score: f32 = it.boost_weighted_idf * @as(f32, @floatFromInt(res.term_freq));
                 sorted_scores.insert(res.doc_id, score);
             }
@@ -1538,7 +1538,7 @@ pub const IndexManager = struct {
                 // `THEORETICAL MAX SCORE > MIN SCORE NEEDED TO BREAK INTO TOP K`
                 // Else we can safely skip this block.
                 // TODO: Need to change to only skip block now.
-                if (@as(f32, @floatFromInt(upper_bound)) > 50.0 * sorted_scores.lastScore()) continue;
+                if (@as(f32, @floatFromInt(upper_bound)) >= 50.0 * sorted_scores.lastScoreCapacity()) continue;
 
                 if (c_doc_id > max_doc_id) {
                     max_doc_id = c_doc_id;
@@ -2035,7 +2035,7 @@ pub const IndexManager = struct {
 
         var wg: std.Thread.WaitGroup = .{};
 
-        // const _start = std.time.microTimestamp();
+        const _start = std.time.microTimestamp();
         for (0..num_partitions) |partition_idx| {
             self.query_state.results_arrays[partition_idx].clear();
             self.query_state.results_arrays[partition_idx].resize(k);
@@ -2054,12 +2054,12 @@ pub const IndexManager = struct {
         }
 
         wg.wait();
-        // const _end = std.time.microTimestamp();
-        // const time_taken_us_query_only = _end - _start;
-        // std.debug.print(
-            // "Query took {d} us\n", 
-            // .{time_taken_us_query_only},
-        // );
+        const _end = std.time.microTimestamp();
+        const time_taken_us_query_only = _end - _start;
+        std.debug.print(
+            "Query took {d} us\n", 
+            .{time_taken_us_query_only},
+        );
 
         if (self.partitions.index_partitions.len > 1) {
             for (self.query_state.results_arrays[1..]) |*tr| {

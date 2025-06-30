@@ -363,6 +363,14 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
             }
             return self.scores[self.count - 1];
         }
+
+        pub inline fn lastScoreCapacity(self: *Self) f32 {
+            if (self.capacity == 0) {
+                @branchHint(.cold);
+                return std.math.floatMin(f32);
+            }
+            return self.scores[self.capacity - 1];
+        }
     };
 }
 
