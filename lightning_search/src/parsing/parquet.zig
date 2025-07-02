@@ -167,43 +167,43 @@ pub fn fetchRowFromRowGroup(
 }
 
 
-test "read_parquet_col" {
-    const filename = "../data/mb.parquet";
-
-    var num_values: usize = 0;
-
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-
-    var cols = std.ArrayListUnmanaged([]const u8){};
-
-    defer {
-        cols.deinit(arena.allocator());
-        arena.deinit();
-    }
-
-    try getParquetCols(arena.allocator(), &cols, filename);
-    for (0.., cols.items) |idx, col| {
-        std.debug.print("Col: {d} - {s}\n", .{idx, col});
-    }
-    std.debug.print("Num row groups: {d}\n", .{getNumRowGroupsParquet(filename)});
-
-    var data = readParquetRowGroupColumnUtf8NullTerminated(
-        filename,
-        0,
-        8,
-        &num_values,
-    );
-    // std.debug.print("Num values: {d}\n", .{num_values});
-    // std.debug.print("Data: {s}\n", .{data[0..64]});
-
-    data = readParquetRowGroupColumnUtf8NullTerminated(
-        filename,
-        0,
-        8,
-        &num_values,
-    );
-    lp.free_vec(data, num_values);
-
-
-    // TODO: Test row fetch.
-}
+// test "read_parquet_col" {
+    // const filename = "../data/mb.parquet";
+// 
+    // var num_values: usize = 0;
+// 
+    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+// 
+    // var cols = std.ArrayListUnmanaged([]const u8){};
+// 
+    // defer {
+        // cols.deinit(arena.allocator());
+        // arena.deinit();
+    // }
+// 
+    // try getParquetCols(arena.allocator(), &cols, filename);
+    // for (0.., cols.items) |idx, col| {
+        // std.debug.print("Col: {d} - {s}\n", .{idx, col});
+    // }
+    // std.debug.print("Num row groups: {d}\n", .{getNumRowGroupsParquet(filename)});
+// 
+    // var data = readParquetRowGroupColumnUtf8NullTerminated(
+        // filename,
+        // 0,
+        // 8,
+        // &num_values,
+    // );
+    // // std.debug.print("Num values: {d}\n", .{num_values});
+    // // std.debug.print("Data: {s}\n", .{data[0..64]});
+// 
+    // data = readParquetRowGroupColumnUtf8NullTerminated(
+        // filename,
+        // 0,
+        // 8,
+        // &num_values,
+    // );
+    // lp.free_vec(data, num_values);
+// 
+// 
+    // // TODO: Test row fetch.
+// }

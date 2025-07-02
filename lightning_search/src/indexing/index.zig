@@ -105,151 +105,6 @@ inline fn linearLowerBoundSIMD(
 }
 
 
-pub const PostingsIterator = struct {
-    doc_ids: []u32,
-    term_positions: []u16,
-    doc_idx: usize,
-    tp_idx: usize,
-    score: usize,
-    term_id: u32,
-    col_idx: u32,
-    consumed: bool,
-    single_doc: ?flag_u32,
-    single_term: ?flag_u32,
-
-    pub const Result = struct {
-        doc_id: u32,
-        term_pos: u16,
-    };
-
-    pub fn init(
-        doc_ids: []u32, 
-        term_positions: []u16, 
-        term_id: u32,
-        col_idx: u32,
-        score: usize,
-        single_doc_id: ?flag_u32,
-        single_term: ?flag_u32,
-        ) PostingsIterator {
-        return PostingsIterator{ 
-            .doc_ids = doc_ids,
-            .term_positions = term_positions,
-            .term_id = term_id,
-            .current_idx = 0,
-            .score = score,
-            .col_idx = col_idx,
-            .consumed = false,
-            .single_doc = single_doc_id,
-            .single_term = single_term,
-        };
-    }
-
-    pub inline fn currentDocId(self: *const PostingsIterator) u32 {
-        if (self.single_doc) |d| {
-            return @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111;
-        }
-
-        if (self.current_idx >= self.doc_ids.len) {
-            return std.math.maxInt(u32);
-        }
-        return self.doc_ids[self.current_idx];
-    }
-
-    pub inline fn currentTermPos(self: *const PostingsIterator) u16 {
-        if (self.single_term) |t| {
-            return @truncate(
-                @as(u32, @bitCast(t)) & 0b00000000_00000000_11111111_11111111
-            );
-        }
-
-        if (self.current_idx >= self.term_positions.len) {
-            return std.math.maxInt(u16);
-        }
-
-        return self.term_positions[self.current_idx];
-    }
-
-    pub inline fn next(self: *PostingsIterator) Result {
-        if (self.consumed) {
-            return .{
-                .doc_id = std.math.maxInt(u32),
-                .term_pos = std.math.maxInt(u16),
-            };
-        }
-        if (self.single_doc) |d| {
-            return .{
-                .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                .term_pos = @truncate(@as(u32, @bitCast(self.single_term.?)) & 0b00000000_00000000_11111111_11111111),
-            };
-        }
-
-        self.current_idx += 1;
-
-        if (self.current_idx >= self.doc_ids.len) {
-            self.consumed = true;
-            return .{
-                .doc_id = std.math.maxInt(u32),
-                .term_pos = std.math.maxInt(u16),
-            };
-        }
-
-        return .{
-            .doc_id = self.doc_ids[self.current_idx],
-            .term_pos = self.term_positions[self.current_idx],
-        };
-    }
-
-    pub inline fn advanceTo(self: *PostingsIterator, target_id: u32) Result {
-        if (self.current_idx >= self.doc_ids.len) {
-            return .{
-                .doc_id = std.math.maxInt(u32), 
-                .term_pos = std.math.maxInt(u16),
-            };
-        }
-
-        if (self.single_doc) |d| {
-            return .{
-                .doc_id = @as(u32, @bitCast(d)) & 0b01111111_11111111_11111111_11111111,
-                .term_pos = @truncate(
-                    @as(u32, @bitCast(self.single_term.?)) & 0b00000000_00000000_01111111_11111111
-                ),
-            };
-        }
-
-        if (self.doc_ids[self.current_idx] >= target_id) {
-            return .{
-                .doc_id   = self.doc_ids[self.current_idx],
-                .term_pos = self.term_positions[self.current_idx],
-            };
-        }
-
-        const found_idx_in_slice = linearLowerBound(
-            self.doc_ids[self.current_idx..],
-            target_id,
-        );
-
-        self.current_idx += found_idx_in_slice;
-
-        if (self.current_idx >= self.doc_ids.len) {
-            self.consumed = true;
-            return .{
-                .doc_id = std.math.maxInt(u32), 
-                .term_pos = std.math.maxInt(u16),
-            };
-        }
-
-        return .{
-            .doc_id = self.doc_ids[self.current_idx], 
-            .term_pos = self.term_positions[self.current_idx],
-        };
-    }
-
-    pub inline fn len(self: *PostingsIterator) usize {
-        if (self.single_doc) |_| return 1;
-        return self.doc_ids.len;
-    }
-};
-
 pub const PostingsIteratorV2 = struct {
     posting: PostingV3,
     posting_len: usize,
@@ -338,8 +193,10 @@ pub const PostingsIteratorV2 = struct {
 
         if (self.current_doc_idx >= self.posting_len) {
             self.consumed = true;
+            self.current_doc_idx = std.math.maxInt(u32);
             return null;
         }
+
 
         if (self.current_doc_idx % BLOCK_SIZE == 0) {
             const block_idx = self.current_doc_idx >> (comptime std.math.log2(BLOCK_SIZE));
@@ -354,12 +211,18 @@ pub const PostingsIteratorV2 = struct {
                     &self.uncompressed_doc_ids_buffer,
                     &self.uncompressed_tfs_buffer,
                 );
+                // std.debug.print(
+                    // "BLOCK IDX: {d} | DOC IDS: {d}\n",
+                    // .{block_idx, self.uncompressed_doc_ids_buffer},
+                // );
             }
         }
+        // std.debug.print("Current doc id: {d}\n", .{self.uncompressed_doc_ids_buffer[self.current_doc_idx % BLOCK_SIZE]});
 
+        const prev_idx = self.current_doc_idx - 1;
         return .{
-            .doc_id    = self.uncompressed_doc_ids_buffer[self.current_doc_idx % BLOCK_SIZE],
-            .term_freq = self.uncompressed_tfs_buffer[self.current_doc_idx % BLOCK_SIZE],
+            .doc_id    = self.uncompressed_doc_ids_buffer[prev_idx % BLOCK_SIZE],
+            .term_freq = self.uncompressed_tfs_buffer[prev_idx % BLOCK_SIZE],
             .term_pos  = undefined,
         };
     }
@@ -373,6 +236,7 @@ pub const PostingsIteratorV2 = struct {
         while (self.currentBlockMaxScore() <= min_score) {
             if (self.on_partial_block) {
                 self.consumed = true;
+                self.current_doc_idx = std.math.maxInt(u32);
                 return null;
             }
 
@@ -426,6 +290,7 @@ pub const PostingsIteratorV2 = struct {
 
         if (self.current_doc_idx >= self.posting_len) {
             self.consumed = true;
+            self.current_doc_idx = std.math.maxInt(u32);
             return null;
         }
 
@@ -468,6 +333,7 @@ pub const PostingsIteratorV2 = struct {
 
                 if (self.current_doc_idx >= self.posting_len) {
                     self.consumed = true;
+                    self.current_doc_idx = std.math.maxInt(u32);
                     return null;
                 }
 
@@ -541,6 +407,7 @@ pub const PostingsIteratorV2 = struct {
 
         if (self.current_doc_idx >= self.posting_len) {
             self.consumed = true;
+            self.current_doc_idx = std.math.maxInt(u32);
             return null;
         }
 
@@ -1066,6 +933,7 @@ pub const PostingsBlockPartial = struct {
         self.doc_ids.clear();
         self.tfs.clear();
         self.max_score = 0.0;
+        self.prev_doc_id = 0;
 
         return full_map;
     }
@@ -1080,7 +948,7 @@ pub const PostingsBlockPartial = struct {
         //       1. For short docs, don't use tf.
         //       2. For medium docs, cap tf score incluence.
 
-        return PostingsBlockFull{
+        var pbf = PostingsBlockFull{
             .doc_ids = try self.doc_ids.buildIntoDeltaBitpacked(
                 allocator,
                 scratch_arr,
@@ -1089,8 +957,11 @@ pub const PostingsBlockPartial = struct {
                 allocator,
             ),
             .max_score = max_score,
-            .max_doc_id = scratch_arr[BLOCK_SIZE - 1],
+            .max_doc_id = undefined,
         };
+        pbf.max_doc_id = scratch_arr[BLOCK_SIZE - 1];
+
+        return pbf;
     }
 
     pub inline fn add(
@@ -2005,7 +1876,7 @@ pub const BM25Partition = struct {
         col_idx: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
-        var buffer_idx: usize = byte_idx.*;
+        var buffer_idx = byte_idx.*;
 
         if (
             (buffer[buffer_idx] == ',') 

@@ -58,4 +58,26 @@ pub fn build(b: *std.Build) void {
     shared_step.dependOn(&shared_lib.step);
     shared_step.dependOn(&shared_install.step);
     exe_step.dependOn(&exe.step);
+
+
+
+     const tests = b.addTest(.{
+        .root_source_file = b.path("src/tests.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Apply same dependencies as your executable
+    tests.linkLibC();
+    tests.linkSystemLibrary("unwind");
+    tests.addIncludePath(b.path("lib"));
+    tests.addObjectFile(b.path("lib/libparquet_bindings.a"));
+    tests.root_module.addImport("zap", zap.module("zap"));
+
+    // Create run step that actually executes the tests
+    const run_tests = b.addRunArtifact(tests);
+
+    // Create top-level test step
+    const test_step = b.step("test", "Run tests");
+    test_step.dependOn(&run_tests.step);
 }

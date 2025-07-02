@@ -180,7 +180,7 @@ pub fn SortedScoreArray(comptime T: type) type {
         }
 
         pub inline fn getMinScore(self: *Self) f32 {
-            if (self.count != self.capacity) return std.math.floatMin(f32);
+            if (self.count != self.capacity) return -std.math.floatMax(f32);
             return self.items[self.count - 1].score;
         }
 
@@ -229,7 +229,7 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
                 .@"32",
                 alloc_size,
                 );
-            @memset(scores, std.math.floatMin(f32));
+            @memset(scores, -std.math.floatMax(f32));
 
             return Self{
                 .allocator = allocator,
@@ -359,7 +359,7 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
 
         pub inline fn lastScore(self: *Self) f32 {
             if (self.count == 0) {
-                return std.math.floatMin(f32);
+                return -std.math.floatMax(f32);
             }
             return self.scores[self.count - 1];
         }
@@ -367,7 +367,7 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
         pub inline fn lastScoreCapacity(self: *Self) f32 {
             if (self.capacity == 0) {
                 @branchHint(.cold);
-                return std.math.floatMin(f32);
+                return -std.math.floatMax(f32);
             }
             return self.scores[self.capacity - 1];
         }

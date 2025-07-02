@@ -79,3 +79,73 @@ test "PostingFullBlock compression/decompression" {
         try std.testing.expectEqual(tf_arr[i], tf_arr_cpy[i]);
     }
 }
+
+test "PostingPartialBlock compression/decompression" {
+    const allocator = std.heap.page_allocator;
+
+    var pb = idx.PostingsBlockPartial.init();
+
+    var sorted_vals: [idx.BLOCK_SIZE]u32 align(512) = .{
+        2, 5, 8, 12, 16, 20, 24, 26,
+        30, 35, 40, 45, 50, 55, 60, 65,
+
+        70, 75, 80, 85, 90, 95, 100, 105,
+        110, 115, 120, 125, 130, 135, 140, 145,
+
+        150, 155, 160, 165, 170, 175, 180, 185,
+        190, 195, 200, 205, 210, 215, 220, 225,
+
+        230, 235, 240, 245, 250, 255, 260, 265,
+        270, 275, 280, 285, 290, 295, 10000, 1058020,
+    };
+    var sorted_vals_cpy: [idx.BLOCK_SIZE]u32 align(512) = undefined;
+    @memcpy(
+        sorted_vals_cpy[0..idx.BLOCK_SIZE],
+        sorted_vals[0..idx.BLOCK_SIZE],
+    );
+
+
+    var scratch_arr: [idx.BLOCK_SIZE]u32 align(512) = undefined;
+    @memcpy(
+        scratch_arr[0..idx.BLOCK_SIZE],
+        sorted_vals[0..idx.BLOCK_SIZE],
+    );
+
+    var tf_arr: [idx.BLOCK_SIZE]u16 align(512) = .{
+        1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1,
+
+        1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1,
+
+        1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1,
+
+        1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1,
+    };
+    var tf_arr_cpy: [idx.BLOCK_SIZE]u16 align(512) = undefined;
+    @memcpy(
+        tf_arr_cpy[0..idx.BLOCK_SIZE],
+        tf_arr[0..idx.BLOCK_SIZE],
+    );
+
+    for (0..idx.BLOCK_SIZE) |i| {
+        try pb.add(allocator, sorted_vals[i]);
+    }
+    defer pb.doc_ids.buffer.deinit(allocator);
+    defer pb.tfs.buffer.deinit(allocator);
+
+    @memset(sorted_vals[0..idx.BLOCK_SIZE], 0);
+    @memset(tf_arr[0..idx.BLOCK_SIZE], 0);
+
+    pb.decompressToBuffers(
+        &sorted_vals,
+        &tf_arr,
+    );
+
+    for (0..idx.BLOCK_SIZE) |i| {
+        try std.testing.expectEqual(sorted_vals[i], sorted_vals_cpy[i]);
+        try std.testing.expectEqual(tf_arr[i], tf_arr_cpy[i]);
+    }
+}

@@ -1529,7 +1529,7 @@ pub const IndexManager = struct {
                 const doc_id: @Vector(8, u32) = @splat(c_doc_id);
                 const upper_bound = @reduce(
                     .Add,
-                    score_vec * @as(@Vector(8, u16), @intFromBool(doc_id_vec < doc_id)),
+                    score_vec * @as(@Vector(8, u16), @intFromBool(doc_id_vec <= doc_id)),
                     );
 
                 min_doc_id = @min(c_doc_id, min_doc_id);
@@ -1538,11 +1538,18 @@ pub const IndexManager = struct {
                 // `THEORETICAL MAX SCORE > MIN SCORE NEEDED TO BREAK INTO TOP K`
                 // Else we can safely skip this block.
                 // TODO: Need to change to only skip block now.
-                if (@as(f32, @floatFromInt(upper_bound)) >= 50.0 * sorted_scores.lastScoreCapacity()) continue;
+                if (@as(f32, @floatFromInt(upper_bound)) > 50.0 * sorted_scores.lastScoreCapacity()) continue;
+                // std.debug.print("Doc id: {}\n",  .{doc_id});
+                // std.debug.print("Vec: {}\n",  .{doc_id_vec});
+                // std.debug.print("Vec2: {}\n",  .{doc_id_vec <= doc_id});
+                // std.debug.print("Vec3: {d}\n", .{score_vec});
+                // std.debug.print("It idx: {d} | Last score capacity: {d} | Upper bound: {d}\n\n", .{
+                    // idx,
+                    // sorted_scores.lastScoreCapacity() * 50.0,
+                    // upper_bound,
+                // });
 
-                if (c_doc_id > max_doc_id) {
-                    max_doc_id = c_doc_id;
-                }
+                max_doc_id = @max(c_doc_id, max_doc_id);
             }
 
             if (max_doc_id > min_doc_id) {
@@ -1574,6 +1581,7 @@ pub const IndexManager = struct {
                 // pos.clear();
             // }
 
+            var match_count: usize = 0;
             var base_score: f32 = 0.0;
             for (0.., iterators.items) |idx, *it| {
                 if (consumed_mask[idx]) continue;
@@ -1589,6 +1597,7 @@ pub const IndexManager = struct {
 
                 const _res = try it.next();
                 if (_res) |res| {
+                    match_count += 1;
                     base_score += it.boost_weighted_idf * @as(f32, @floatFromInt(res.term_freq));
                 } else {
                     consumed_mask[idx] = true;
