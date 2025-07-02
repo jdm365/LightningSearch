@@ -1,6 +1,6 @@
 EXEC_PATH := ./swift/build/search_app
 BIN_PATH  := lightning_search.bin
-DATA_PATH := ../../data/enwiki.csv
+DATA_PATH := ../../data/mb.csv
 
 build:
 	zig build shared

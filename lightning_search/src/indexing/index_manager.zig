@@ -538,13 +538,6 @@ pub const IndexManager = struct {
         const end_doc    = self.partitions.row_offsets[partition_idx + 1];
 
         const start_byte = self.partitions.byte_offsets[partition_idx];
-        // const end_byte   = self.partitions.byte_offsets[partition_idx + 1];
-
-        // const output_filename = try std.fmt.allocPrint(
-            // self.scratchArena(), 
-            // "{s}/output_{d}", 
-            // .{self.file_data.tmp_dir, partition_idx}
-            // );
 
         const end_token: u8 = switch (self.file_data.file_type) {
             fu.FileType.CSV => '\n',
@@ -565,13 +558,6 @@ pub const IndexManager = struct {
         );
         defer reader.deinit(self.gpa());
 
-
-        // var token_stream = try fu.TokenStreamV2(fu.token_32t_v2).init(
-            // output_filename,
-            // self.gpa(),
-            // self.search_col_idxs.items.len,
-        // );
-        // defer token_stream.deinit();
 
         var freq_table: [256]u32 = undefined;
         @memset(freq_table[0..], 0);
@@ -666,10 +652,9 @@ pub const IndexManager = struct {
                         is_quoted = buffer[init_byte_idx] == '"';
 
                         try current_IP.processDocRfc4180(
-                            // &token_stream,
                             buffer,
                             &row_byte_idx,
-                            @intCast(doc_id), 
+                            @truncate(doc_id), 
                             search_col_idx,
                             &terms_seen_bitset,
                             );
@@ -1527,10 +1512,12 @@ pub const IndexManager = struct {
                 const c_doc_id = it.currentDocId().?;
 
                 const doc_id: @Vector(8, u32) = @splat(c_doc_id);
-                const upper_bound = @reduce(
+                const upper_bound: f32 = @floatFromInt(
+                    @reduce(
                     .Add,
                     score_vec * @as(@Vector(8, u16), @intFromBool(doc_id_vec <= doc_id)),
-                    );
+                    )
+                );
 
                 min_doc_id = @min(c_doc_id, min_doc_id);
 
@@ -1538,7 +1525,7 @@ pub const IndexManager = struct {
                 // `THEORETICAL MAX SCORE > MIN SCORE NEEDED TO BREAK INTO TOP K`
                 // Else we can safely skip this block.
                 // TODO: Need to change to only skip block now.
-                if (@as(f32, @floatFromInt(upper_bound)) > 50.0 * sorted_scores.lastScoreCapacity()) continue;
+                if (upper_bound > 50.0 * sorted_scores.lastScoreCapacity()) continue;
                 // std.debug.print("Doc id: {}\n",  .{doc_id});
                 // std.debug.print("Vec: {}\n",  .{doc_id_vec});
                 // std.debug.print("Vec2: {}\n",  .{doc_id_vec <= doc_id});
@@ -1558,7 +1545,7 @@ pub const IndexManager = struct {
                     if (consumed_mask[idx]) continue;
 
                     var iterator = &iterators.items[idx];
-                    const _res = try iterator.advanceTo(max_doc_id + 1);
+                    const _res = try iterator.advanceTo(max_doc_id);
 
                     if (_res) |res| {
                         current_doc_id = @min(res.doc_id, current_doc_id);
@@ -1610,6 +1597,9 @@ pub const IndexManager = struct {
                     // base_score += @as(f32, @floatFromInt(it.score)) +
                                   // 25.0 * @as(f32, @floatFromInt(@intFromBool(tp == 0)));
                 // }
+            }
+            if (match_count == 5) {
+                std.debug.print("MATCHED 5\n", .{});
             }
 
             // 3c. Apply Phrase Scoring Boost

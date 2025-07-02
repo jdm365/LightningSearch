@@ -318,32 +318,33 @@ pub const PostingsIteratorV2 = struct {
         if (!self.on_partial_block) {
             const num_full_blocks = self.posting.full_blocks.items.len;
 
-            if (num_full_blocks == 0) {
-                self.on_partial_block = true;
-                self.posting.partial_block.decompressToBuffers(
-                    &self.uncompressed_doc_ids_buffer,
-                    &self.uncompressed_tfs_buffer,
-                    );
-
-                const match_idx = linearLowerBound(
-                    self.uncompressed_doc_ids_buffer[idx..self.posting.partial_block.num_docs],
-                    target_id,
-                );
-                self.current_doc_idx += match_idx;
-
-                if (self.current_doc_idx >= self.posting_len) {
-                    self.consumed = true;
-                    self.current_doc_idx = std.math.maxInt(u32);
-                    return null;
-                }
-
-                idx = self.current_doc_idx % BLOCK_SIZE;
-                return .{
-                    .doc_id    = self.uncompressed_doc_ids_buffer[idx],
-                    .term_freq = self.uncompressed_tfs_buffer[idx],
-                    .term_pos  = undefined,
-                };
-            }
+            std.debug.assert(num_full_blocks > 0);
+            // if (num_full_blocks == 0) {
+                // self.on_partial_block = true;
+                // self.posting.partial_block.decompressToBuffers(
+                    // &self.uncompressed_doc_ids_buffer,
+                    // &self.uncompressed_tfs_buffer,
+                    // );
+// 
+                // const match_idx = linearLowerBound(
+                    // self.uncompressed_doc_ids_buffer[idx..self.posting.partial_block.num_docs],
+                    // target_id,
+                // );
+                // self.current_doc_idx += match_idx;
+// 
+                // if (self.current_doc_idx >= self.posting_len) {
+                    // self.consumed = true;
+                    // self.current_doc_idx = std.math.maxInt(u32);
+                    // return null;
+                // }
+// 
+                // idx = self.current_doc_idx % BLOCK_SIZE;
+                // return .{
+                    // .doc_id    = self.uncompressed_doc_ids_buffer[idx],
+                    // .term_freq = self.uncompressed_tfs_buffer[idx],
+                    // .term_pos  = undefined,
+                // };
+            // }
 
             var block_idx = self.current_doc_idx >> (comptime std.math.log2(BLOCK_SIZE));
             var skipped_block = false;
@@ -501,25 +502,6 @@ const Vocab = struct {
         return self.map.getAdapted(key, adapter);
     }
 };
-
-pub const Postings = struct {
-    doc_ids: []u32,
-    term_positions: []u16,
-};
-
-pub const flag_u32 = packed struct(u32) {
-    value: u31,
-    is_inline: u1,
-};
-
-pub const flag_tp_u32 = packed struct(u32) {
-    second: u15,
-    _: u1,
-
-    first: u15,
-    is_inline: u1,
-};
-
 
 pub const BLOCK_SIZE: usize = 64;
 pub const NUM_BLOCKS: usize = @divExact(BLOCK_SIZE, 16);
@@ -1140,261 +1122,6 @@ pub const PostingV3 = struct {
     }
 };
 
-
-pub const TPList = struct {
-    // TODO: Add compression.
-    term_positions: []u16,
-};
-
-pub const PostingsV2 = struct {
-    doc_id_ptrs:  []align(std.heap.page_size_min)flag_u32,
-    doc_id_buf: []align(std.heap.page_size_min)u32,
-
-    term_pos_ptrs:  []align(std.heap.page_size_min)flag_tp_u32,
-
-    // Max value means TF > 1. Look up in hash map.
-    term_positions: []align(std.heap.page_size_min)u16,
-
-    pub const BlockPair = packed struct(u64) {
-        block_idx: u32,
-        buffer_idx: u32,
-    };
-
-
-    // ____________________________________________________________________
-    // term_positions
-    // term <IDX>: | doc_id<0> [tp_0, tp_1, tp_2], doc_id<1> [tp_0, tp_1] |
-    //                                             ^greater than doc_id<0>
-    // ____________________________________________________________________
-
-    pub inline fn getBlockIdx(_: *const PostingsV2, idx: usize) !BlockPair {
-        // Given an index which represents the TP if this were a giant raw u16 buffer,
-        // return the corresponding block_idx and the buffer_idx.
-        
-        // block_idx = num_254_buffers.
-        const block_idx = try std.math.divCeil(usize, idx, 254);
-        const buffer_idx = idx % 254;
-        return .{
-            .block_idx = block_idx,
-            .buffer_idx = buffer_idx,
-        };
-    }
-
-    // pub inline fn advanceToBlock(self: *const BlockPair, doc_id: usize, start_pos: BlockPair) !BlockPair {
-        // // Return first position where the doc_id is greater than or equal to the given doc_id.
-       //  
-        // // TODO: Handle boundary condition.
-        // var current_buffer_idx = start_pos.buffer_idx;
-        // var current_block_idx = start_pos.block_idx;
-// 
-        // var current_doc_id = self.term_positions[start_pos.block_idx].current_doc_id;
-        // var next_doc_id = self.term_positions[start_pos.block_idx + 1].current_doc_id;
-// 
-        // while (next_doc_id < doc_id) {
-            // current_block_idx += 1;
-            // current_buffer_idx = 0;
-// 
-            // current_doc_id = next_doc_id;
-            // next_doc_id = self.term_positions[start_pos.block_idx + 1].current_doc_id;
-        // }
-// 
-        // // const current_block = self.term_positions[current_block_idx].term_positions;
-        // const current_block = @as([*]@Vector(16, u16), @ptrCast(
-            // self.term_positions[current_block_idx].term_positions
-        // ));
-        // const mask: @Vector(16, u16) = comptime @splat(0b10000000_00000000);
-// 
-        // while (current_doc_id < doc_id) {
-            // while (current_buffer_idx < 254) {
-                // const skip_docs = @popCount(current_block[@divExact(current_buffer_idx, 16)].* & mask);
-                // if (skip_docs + current_doc_id >= doc_id) {
-                    // while (current_doc_id < doc_id) {
-                        // current_doc_id += @popCount(
-                            // 0b10000000_00000000 & self.term_positions[current_block_idx].term_positions[current_buffer_idx]
-                            // );
-                        // current_buffer_idx += 1;
-                        // if (current_doc_id >= doc_id) {
-                            // return .{
-                                // .block_idx = current_block_idx,
-                                // .buffer_idx = current_buffer_idx,
-                            // };
-                        // }
-                    // }
-                    // unreachable;
-                // }
-// 
-                // current_doc_id += skip_docs;
-                // current_buffer_idx += 16;
-            // }
-        // }
-        // unreachable;
-    // }
-
-    pub inline fn nextTermPos(
-        self: *const PostingsV2, 
-        start_idx: usize,
-        ) !usize {
-        // Return the next doc_id.
-
-        // TODO: Handle boundary condition.
-        var idx = start_idx + 1;
-        var val: u16 = @bitCast(self.term_positions[idx]);
-        const mask: u16 = 0b10000000_00000000;
-        while (mask & val > 0) {
-            idx += 1;
-            val = @bitCast(self.term_positions[idx]);
-        }
-        return idx;
-    }
-
-    pub inline fn advanceToBlock(
-        self: *const PostingsV2, 
-        init_doc_id_idx: usize,
-        target_doc_id_idx: usize,
-        start_idx: usize,
-        max_idx: usize,
-        ) !usize {
-        // Return first position where the doc_id is greater than or equal to the given doc_id.
-        
-        // TODO: Handle boundary condition.
-        //       Can just check next block's max id.
-        //       Only do that if this term's range extends beyond the current block.
-        //       Else force linear scan.
-        // std.debug.print(
-            // "Current idx: {d} | Max idx: {d}\n",
-            // .{start_idx, max_idx},
-        // );
-        std.debug.assert(max_idx >= start_idx);
-        const block_range_rem = 256 - (start_idx % 256);
-        const range_rem = max_idx - start_idx;
-        if (range_rem > block_range_rem) {
-            std.debug.print("BLOCK\n", .{});
-            return try self.advanceToBlockSkipping(
-                init_doc_id_idx, 
-                target_doc_id_idx, 
-                start_idx,
-                max_idx,
-                );
-        } else {
-            std.debug.print("INLINE\n", .{});
-            return try self.advanceToBlockInline(
-                init_doc_id_idx, 
-                target_doc_id_idx, 
-                start_idx, 
-                max_idx,
-                );
-        }
-    }
-
-    inline fn advanceToBlockSkipping(
-        self: *const PostingsV2, 
-        // init_doc_id_idx: usize,
-        _: usize,
-        target_doc_id_idx: usize, 
-        start_idx: usize,
-        max_idx: usize,
-    ) !usize {
-        var current_block_idx = @divFloor(start_idx, 256);
-
-        const end_doc_id = self.doc_id_buf[target_doc_id_idx];
-
-        var range = max_idx - start_idx;
-
-        var block_skipped: usize = 0;
-        while (self.block_doc_id_offsets[current_block_idx + 1] < end_doc_id) {
-            current_block_idx += 1;
-            block_skipped += 1;
-
-            if (range < 256) break;
-            range -= 256;
-        }
-        const block_start_idx = std.mem.alignBackward(
-            usize,
-            start_idx + (256 * block_skipped),
-            256,
-        );
-        return self.advanceToBlockInline(
-            block_start_idx,
-            target_doc_id_idx,
-            start_idx,
-            max_idx,
-        );
-    }
-
-    inline fn advanceToBlockInline(
-        self: *const PostingsV2, 
-        init_doc_id_idx: usize,
-        target_doc_id_idx: usize, 
-        start_idx: usize,
-        max_idx: usize,
-    ) !usize {
-        // Fix here.
-        var current_doc_id_idx = init_doc_id_idx;
-
-        const start_simd_idx = std.mem.alignForward(
-            usize,
-            start_idx,
-            16,
-        );
-        const mask: u16 = 0b10000000_00000000;
-        var current_buffer_idx = start_idx;
-
-        if (max_idx >= start_simd_idx) {
-            while ((current_doc_id_idx < target_doc_id_idx) and (current_buffer_idx < max_idx)) {
-                current_doc_id_idx += @popCount(
-                    mask & @as(u16, @bitCast(self.term_positions[current_buffer_idx]))
-                    );
-                current_buffer_idx += 1;
-
-                if (current_doc_id_idx >= target_doc_id_idx) {
-                    return current_buffer_idx;
-                }
-            }
-        }
-
-        while ((current_doc_id_idx < target_doc_id_idx) and (current_buffer_idx < start_simd_idx)) {
-            current_doc_id_idx += @popCount(
-                mask & @as(u16, @bitCast(self.term_positions[current_buffer_idx]))
-                );
-            current_buffer_idx += 1;
-
-            if (current_doc_id_idx >= target_doc_id_idx) {
-                return current_buffer_idx;
-            }
-        }
-
-        const current_block = @as([*]@Vector(16, u16), @ptrCast(
-            self.term_positions
-        ));
-        const vec_mask: @Vector(16, u16) = comptime @splat(0b10000000_00000000);
-
-        while (current_doc_id_idx < target_doc_id_idx) {
-            while (current_buffer_idx < max_idx) {
-                const skip_docs: usize = std.simd.countTrues(
-                    vec_mask == (current_block[@divExact(current_buffer_idx, 16)] & vec_mask)
-                    );
-                std.debug.assert(skip_docs <= 16);
-
-                if (skip_docs + current_doc_id_idx >= target_doc_id_idx) {
-                    while (current_doc_id_idx < target_doc_id_idx) {
-                        current_doc_id_idx += @popCount(
-                            mask & @as(u16, @bitCast(self.term_positions[current_buffer_idx]))
-                            );
-                        current_buffer_idx += 1;
-                    }
-                    return current_buffer_idx;
-                }
-
-                current_doc_id_idx += skip_docs;
-                current_buffer_idx += 16;
-            }
-            // unreachable;
-            return current_buffer_idx;
-        }
-        unreachable;
-    }
-};
-
 pub const PostingsList = struct {
     postings: std.ArrayListAlignedUnmanaged(
                   PostingV3,
@@ -1495,11 +1222,6 @@ pub const InvertedIndexV2 = struct {
         allocator: std.mem.Allocator,
         ) void {
 
-        // allocator.free(self.postings.doc_id_ptrs);
-        // allocator.free(self.postings.doc_id_buf);
-        // allocator.free(self.postings.term_pos_ptrs);
-        // allocator.free(self.postings.term_positions);
-        // allocator.free(self.postings.block_doc_id_offsets);
         self.file_handle.close();
 
         self.posting_list.deinit(allocator);
@@ -1508,7 +1230,6 @@ pub const InvertedIndexV2 = struct {
         // self.prt_vocab.deinit();
 
         self.doc_freqs.deinit(allocator);
-        // self.term_occurences.deinit(allocator);
         allocator.free(self.doc_sizes);
     }
 
@@ -1584,97 +1305,6 @@ pub const InvertedIndexV2 = struct {
             buf.items[0..current_pos],
         );
     }
-
-    // pub fn resizePostings(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
-        // self.num_terms = @intCast(self.doc_freqs.items.len);
-        // self.postings.doc_id_ptrs = try allocator.alignedAlloc(
-            // flag_u32,
-            // comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            // self.num_terms + 1,
-        // );
-        // self.postings.term_pos_ptrs = try allocator.alignedAlloc(
-            // flag_u32,
-            // comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            // self.num_terms + 1,
-        // );
-// 
-        // std.debug.assert(self.num_terms == self.vocab.map.count());
-// 
-        // // Num terms is now known.
-        // var docs_postings_size:  usize = 0;
-        // var terms_postings_size: usize = 0;
-        // for (0.., self.doc_freqs.items) |idx, doc_freq| {
-            // if (doc_freq == 1) {
-                // self.postings.doc_id_ptrs[idx] = flag_u32{
-                    // .is_inline = 1,
-                    // .value = undefined,
-                // };
-            // } else {
-                // self.postings.doc_id_ptrs[idx] = flag_u32{
-                    // .is_inline = 0,
-                    // .value = @truncate(docs_postings_size),
-                // };
-                // docs_postings_size += doc_freq;
-            // }
-// 
-            // std.debug.assert(docs_postings_size < (comptime 1 << 31));
-// 
-            // const num_occurences = self.term_occurences.items[idx];
-            // if (num_occurences == 1) {
-                // self.postings.term_pos_ptrs[idx] = flag_u32{
-                    // .is_inline = 1,
-                    // .value = undefined,
-                // };
-            // } else {
-                // self.postings.term_pos_ptrs[idx] = flag_u32{
-                    // .is_inline = 0,
-                    // .value = @truncate(terms_postings_size),
-                // };
-                // terms_postings_size += num_occurences;
-            // }
-        // }
-        // self.postings.doc_id_ptrs[self.num_terms] = flag_u32{
-            // .is_inline = 0,
-            // .value = @truncate(docs_postings_size),
-        // };
-        // self.postings.term_pos_ptrs[self.num_terms] = flag_u32{
-            // .is_inline = 0,
-            // .value = @truncate(terms_postings_size),
-        // };
-// 
-        // docs_postings_size  += 1;
-        // terms_postings_size += 1;
-// 
-        // self.postings.doc_id_buf     = try allocator.alignedAlloc(
-            // u32, 
-            // comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            // docs_postings_size,
-            // );
-        // self.postings.term_positions = try allocator.alignedAlloc(
-            // // u16, 
-            // TP,
-            // comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            // terms_postings_size,
-            // );
-// 
-        // const num_blocks = try std.math.divCeil(
-            // usize,
-            // terms_postings_size,
-            // 256,
-        // );
-        // self.postings.block_doc_id_offsets = try allocator.alignedAlloc(
-            // u32,
-            // comptime std.mem.Alignment.fromByteUnits(std.heap.page_size_min),
-            // num_blocks,
-        // );
-// 
-        // var avg_doc_size: f64 = 0.0;
-        // for (self.doc_sizes) |doc_size| {
-            // avg_doc_size += @floatFromInt(doc_size);
-        // }
-        // avg_doc_size /= @floatFromInt(self.num_docs);
-        // self.avg_doc_size = @floatCast(avg_doc_size);
-    // }
 };
 
 pub const BM25Partition = struct {
@@ -2043,7 +1673,6 @@ pub const BM25Partition = struct {
 
     pub fn processDocVbyte(
         self: *BM25Partition,
-        // token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         buffer: []u8,
         doc_id: u32,
         search_col_idx: usize,
@@ -2055,19 +1684,12 @@ pub const BM25Partition = struct {
             );
 
         if (buffer.len == 0) {
-            // try token_stream.addToken(
-                // true,
-                // std.math.maxInt(u16),
-                // std.math.maxInt(u31),
-                // search_col_idx,
-            // );
             return;
         }
 
         var term_pos: u16 = 0;
 
         var cntr: usize = 0;
-        // var new_doc: bool = (doc_id != 0);
 
         terms_seen.clear();
 
@@ -2079,16 +1701,6 @@ pub const BM25Partition = struct {
 
             if (cntr > MAX_TERM_LENGTH - 4) {
                 @branchHint(.cold);
-                // try self.flushLargeToken(
-                    // buffer[buffer_idx - cntr..], 
-                    // &cntr, 
-                    // doc_id, 
-                    // &term_pos, 
-                    // search_col_idx, 
-                    // token_stream, 
-                    // terms_seen,
-                    // &new_doc,
-                    // );
                 try self.addToken(
                     buffer[buffer_idx - cntr..], 
                     &cntr, 
@@ -2096,7 +1708,6 @@ pub const BM25Partition = struct {
                     &term_pos, 
                     search_col_idx, 
                     terms_seen,
-                    // &new_doc,
                     );
                 buffer_idx += 1;
                 continue;
@@ -2119,7 +1730,6 @@ pub const BM25Partition = struct {
                         &term_pos, 
                         search_col_idx, 
                         terms_seen,
-                        // &new_doc,
                         );
                 },
                 else => {
@@ -2142,24 +1752,12 @@ pub const BM25Partition = struct {
                 term_pos, 
                 search_col_idx, 
                 terms_seen,
-                // &new_doc,
                 );
         }
-
-        // if (new_doc) {
-            // // No terms found. Add null token.
-            // try token_stream.addToken(
-                // true,
-                // std.math.maxInt(u16),
-                // std.math.maxInt(u31),
-                // search_col_idx,
-            // );
-        // }
     }
 
     pub fn processDocRfc8259(
         self: *BM25Partition,
-        // token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
         buffer: []u8,
         trie: *const RadixTrie(u32),
         search_col_idxs: *const std.ArrayListUnmanaged(u32),
@@ -2216,12 +1814,6 @@ pub const BM25Partition = struct {
                 or 
             (buffer[buffer_idx] == '}')
             ) {
-            // try token_stream.addToken(
-                // true,
-                // std.math.maxInt(u16),
-                // std.math.maxInt(u31),
-                // II_idx,
-            // );
 
             buffer_idx += 1;
             switch (buffer[buffer_idx - 1]) {
@@ -2251,7 +1843,6 @@ pub const BM25Partition = struct {
         buffer_idx += @intFromBool(is_quoted);
 
         var cntr: usize   = 0;
-        // var new_doc: bool = (doc_id != 0);
 
         terms_seen.clear();
 
@@ -2267,16 +1858,6 @@ pub const BM25Partition = struct {
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
-                    // try self.flushLargeToken(
-                        // buffer[buffer_idx - cntr..], 
-                        // &cntr, 
-                        // doc_id, 
-                        // &term_pos, 
-                        // II_idx, 
-                        // token_stream, 
-                        // terms_seen,
-                        // &new_doc,
-                        // );
                     try self.addToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
@@ -2284,7 +1865,6 @@ pub const BM25Partition = struct {
                         &term_pos, 
                         II_idx, 
                         terms_seen,
-                        // &new_doc,
                         );
                     buffer_idx += 1;
                     continue;
@@ -2311,7 +1891,6 @@ pub const BM25Partition = struct {
                             &term_pos, 
                             II_idx, 
                             terms_seen,
-                            // &new_doc,
                             );
                     },
                     '\\' => buffer_idx += 2,
@@ -2328,15 +1907,6 @@ pub const BM25Partition = struct {
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
-                    // try self.flushLargeToken(
-                        // buffer[buffer_idx - cntr..], 
-                        // &cntr, 
-                        // doc_id, 
-                        // &term_pos, 
-                        // II_idx, 
-                        // terms_seen,
-                        // &new_doc,
-                        // );
                     try self.addToken(
                         buffer[buffer_idx - cntr..], 
                         &cntr, 
@@ -2344,7 +1914,6 @@ pub const BM25Partition = struct {
                         &term_pos, 
                         II_idx, 
                         terms_seen,
-                        // &new_doc,
                         );
                     buffer_idx += 1;
                     continue;
@@ -2366,7 +1935,6 @@ pub const BM25Partition = struct {
                             &term_pos, 
                             II_idx, 
                             terms_seen,
-                            // &new_doc,
                             );
                         json.nextPoint(buffer, &buffer_idx);
                         break: outer_loop;
@@ -2383,7 +1951,6 @@ pub const BM25Partition = struct {
                             &term_pos, 
                             II_idx, 
                             terms_seen,
-                            // &new_doc,
                             );
                         json.nextPoint(buffer, &buffer_idx);
                         break: outer_loop;
@@ -2400,7 +1967,6 @@ pub const BM25Partition = struct {
                             &term_pos, 
                             II_idx, 
                             terms_seen,
-                            // &new_doc,
                             );
                         json.nextPoint(buffer, &buffer_idx);
                         break: outer_loop;
@@ -2433,7 +1999,6 @@ pub const BM25Partition = struct {
                             &term_pos, 
                             II_idx, 
                             terms_seen,
-                            // &new_doc,
                             );
                         json.nextPoint(buffer, &buffer_idx);
                         break :outer_loop;
@@ -2460,19 +2025,8 @@ pub const BM25Partition = struct {
                 term_pos,
                 II_idx,
                 terms_seen,
-                // &new_doc,
                 );
         }
-
-        // if (new_doc) {
-            // // No terms found. Add null token.
-            // try token_stream.addToken(
-                // true,
-                // std.math.maxInt(u16),
-                // std.math.maxInt(u31),
-                // II_idx,
-            // );
-        // }
 
         switch (buffer[buffer_idx]) {
             ',' => {
@@ -2488,124 +2042,6 @@ pub const BM25Partition = struct {
         }
     }
 
-    // pub fn constructFromTokenStream(
-        // self: *BM25Partition,
-        // token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
-        // ) !void {
-// 
-        // var term_cntr_doc_ids    = try self.allocator.alloc(u32, self.II[0].num_terms);
-        // var term_cntr_occurences = try self.allocator.alloc(u32, self.II[0].num_terms);
-        // defer self.allocator.free(term_cntr_doc_ids);
-        // defer self.allocator.free(term_cntr_occurences);
-// 
-        // for (0.., self.II) |col_idx, *II| {
-            // try II.resizePostings(self.allocator);
-// 
-            // if (II.num_terms > term_cntr_doc_ids.len) {
-                // term_cntr_doc_ids = try self.allocator.realloc(
-                    // term_cntr_doc_ids, 
-                    // @as(usize, @intCast(II.num_terms)),
-                    // );
-                // term_cntr_occurences = try self.allocator.realloc(
-                    // term_cntr_occurences,
-                    // @as(usize, @intCast(II.num_terms)),
-                    // );
-            // }
-            // @memset(term_cntr_doc_ids, 0);
-            // @memset(term_cntr_occurences, 0);
-// 
-            // // Create index.
-            // const output_file = &token_stream.output_files[col_idx];
-            // try output_file.seekTo(0);
-// 
-            // const doc_id_tokens   = token_stream.doc_id_tokens[col_idx];
-            // const term_pos_tokens = token_stream.term_pos_tokens[col_idx];
-// 
-            // var bytes_read: usize = 0;
-// 
-            // var num_tokens: usize = file_utils.TOKEN_STREAM_CAPACITY;
-            // var current_doc_id: usize = 0;
-// 
-            // var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
-// 
-            // while (num_tokens == file_utils.TOKEN_STREAM_CAPACITY) {
-                // var _num_tokens: [4]u8 = undefined;
-                // bytes_read = try output_file.read(std.mem.asBytes(&_num_tokens));
-                // std.debug.assert(bytes_read == 4);
-// 
-                // num_tokens = std.mem.readInt(u32, &_num_tokens, ENDIANESS);
-// 
-                // bytes_read = try output_file.read(
-                    // std.mem.sliceAsBytes(doc_id_tokens[0..num_tokens])
-                    // );
-                // bytes_read += try output_file.read(
-                    // std.mem.sliceAsBytes(term_pos_tokens[0..num_tokens])
-                    // );
-// 
-                // terms_seen_bitset.clear();
-// 
-                // for (0..num_tokens) |idx| {
-                    // if (@as(*u32, @ptrCast(&doc_id_tokens[idx])).* == std.math.maxInt(u32)) {
-                        // // Null token.
-                        // current_doc_id += 1;
-                        // terms_seen_bitset.clear();
-                        // continue;
-                    // }
-// 
-                    // const new_doc  = doc_id_tokens[idx].new_doc;
-                    // const term_pos = term_pos_tokens[idx];
-                    // const term_id  = doc_id_tokens[idx].term_id;
-// 
-                    // const tp = TP{
-                        // .term_pos = @truncate(term_pos),
-                        // .new_doc = new_doc,
-                    // };
-// 
-                    // if (new_doc == 1) {
-                        // current_doc_id += 1;
-                        // terms_seen_bitset.clear();
-                    // }
-// 
-                    // if (!terms_seen_bitset.checkOrInsertSIMD(term_id)) {
-// 
-                        // const is_inline_doc_id = II.postings.doc_id_ptrs[term_id].is_inline;
-                        // if (is_inline_doc_id == 1) {
-                            // II.postings.doc_id_ptrs[term_id].value = @truncate(current_doc_id);
-                        // } else {
-                            // const doc_id_offset = @as(usize, @intCast(@as(u32, @bitCast(II.postings.doc_id_ptrs[term_id])))) + term_cntr_doc_ids[term_id];
-                            // std.debug.assert(doc_id_offset < II.postings.doc_id_buf.len);
-// 
-                            // II.postings.doc_id_buf[doc_id_offset] = @truncate(current_doc_id);
-                            // term_cntr_doc_ids[term_id] += 1;
-                        // }
-                    // }
-// 
-                    // const is_inline_term_pos = II.postings.term_pos_ptrs[term_id].is_inline;
-                    // if (is_inline_term_pos == 1) {
-                        // II.postings.term_pos_ptrs[term_id].value = @intCast(term_pos);
-                    // } else {
-                        // const tp_idx = (
-                            // @as(usize, @intCast(@as(u32, @bitCast(II.postings.term_pos_ptrs[term_id])))) + term_cntr_occurences[term_id]
-                        // );
-                        // if (tp_idx % 256 == 0) {
-                            // II.postings.block_doc_id_offsets[@divExact(tp_idx, 256)] = @truncate(current_doc_id);
-                        // }
-// 
-                        // II.postings.term_positions[tp_idx] = tp;
-                        // term_cntr_occurences[term_id] += 1;
-                    // }
-// 
-                    // std.debug.assert(current_doc_id <= II.num_docs);
-                // }
-            // }
-            // std.debug.assert(
-                // (current_doc_id == II.num_docs - 1)
-                    // or
-                // (current_doc_id == II.num_docs)
-            // );
-        // }
-    // }
-// 
     pub inline fn fetchRecordsDocStore(
         self: *BM25Partition,
         result_positions: []TermPos,
