@@ -226,14 +226,16 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
 
             const scores = try allocator.alignedAlloc(
                 f32, 
-                .@"32",
+                // .@"32",
+                32,
                 alloc_size,
                 );
             @memset(scores, -std.math.floatMax(f32));
 
             return Self{
                 .allocator = allocator,
-                .items = try allocator.alignedAlloc(T, .@"32", alloc_size),
+                // .items = try allocator.alignedAlloc(T, .@"32", alloc_size),
+                .items = try allocator.alignedAlloc(T, 32, alloc_size),
                 .scores = scores,
                 .count = 0,
                 .capacity = capacity,
@@ -369,7 +371,9 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
                 @branchHint(.cold);
                 return -std.math.floatMax(f32);
             }
-            return self.scores[self.capacity - 1];
+            std.debug.print("Scores: {d}\n", .{self.scores});
+            std.debug.print("Final:  {d}\n\n", .{self.scores[self.capacity]});
+            return self.scores[self.capacity];
         }
     };
 }

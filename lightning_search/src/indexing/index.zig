@@ -27,7 +27,8 @@ pub const MAX_LINE_LENGTH = 1_048_576;
 pub const ENDIANESS = builtin.cpu.arch.endian();
 
 
-
+// const POST_ALIGNMENT = std.mem.Alignment.fromByteUnits(512);
+const POST_ALIGNMENT = 512;
 
 inline fn lowerBound(comptime T: type, slice: []const T, target: T) usize {
     var low: usize = 0;
@@ -189,6 +190,12 @@ pub const PostingsIteratorV2 = struct {
             return null;
         }
 
+        const current_res = Result{
+            .doc_id    = self.uncompressed_doc_ids_buffer[self.current_doc_idx % BLOCK_SIZE],
+            .term_freq = self.uncompressed_tfs_buffer[self.current_doc_idx % BLOCK_SIZE],
+            .term_pos  = undefined,
+        };
+
         self.current_doc_idx += 1;
 
         if (self.current_doc_idx >= self.posting_len) {
@@ -219,12 +226,7 @@ pub const PostingsIteratorV2 = struct {
         }
         // std.debug.print("Current doc id: {d}\n", .{self.uncompressed_doc_ids_buffer[self.current_doc_idx % BLOCK_SIZE]});
 
-        const prev_idx = self.current_doc_idx - 1;
-        return .{
-            .doc_id    = self.uncompressed_doc_ids_buffer[prev_idx % BLOCK_SIZE],
-            .term_freq = self.uncompressed_tfs_buffer[prev_idx % BLOCK_SIZE],
-            .term_pos  = undefined,
-        };
+        return current_res;
     }
 
     pub inline fn nextSkipping(self: *PostingsIteratorV2, min_score: f32) !?Result {
@@ -254,6 +256,13 @@ pub const PostingsIteratorV2 = struct {
             continue;
         }
 
+        const prev_res = Result{
+            .doc_id    = self.uncompressed_doc_ids_buffer[self.current_doc_idx % BLOCK_SIZE],
+            .term_freq = self.uncompressed_tfs_buffer[self.current_doc_idx % BLOCK_SIZE],
+            .term_pos  = undefined,
+        };
+
+
         if (skipped) {
             if (self.on_partial_block) {
                 self.posting.partial_block.decompressToBuffers(
@@ -272,7 +281,7 @@ pub const PostingsIteratorV2 = struct {
 
             const block_idx = @divFloor(self.current_doc_idx, BLOCK_SIZE);
             if (self.current_doc_idx % BLOCK_SIZE == 0) {
-                self.on_partial_block = block_idx == self.posting.full_blocks.items.len;
+                self.on_partial_block = (block_idx == self.posting.full_blocks.items.len);
                 if (self.on_partial_block) {
                     self.posting.partial_block.decompressToBuffers(
                         &self.uncompressed_doc_ids_buffer,
@@ -294,11 +303,7 @@ pub const PostingsIteratorV2 = struct {
             return null;
         }
 
-        return .{
-            .doc_id = self.uncompressed_doc_ids_buffer[self.current_doc_idx % BLOCK_SIZE],
-            .term_freq = self.uncompressed_tfs_buffer[self.current_doc_idx % BLOCK_SIZE],
-            .term_pos = undefined,
-        };
+        return prev_res;
     }
 
     pub inline fn advanceTo(self: *PostingsIteratorV2, target_id: u32) !?Result {
@@ -319,32 +324,6 @@ pub const PostingsIteratorV2 = struct {
             const num_full_blocks = self.posting.full_blocks.items.len;
 
             std.debug.assert(num_full_blocks > 0);
-            // if (num_full_blocks == 0) {
-                // self.on_partial_block = true;
-                // self.posting.partial_block.decompressToBuffers(
-                    // &self.uncompressed_doc_ids_buffer,
-                    // &self.uncompressed_tfs_buffer,
-                    // );
-// 
-                // const match_idx = linearLowerBound(
-                    // self.uncompressed_doc_ids_buffer[idx..self.posting.partial_block.num_docs],
-                    // target_id,
-                // );
-                // self.current_doc_idx += match_idx;
-// 
-                // if (self.current_doc_idx >= self.posting_len) {
-                    // self.consumed = true;
-                    // self.current_doc_idx = std.math.maxInt(u32);
-                    // return null;
-                // }
-// 
-                // idx = self.current_doc_idx % BLOCK_SIZE;
-                // return .{
-                    // .doc_id    = self.uncompressed_doc_ids_buffer[idx],
-                    // .term_freq = self.uncompressed_tfs_buffer[idx],
-                    // .term_pos  = undefined,
-                // };
-            // }
 
             var block_idx = self.current_doc_idx >> (comptime std.math.log2(BLOCK_SIZE));
             var skipped_block = false;
@@ -352,18 +331,17 @@ pub const PostingsIteratorV2 = struct {
                 if (target_id > self.posting.full_blocks.items[block_idx].max_doc_id) {
                     idx = 0;
                     block_idx += 1;
-                    self.current_doc_idx += BLOCK_SIZE;
+                    self.current_doc_idx = std.mem.alignForward(
+                        usize,
+                        self.current_doc_idx + 1,
+                        BLOCK_SIZE,
+                    );
                     skipped_block = true;
                     continue;
                 }
 
                 // Doc id in full block if here.
                 if (skipped_block) {
-                    self.current_doc_idx = std.mem.alignBackward(
-                        usize,
-                        self.current_doc_idx + BLOCK_SIZE,
-                        64,
-                    );
                     try self.posting.full_blocks.items[block_idx].decompressToBuffers(
                         &self.uncompressed_doc_ids_buffer,
                         &self.uncompressed_tfs_buffer,
@@ -386,13 +364,13 @@ pub const PostingsIteratorV2 = struct {
                 unreachable;
             }
 
-            if (skipped_block) {
-                self.current_doc_idx = std.mem.alignBackward(
-                    usize,
-                    self.current_doc_idx + BLOCK_SIZE,
-                    64,
-                );
-            }
+            // if (skipped_block) {
+                // self.current_doc_idx = std.mem.alignBackward(
+                    // usize,
+                    // self.current_doc_idx + BLOCK_SIZE,
+                    // 64,
+                // );
+            // }
             self.posting.partial_block.decompressToBuffers(
                 &self.uncompressed_doc_ids_buffer,
                 &self.uncompressed_tfs_buffer,
@@ -584,7 +562,7 @@ pub const DeltaBitpackedBlock = struct {
         const buffer_size = ((BLOCK_SIZE * dbp.bit_size) + 7) >> 3;
         dbp.buffer = try allocator.alignedAlloc(
             u8,
-            std.mem.Alignment.fromByteUnits(512),
+            POST_ALIGNMENT,
             buffer_size,
             );
         @memset(dbp.buffer, 0);
@@ -628,7 +606,7 @@ pub const BitpackedBlock = struct {
 
         dbp.buffer = try allocator.alignedAlloc(
             u8,
-            comptime std.mem.Alignment.fromByteUnits(512),
+            POST_ALIGNMENT,
             buffer_size,
             );
         @memset(dbp.buffer, 0);
@@ -703,11 +681,11 @@ const DeltaVByteBlock = struct {
     //
     //       Also consider using raw pointer with size as a smaller
     //       integer type.
-    buffer: std.ArrayListAlignedUnmanaged(u8, std.mem.Alignment.fromByteUnits(512)),
+    buffer: std.ArrayListAlignedUnmanaged(u8, POST_ALIGNMENT),
 
     pub fn init() DeltaVByteBlock {
         return DeltaVByteBlock{
-            .buffer = std.ArrayListAlignedUnmanaged(u8, std.mem.Alignment.fromByteUnits(512)){},
+            .buffer = std.ArrayListAlignedUnmanaged(u8, POST_ALIGNMENT){},
         };
     }
 
@@ -724,7 +702,7 @@ const DeltaVByteBlock = struct {
         const dvb = DeltaVByteBlock{
             .buffer = try std.ArrayListAlignedUnmanaged(
                 u8, 
-                comptime std.mem.Alignment.fromByteUnits(512),
+                POST_ALIGNMENT,
                 ).initCapacity(
                 allocator,
                 bytes_needed,
@@ -797,14 +775,14 @@ const DeltaVByteBlock = struct {
 const VByteBlock = struct {
     buffer: std.ArrayListAlignedUnmanaged(
                 u8, 
-                std.mem.Alignment.fromByteUnits(512),
+                POST_ALIGNMENT,
                 ),
 
     pub fn init() VByteBlock {
         return VByteBlock{
             .buffer = std.ArrayListAlignedUnmanaged(
                 u8, 
-                std.mem.Alignment.fromByteUnits(512),
+                POST_ALIGNMENT,
                 ){},
         };
     }
@@ -820,7 +798,7 @@ const VByteBlock = struct {
         const vb = VByteBlock{
             .buffer = try std.ArrayListAlignedUnmanaged(
                 u8, 
-                comptime std.mem.Alignment.fromByteUnits(512),
+                POST_ALIGNMENT,
                 ).initCapacity(
                 allocator,
                 bytes_needed,
@@ -995,7 +973,7 @@ pub const PostingsBlockPartial = struct {
 pub const PostingV3 = struct {
     full_blocks: std.ArrayListAlignedUnmanaged(
                      PostingsBlockFull,
-                     std.mem.Alignment.fromByteUnits(512),
+                     POST_ALIGNMENT,
                  ),
     partial_block: PostingsBlockPartial,
 
@@ -1003,7 +981,7 @@ pub const PostingV3 = struct {
         return PostingV3{
             .full_blocks = std.ArrayListAlignedUnmanaged(
                 PostingsBlockFull,
-                std.mem.Alignment.fromByteUnits(512),
+                POST_ALIGNMENT,
             ){},
             .partial_block = PostingsBlockPartial.init(),
         };
@@ -1125,7 +1103,7 @@ pub const PostingV3 = struct {
 pub const PostingsList = struct {
     postings: std.ArrayListAlignedUnmanaged(
                   PostingV3,
-                  std.mem.Alignment.fromByteUnits(512),
+                  POST_ALIGNMENT,
               ),
     arena: std.heap.ArenaAllocator,
 
@@ -1133,7 +1111,7 @@ pub const PostingsList = struct {
         return PostingsList{
             .postings = std.ArrayListAlignedUnmanaged(
                   PostingV3,
-                  std.mem.Alignment.fromByteUnits(512),
+                  POST_ALIGNMENT,
               ){},
             .arena = std.heap.ArenaAllocator.init(child_allocator),
         };

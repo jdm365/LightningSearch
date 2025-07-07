@@ -19,7 +19,6 @@ const rt = @import("../utils/radix_trie.zig");
 const TermPos = @import("../server/server.zig").TermPos;
 
 const ID = @import("index.zig").ID;
-// const PostingsIterator = @import("index.zig").PostingsIterator;
 const PostingsIteratorV2 = @import("index.zig").PostingsIteratorV2;
 const fetchRecordsDocStore = @import("index.zig").BM25Partition.fetchRecordsDocStore;
 const BM25Partition   = @import("index.zig").BM25Partition;
@@ -1174,12 +1173,13 @@ pub const IndexManager = struct {
         );
     }
 
-    pub fn queryPartitionDAATUnion(
+
+    fn collectQueryTerms(
         self: *IndexManager,
         queries: SHM,
         boost_factors: std.ArrayList(f32),
         partition_idx: usize,
-        query_results: *SortedScoreMultiArray(QueryResult),
+        iterators: *std.ArrayListUnmanaged(PostingsIteratorV2),
     ) void {
         const num_search_cols = self.search_col_idxs.items.len;
         std.debug.assert(num_search_cols > 0);
@@ -1211,9 +1211,6 @@ pub const IndexManager = struct {
 
         var empty_query = true; 
 
-        var iterators = std.ArrayListUnmanaged(PostingsIteratorV2){};
-        defer iterators.deinit(self.gpa());
-
         var idf_remaining: f32 = 0.0;
 
         var query_it = queries.iterator();
@@ -1228,7 +1225,9 @@ pub const IndexManager = struct {
                 col_idx,
             ) catch {
                 std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
-                @panic("Column not found. Check findSorted function and self.columns map.");
+                @panic(
+                    "Column not found. Check findSorted function and self.columns map."
+                    );
             };
 
             std.debug.assert(II_idx <= self.search_col_idxs.items.len);
@@ -1421,6 +1420,26 @@ pub const IndexManager = struct {
             return;
         }
 
+    }
+
+
+    pub fn queryPartitionDAATUnion(
+        self: *IndexManager,
+        queries: SHM,
+        boost_factors: std.ArrayList(f32),
+        partition_idx: usize,
+        query_results: *SortedScoreMultiArray(QueryResult),
+    ) void {
+        var iterators = std.ArrayListUnmanaged(PostingsIteratorV2){};
+        defer iterators.deinit(self.gpa());
+
+        self.collectQueryTerms(
+            queries,
+            boost_factors,
+            partition_idx,
+            &iterators,
+        );
+
         var sorted_scores = SortedScoreMultiArray(u32).init(
             self.gpa(), 
             query_results.capacity,
@@ -1526,10 +1545,10 @@ pub const IndexManager = struct {
                 // Else we can safely skip this block.
                 // TODO: Need to change to only skip block now.
                 if (upper_bound > 50.0 * sorted_scores.lastScoreCapacity()) continue;
-                // std.debug.print("Doc id: {}\n",  .{doc_id});
-                // std.debug.print("Vec: {}\n",  .{doc_id_vec});
-                // std.debug.print("Vec2: {}\n",  .{doc_id_vec <= doc_id});
-                // std.debug.print("Vec3: {d}\n", .{score_vec});
+                // std.debug.print("Doc id:      {}\n",  .{doc_id});
+                // std.debug.print("Doc Vec:     {}\n",  .{doc_id_vec});
+                // std.debug.print("Active Vec:  {}\n",  .{doc_id_vec <= doc_id});
+                // std.debug.print("Score Vec:   {d}\n", .{score_vec});
                 // std.debug.print("It idx: {d} | Last score capacity: {d} | Upper bound: {d}\n\n", .{
                     // idx,
                     // sorted_scores.lastScoreCapacity() * 50.0,
@@ -1568,7 +1587,6 @@ pub const IndexManager = struct {
                 // pos.clear();
             // }
 
-            var match_count: usize = 0;
             var base_score: f32 = 0.0;
             for (0.., iterators.items) |idx, *it| {
                 if (consumed_mask[idx]) continue;
@@ -1584,7 +1602,6 @@ pub const IndexManager = struct {
 
                 const _res = try it.next();
                 if (_res) |res| {
-                    match_count += 1;
                     base_score += it.boost_weighted_idf * @as(f32, @floatFromInt(res.term_freq));
                 } else {
                     consumed_mask[idx] = true;
@@ -1597,9 +1614,6 @@ pub const IndexManager = struct {
                     // base_score += @as(f32, @floatFromInt(it.score)) +
                                   // 25.0 * @as(f32, @floatFromInt(@intFromBool(tp == 0)));
                 // }
-            }
-            if (match_count == 5) {
-                std.debug.print("MATCHED 5\n", .{});
             }
 
             // 3c. Apply Phrase Scoring Boost
