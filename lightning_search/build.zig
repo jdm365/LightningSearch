@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(b.path("lib"));
     exe.addObjectFile(b.path("lib/libparquet_bindings.a"));
     exe.installHeader(b.path("lib/parquet_bindings.h"), "parquet_bindings.h");
-    exe.linkFramework("CoreFoundation");
+    // exe.linkFramework("CoreFoundation");
 
     exe.root_module.addImport("zap", zap.module("zap"));
     b.installArtifact(exe);

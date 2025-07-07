@@ -1547,33 +1547,58 @@ pub const IndexManager = struct {
                 // Else we can safely skip this block.
                 // TODO: Need to change to only skip block now.
                 if (upper_bound > 50.0 * sorted_scores.lastScoreCapacity()) continue;
-                // std.debug.print("Doc id:      {}\n",  .{doc_id});
-                // std.debug.print("Doc Vec:     {}\n",  .{doc_id_vec});
-                // std.debug.print("Active Vec:  {}\n",  .{doc_id_vec <= doc_id});
-                // std.debug.print("Score Vec:   {d}\n", .{score_vec});
+                // std.debug.print("Doc id:        {}\n",  .{doc_id});
+                // std.debug.print("Doc Vec:       {}\n",  .{doc_id_vec});
+                // std.debug.print("Consumed mask: {}\n",  .{consumed_mask});
+                // std.debug.print("Score Vec:     {d}\n", .{score_vec});
                 // std.debug.print("It idx: {d} | Last score capacity: {d} | Upper bound: {d}\n", .{
                     // idx,
                     // sorted_scores.lastScoreCapacity() * 50.0,
                     // upper_bound,
                 // });
-
+// 
                 max_doc_id = @max(c_doc_id, max_doc_id);
+                // std.debug.print(
+                    // "min_doc_id: {d} | max_doc_id: {d}\n",
+                    // .{min_doc_id, max_doc_id},
+                // );
             }
-            std.debug.print(
-                "current_doc_id: {d} | min_doc_id: {d} | max_doc_id: {d}\n\n",
-                .{current_doc_id, min_doc_id, max_doc_id},
-            );
 
             if (max_doc_id > min_doc_id) {
+                // std.debug.print(
+                    // "current_doc_id: {d} | min_doc_id: {d} | max_doc_id: {d}\n",
+                    // .{current_doc_id, min_doc_id, max_doc_id},
+                // );
+                // std.debug.print("Score Vec: {d} | Last score: {d}\n", .{score_vec, sorted_scores.lastScoreCapacity()});
+
                 current_doc_id = std.math.maxInt(u32);
                 for (0..iterators.items.len) |idx| {
                     if (consumed_mask[idx]) continue;
 
                     var iterator = &iterators.items[idx];
+                    // const start_doc_id = iterator.currentDocId().?;
                     const _res = try iterator.advanceTo(max_doc_id);
 
                     if (_res) |res| {
+                        std.debug.assert(res.doc_id >= max_doc_id);
+                        std.debug.assert(res.doc_id == iterator.currentDocId().?);
+
                         current_doc_id = @min(res.doc_id, current_doc_id);
+
+                        // const end_doc_id = iterator.currentDocId().?;
+                        // std.debug.print(
+                            // // "Iterator idx: {d} | Skip count: {d}\n",
+                            // // .{
+                                // // idx,
+                                // // end_doc_id - start_doc_id,
+                            // // },
+                            // "Iterator idx: {d} | Start id: {d} | End id: {d}\n",
+                            // .{
+                                // idx,
+                                // start_doc_id,
+                                // end_doc_id,
+                            // },
+                            // );
                     } else {
                         consumed_mask[idx] = true;
                     }
@@ -1582,6 +1607,7 @@ pub const IndexManager = struct {
                 std.debug.assert(current_doc_id != std.math.maxInt(u32));
                 current_doc_id = min_doc_id;
             }
+
             if (current_doc_id == std.math.maxInt(u32)) {
                 std.debug.assert(std.simd.countTrues(consumed_mask) == 8);
                 continue;
@@ -1604,7 +1630,14 @@ pub const IndexManager = struct {
                 }
                 if (c_doc_id.? > current_doc_id) continue;
 
-                std.debug.assert(c_doc_id.? == current_doc_id);
+                // std.debug.assert(c_doc_id.? == current_doc_id);
+                if (c_doc_id.? != current_doc_id) {
+                    std.debug.print(
+                        "Current doc ID: {d} | Iterator idx: {d} | Doc ID: {d}\n",
+                        .{current_doc_id, idx, c_doc_id.?},
+                    );
+                    @panic("Current doc ID mismatch in DAAT Union query.");
+                }
 
                 const _res = try it.next();
                 if (_res) |res| {
