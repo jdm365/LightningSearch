@@ -371,8 +371,6 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
                 @branchHint(.cold);
                 return -std.math.floatMax(f32);
             }
-            std.debug.print("Scores: {d}\n", .{self.scores});
-            std.debug.print("Final:  {d}\n\n", .{self.scores[self.capacity]});
             return self.scores[self.capacity];
         }
     };

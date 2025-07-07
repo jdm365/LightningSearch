@@ -1520,6 +1520,8 @@ pub const IndexManager = struct {
                         u16, 
                         @intFromFloat(50.0 * iterators.items[idx].currentBlockMaxScore()),
                         );
+                } else {
+                    score_vec[idx] = 0;
                 }
             }
 
@@ -1549,7 +1551,7 @@ pub const IndexManager = struct {
                 // std.debug.print("Doc Vec:     {}\n",  .{doc_id_vec});
                 // std.debug.print("Active Vec:  {}\n",  .{doc_id_vec <= doc_id});
                 // std.debug.print("Score Vec:   {d}\n", .{score_vec});
-                // std.debug.print("It idx: {d} | Last score capacity: {d} | Upper bound: {d}\n\n", .{
+                // std.debug.print("It idx: {d} | Last score capacity: {d} | Upper bound: {d}\n", .{
                     // idx,
                     // sorted_scores.lastScoreCapacity() * 50.0,
                     // upper_bound,
@@ -1557,6 +1559,10 @@ pub const IndexManager = struct {
 
                 max_doc_id = @max(c_doc_id, max_doc_id);
             }
+            std.debug.print(
+                "current_doc_id: {d} | min_doc_id: {d} | max_doc_id: {d}\n\n",
+                .{current_doc_id, min_doc_id, max_doc_id},
+            );
 
             if (max_doc_id > min_doc_id) {
                 current_doc_id = std.math.maxInt(u32);
