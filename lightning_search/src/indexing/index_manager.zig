@@ -1546,63 +1546,34 @@ pub const IndexManager = struct {
                 // `THEORETICAL MAX SCORE > MIN SCORE NEEDED TO BREAK INTO TOP K`
                 // Else we can safely skip this block.
                 // TODO: Need to change to only skip block now.
+
+
                 if (upper_bound > 50.0 * sorted_scores.lastScoreCapacity()) continue;
-                // std.debug.print("Doc id:        {}\n",  .{doc_id});
-                // std.debug.print("Doc Vec:       {}\n",  .{doc_id_vec});
-                // std.debug.print("Consumed mask: {}\n",  .{consumed_mask});
-                // std.debug.print("Score Vec:     {d}\n", .{score_vec});
-                // std.debug.print("It idx: {d} | Last score capacity: {d} | Upper bound: {d}\n", .{
-                    // idx,
-                    // sorted_scores.lastScoreCapacity() * 50.0,
-                    // upper_bound,
-                // });
-// 
                 max_doc_id = @max(c_doc_id, max_doc_id);
-                // std.debug.print(
-                    // "min_doc_id: {d} | max_doc_id: {d}\n",
-                    // .{min_doc_id, max_doc_id},
-                // );
             }
 
             if (max_doc_id > min_doc_id) {
-                // std.debug.print(
-                    // "current_doc_id: {d} | min_doc_id: {d} | max_doc_id: {d}\n",
-                    // .{current_doc_id, min_doc_id, max_doc_id},
-                // );
-                // std.debug.print("Score Vec: {d} | Last score: {d}\n", .{score_vec, sorted_scores.lastScoreCapacity()});
+                // Doing skipping
 
                 current_doc_id = std.math.maxInt(u32);
                 for (0..iterators.items.len) |idx| {
                     if (consumed_mask[idx]) continue;
 
                     var iterator = &iterators.items[idx];
-                    // const start_doc_id = iterator.currentDocId().?;
-                    const _res = try iterator.advanceTo(max_doc_id);
+                    const _res = try iterator.advanceTo(max_doc_id + 1);
 
                     if (_res) |res| {
-                        std.debug.assert(res.doc_id >= max_doc_id);
+                        std.debug.assert(res.doc_id >= max_doc_id + 1);
                         std.debug.assert(res.doc_id == iterator.currentDocId().?);
 
                         current_doc_id = @min(res.doc_id, current_doc_id);
 
-                        // const end_doc_id = iterator.currentDocId().?;
-                        // std.debug.print(
-                            // // "Iterator idx: {d} | Skip count: {d}\n",
-                            // // .{
-                                // // idx,
-                                // // end_doc_id - start_doc_id,
-                            // // },
-                            // "Iterator idx: {d} | Start id: {d} | End id: {d}\n",
-                            // .{
-                                // idx,
-                                // start_doc_id,
-                                // end_doc_id,
-                            // },
-                            // );
                     } else {
                         consumed_mask[idx] = true;
                     }
                 }
+
+                continue;
             } else {
                 std.debug.assert(current_doc_id != std.math.maxInt(u32));
                 current_doc_id = min_doc_id;

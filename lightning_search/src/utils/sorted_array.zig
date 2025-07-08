@@ -371,7 +371,7 @@ pub fn SortedScoreMultiArray(comptime T: type) type {
                 @branchHint(.cold);
                 return -std.math.floatMax(f32);
             }
-            return self.scores[self.capacity];
+            return self.scores[self.capacity - 1];
         }
     };
 }
