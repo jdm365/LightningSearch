@@ -1601,14 +1601,7 @@ pub const IndexManager = struct {
                 }
                 if (c_doc_id.? > current_doc_id) continue;
 
-                // std.debug.assert(c_doc_id.? == current_doc_id);
-                if (c_doc_id.? != current_doc_id) {
-                    std.debug.print(
-                        "Current doc ID: {d} | Iterator idx: {d} | Doc ID: {d}\n",
-                        .{current_doc_id, idx, c_doc_id.?},
-                    );
-                    @panic("Current doc ID mismatch in DAAT Union query.");
-                }
+                std.debug.assert(c_doc_id.? == current_doc_id);
 
                 const _res = try it.next();
                 if (_res) |res| {

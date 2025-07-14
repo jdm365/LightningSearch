@@ -1,6 +1,6 @@
 EXEC_PATH := ./swift/build/search_app
 BIN_PATH  := lightning_search.bin
-DATA_PATH := ../../data/enwiki.csv
+DATA_PATH := ../../data/mb.csv
 
 build:
 	zig build shared
@@ -12,6 +12,11 @@ build:
 		-lsearch_app \
 		-Xlinker -rpath -Xlinker @executable_path/
 	mv zig-out/lib/libsearch_app.dylib swift/build/
+
+bench:
+	zig build -Doptimize=ReleaseFast
+	perf record ./zig-out/bin/$(BIN_PATH)
+	perf report
 
 exec:
 	$(EXEC_PATH)
