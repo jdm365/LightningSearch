@@ -157,14 +157,13 @@ pub const ProgressBar = struct {
 };
 
 test "pbar" {
-    var pbar = ProgressBar.init(1000);
+    var pbar = ProgressBar.init(1000, .None);
 
     try std.testing.expectEqual(1000, pbar.total_iters);
     try std.testing.expectEqual(120, pbar.total_updates);
     try std.testing.expectEqual(8, pbar.update_differential);
 
     for (0..1000) |i| {
-        pbar.update(i);
-        std.time.sleep(2_000_000);
+        pbar.update(i, null);
     }
 }

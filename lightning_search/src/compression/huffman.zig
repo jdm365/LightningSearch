@@ -525,6 +525,7 @@ test "compression" {
     const decompressed_size = try compressor.decompress(
         output_buffer, 
         decompressed_buffer,
+        0,
         );
     const final2 = std.time.microTimestamp();
     const elapsed2 = @as(u64, @intCast(final2 - init2));

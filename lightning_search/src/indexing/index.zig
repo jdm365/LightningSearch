@@ -417,7 +417,7 @@ pub const PostingsIteratorV2 = struct {
     }
 };
 
-pub const QueryResult = packed struct(u64){
+pub const QueryResult = packed struct(u64) {
     doc_id: u32,
     partition_idx: u32,
 };
@@ -599,7 +599,7 @@ pub const BitpackedBlock = struct {
         vals: *align(512) [BLOCK_SIZE]u16,
         ) !BitpackedBlock {
         var dbp = BitpackedBlock{
-            .max_val = vals[0],
+            .max_val = undefined,
             .buffer = undefined,
             .bit_size = undefined,
         };
@@ -610,8 +610,8 @@ pub const BitpackedBlock = struct {
             block_maxes[block_idx] = @reduce(.Max, sv_vec[block_idx]);
         }
 
-        const max_val: u16 = @reduce(.Max, block_maxes);
-        dbp.bit_size = 16 - @clz(max_val);
+        dbp.max_val = @reduce(.Max, block_maxes);
+        dbp.bit_size = 16 - @clz(dbp.max_val);
         const buffer_size = ((BLOCK_SIZE * dbp.bit_size) + 7) >> 3;
 
         dbp.buffer = try allocator.alignedAlloc(
@@ -879,16 +879,18 @@ pub const PostingsBlockPartial = struct {
 
     prev_doc_id: u32,
     max_score: f32,
+    tf_cntr: u32,
     num_docs: u8,
 
     pub fn init() PostingsBlockPartial {
         return PostingsBlockPartial{
-            .num_docs = 0,
             .doc_ids = DeltaVByteBlock.init(),
             .tfs = VByteBlock.init(),
 
             .prev_doc_id = 0,
             .max_score = undefined,
+            .tf_cntr = 1,
+            .num_docs = 0,
         };
     }
 
@@ -904,6 +906,7 @@ pub const PostingsBlockPartial = struct {
         self.tfs.clear();
         self.max_score = 0.0;
         self.prev_doc_id = 0;
+        self.tf_cntr = 1;
 
         return full_map;
     }
@@ -938,22 +941,36 @@ pub const PostingsBlockPartial = struct {
         self: *PostingsBlockPartial,
         allocator: std.mem.Allocator,
         doc_id: u32,
-    ) !void {
-        try self.doc_ids.add(
-            allocator,
-            doc_id,
-            self.prev_doc_id,
-        );
-        self.prev_doc_id = doc_id;
+    ) !u32 {
+        // Return 1 if first_occurence of doc_id, 0 otherwise.
+        // Needed to increment df in indexing loop.
 
-        // TODO: Fix. Add actual TF.
-        try self.tfs.add(
-            allocator,
-            1,
-        );
-        self.max_score = @max(self.max_score, 1.0);
+        if ((doc_id != self.prev_doc_id) or (doc_id + self.num_docs == 0)) {
+            try self.tfs.add(
+                allocator,
+                self.tf_cntr,
+            );
+            self.max_score = @max(
+                self.max_score, 
+                @as(f32, @floatFromInt(self.tf_cntr)),
+                );
+            self.tf_cntr = 1;
 
-        self.num_docs += 1;
+            try self.doc_ids.add(
+                allocator,
+                doc_id,
+                self.prev_doc_id,
+            );
+            self.num_docs += 1;
+            self.prev_doc_id = doc_id;
+            return 1;
+
+        } else {
+            self.tf_cntr += 1;
+            self.prev_doc_id = doc_id;
+            return 0;
+        }
+
     }
 
     pub inline fn decompressToBuffers(
@@ -1002,8 +1019,8 @@ pub const PostingV3 = struct {
         allocator: std.mem.Allocator,
         doc_id: u32,
         scratch_arr: *align(512) [BLOCK_SIZE]u32,
-    ) !void {
-        try self.partial_block.add(
+    ) !u32 {
+        const first_occurence = try self.partial_block.add(
             allocator,
             doc_id,
         );
@@ -1012,6 +1029,8 @@ pub const PostingV3 = struct {
             const new_val = try self.full_blocks.addOne(allocator);
             new_val.* = try self.partial_block.flush(allocator, scratch_arr);
         }
+
+        return first_occurence;
     }
 
     pub fn serialize(
@@ -1136,12 +1155,13 @@ pub const PostingsList = struct {
         term_id: u32,
         doc_id: u32,
         scratch_arr: *align(512) [BLOCK_SIZE]u32,
-        ) !void {
-        try self.postings.items[term_id].add(
+        ) !u32 {
+        const first_occurence = try self.postings.items[term_id].add(
             self.arena.allocator(), 
             doc_id, 
             scratch_arr,
             );
+        return first_occurence;
     }
 
     pub inline fn append(
@@ -1151,7 +1171,7 @@ pub const PostingsList = struct {
         ) !void {
         const val = try self.postings.addOne(self.arena.allocator());
         val.* = PostingV3.init();
-        try val.add(self.arena.allocator(), doc_id, scratch_arr);
+        _ = try val.add(self.arena.allocator(), doc_id, scratch_arr);
     }
 };
 
@@ -1212,7 +1232,7 @@ pub const InvertedIndexV2 = struct {
 
         self.file_handle.close();
 
-        self.posting_list.deinit(allocator);
+        self.posting_list.deinit();
 
         self.vocab.deinit(allocator);
         // self.prt_vocab.deinit();
@@ -1267,14 +1287,14 @@ pub const InvertedIndexV2 = struct {
             );
             current_pos += 8;
         }
-        std.debug.print("\nVocab size: {d}MB for {d} terms\n",
-            .{
-                @divFloor(
-                    self.vocab.string_bytes.items.len + 8 * self.vocab.map.count(),
-                    1 << 20,
-                ),
-                self.vocab.map.count(),
-            });
+        // std.debug.print("\nVocab size: {d}MB for {d} terms\n",
+            // .{
+                // @divFloor(
+                    // self.vocab.string_bytes.items.len + 8 * self.vocab.map.count(),
+                    // 1 << 20,
+                // ),
+                // self.vocab.map.count(),
+            // });
 
         max_range = current_pos + self.doc_sizes.len * @sizeOf(u16);
         if (max_range > buf.items.len) {
@@ -1381,14 +1401,15 @@ pub const BM25Partition = struct {
         doc_id: u32,
         _: u16,
         col_idx: usize,
-        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
+        // terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
+        _: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
         std.debug.assert(
             self.II[col_idx].vocab.map.count() < (1 << 32),
             );
-        std.debug.assert(
-            terms_seen.count < MAX_NUM_TERMS
-            );
+        // std.debug.assert(
+            // terms_seen.count < MAX_NUM_TERMS
+            // );
 
         const gop = try self.II[col_idx].vocab.map.getOrPutContextAdapted(
             self.allocator,
@@ -1419,15 +1440,11 @@ pub const BM25Partition = struct {
 
             const val = gop.value_ptr.*;
 
-            if (!terms_seen.checkOrInsertSIMD(val)) {
-                self.II[col_idx].doc_freqs.items[val] += 1;
-
-                try self.II[col_idx].posting_list.add(
-                    val,
-                    doc_id,
-                    &self.scratch_arr,
-                    );
-                }
+            self.II[col_idx].doc_freqs.items[val] += try self.II[col_idx].posting_list.add(
+                val,
+                doc_id,
+                &self.scratch_arr,
+                );
         }
 
         self.II[col_idx].doc_sizes[doc_id] += 1;
@@ -1511,7 +1528,7 @@ pub const BM25Partition = struct {
 
         var cntr: usize = 0;
 
-        terms_seen.clear();
+        // terms_seen.clear();
 
         if (is_quoted) {
 

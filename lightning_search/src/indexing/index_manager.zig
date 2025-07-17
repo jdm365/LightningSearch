@@ -200,7 +200,7 @@ pub const IndexManager = struct {
         self.gpa().free(self.partitions.index_partitions);
 
         self.gpa().free(self.file_data.file_handles);
-        std.posix.munmap(self.file_data.mmap_buffer);
+        // std.posix.munmap(self.file_data.mmap_buffer);
 
         try std.fs.cwd().deleteTree(self.file_data.tmp_dir);
 
@@ -244,7 +244,8 @@ pub const IndexManager = struct {
         };
         self.file_data.tmp_dir = try std.fmt.allocPrint(
             self.stringArena(),
-            "ls_data/{x:0>32}", .{std.fmt.fmtSliceHexLower(file_hash[0..16])}
+            "ls_data/{x}", 
+            .{file_hash[0..16]}
             );
 
         std.fs.cwd().makeDir(self.file_data.tmp_dir) catch {
@@ -1493,13 +1494,15 @@ pub const IndexManager = struct {
 
         var total_docs_scored: usize = 0;
 
-        var consumed_mask:  @Vector(8, bool) = @splat(false);
-        for (iterators.items.len..8) |idx| {
+        const max_terms: usize = 16;
+
+        var consumed_mask:  @Vector(max_terms, bool) = @splat(false);
+        for (iterators.items.len..max_terms) |idx| {
             consumed_mask[idx] = true;
         }
-        var doc_id_vec: @Vector(8, u32) = @splat(0);
-        var score_vec:  @Vector(8, u16) = @splat(0);
-        std.debug.assert(iterators.items.len <= 8);
+        var doc_id_vec: @Vector(max_terms, u32) = @splat(0);
+        var score_vec:  @Vector(max_terms, u16) = @splat(0);
+        std.debug.assert(iterators.items.len <= max_terms);
 
 
         // PROCESS
@@ -1511,9 +1514,9 @@ pub const IndexManager = struct {
 
         // --- MAIN WAND LOOP ---
         var current_doc_id: u32 = 0;
-        while (std.simd.countTrues(consumed_mask) < 8) {
+        while (std.simd.countTrues(consumed_mask) < max_terms) {
 
-            inline for (0..8) |idx| {
+            inline for (0..max_terms) |idx| {
                 if (!consumed_mask[idx]) {
                     doc_id_vec[idx] = iterators.items[idx].currentDocId().?;
                     score_vec[idx] = @as(
@@ -1532,11 +1535,11 @@ pub const IndexManager = struct {
                 if (consumed_mask[idx]) continue;
                 const c_doc_id = it.currentDocId().?;
 
-                const doc_id: @Vector(8, u32) = @splat(c_doc_id);
+                const doc_id: @Vector(max_terms, u32) = @splat(c_doc_id);
                 const upper_bound: f32 = @floatFromInt(
                     @reduce(
                     .Add,
-                    score_vec * @as(@Vector(8, u16), @intFromBool(doc_id_vec <= doc_id)),
+                    score_vec * @as(@Vector(max_terms, u16), @intFromBool(doc_id_vec <= doc_id)),
                     )
                 );
 
@@ -1580,7 +1583,7 @@ pub const IndexManager = struct {
             }
 
             if (current_doc_id == std.math.maxInt(u32)) {
-                std.debug.assert(std.simd.countTrues(consumed_mask) == 8);
+                std.debug.assert(std.simd.countTrues(consumed_mask) == max_terms);
                 continue;
             }
 
@@ -2121,10 +2124,21 @@ pub const IndexManager = struct {
 
 
 test "index_csv" {
+    @breakpoint();
     const filename: []const u8 = "../data/mb_small.csv";
     // const filename: []const u8 = "../data/mb.csv";
 
-    var index_manager = try IndexManager.init();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    var index_manager = try IndexManager.init(allocator);
+
+    defer {
+        index_manager.deinit(gpa.allocator()) catch {};
+        _ = gpa.deinit();
+    }
+
 
     try index_manager.readHeader(filename, fu.FileType.CSV);
     try index_manager.scanFile();
@@ -2143,7 +2157,16 @@ test "index_json" {
     const filename: []const u8 = "../data/mb_small.json";
     // const filename: []const u8 = "../data/mb.json";
 
-    var index_manager = try IndexManager.init();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    var index_manager = try IndexManager.init(allocator);
+
+    defer {
+        index_manager.deinit(gpa.allocator()) catch {};
+        _ = gpa.deinit();
+    }
 
     try index_manager.readHeader(filename, fu.FileType.JSON);
     try index_manager.scanFile();

@@ -56,7 +56,7 @@ fn getBitMasksU64(comptime T: type) [@bitSizeOf(T)]u64 {
     }
     return masks;
 }
-const BITMASKS = getBitMasksU64(std.meta.FieldType(RadixNode(void).EdgeData, .freq_char_bitmask));
+const BITMASKS = getBitMasksU64(@FieldType(RadixNode(void).EdgeData, "freq_char_bitmask"));
 
 fn getFullMasksU64(comptime T: type) [@bitSizeOf(T)]u64 {
     const num_bits = @bitSizeOf(T);
@@ -71,7 +71,9 @@ fn getFullMasksU64(comptime T: type) [@bitSizeOf(T)]u64 {
     }
     return masks;
 }
-const FULL_MASKS = getFullMasksU64(std.meta.FieldType(RadixNode(void).EdgeData, .freq_char_bitmask));
+const FULL_MASKS = getFullMasksU64(
+    @FieldType(RadixNode(void).EdgeData, "freq_char_bitmask")
+    );
 
 pub inline fn getInsertIdx(
     char_freq_table: *const [256]u8,
@@ -331,7 +333,7 @@ pub fn RadixTrie(comptime T: type) type {
             };
             try nodes.append(root);
             const num_bits = @bitSizeOf(
-                std.meta.FieldType(NodeType.EdgeData, .freq_char_bitmask)
+                @FieldType(NodeType.EdgeData, "freq_char_bitmask")
                 );
 
             return Self{
@@ -498,7 +500,10 @@ pub fn RadixTrie(comptime T: type) type {
                 argSortDesc,
                 );
 
-            const num_entries = (@bitSizeOf(std.meta.FieldType(NodeType.EdgeData, .freq_char_bitmask))) - 1;
+            const num_entries = (@bitSizeOf(@FieldType(
+                        NodeType.EdgeData, 
+                        "freq_char_bitmask",
+                        ))) - 1;
 
             // Sort by frequency
             for (0..num_entries) |idx| {
@@ -1365,183 +1370,183 @@ test "insertion" {
     try std.testing.expectEqual(64, trie.find("magisterialness"));
 }
 
-test "bench" {
-    @breakpoint();
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    // var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    // var gpa = std.heap.DebugAllocator(.{}){};
+// test "bench" {
+    // @breakpoint();
+    // var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    // // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // // var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+    // defer arena.deinit();
+    // const allocator = arena.allocator();
+// 
+    // // var gpa = std.heap.DebugAllocator(.{}){};
+    // // defer {
+        // // _ = gpa.deinit();
+    // // }
+    // // const g_allocator = gpa.allocator();
+// 
+    // var keys = std.StringHashMap(usize).init(allocator);
+    // defer keys.deinit();
+// 
+    // var trie = try RadixTrie(u32).init(allocator);
+    // defer trie.deinit();
+// 
+    // // const filename = "data/reversed_words.txt";
+    // // const filename = "data/words.txt";
+    // // const filename = "data/words_shuffled_1k.txt";
+    // // const filename = "data/words_shuffled.txt";
+    // const filename = "data/terms.txt";
+    // // const filename = "data/enwik9";
+    // // const filename = "data/duplicate_words.txt";
+    // // const max_bytes_per_line = 65536;
+    // const max_bytes_per_line = 1_048_576;
+    // var file = std.fs.cwd().openFile(filename, .{}) catch {
+        // return;
+    // };
+    // defer file.close();
+    // var buffered_reader = std.io.bufferedReader(file.reader());
+// 
+    // var _raw_keys: std.ArrayList([]const u8) = std.ArrayList([]const u8).init(allocator);
+    // var _scores: std.ArrayList(f32) = std.ArrayList(f32).init(allocator);
     // defer {
-        // _ = gpa.deinit();
+        // _ = _raw_keys.deinit();
+        // _ = _scores.deinit();
     // }
-    // const g_allocator = gpa.allocator();
-
-    var keys = std.StringHashMap(usize).init(allocator);
-    defer keys.deinit();
-
-    var trie = try RadixTrie(u32).init(allocator);
-    defer trie.deinit();
-
-    // const filename = "data/reversed_words.txt";
-    // const filename = "data/words.txt";
-    // const filename = "data/words_shuffled_1k.txt";
-    // const filename = "data/words_shuffled.txt";
-    const filename = "data/terms.txt";
-    // const filename = "data/enwik9";
-    // const filename = "data/duplicate_words.txt";
-    // const max_bytes_per_line = 65536;
-    const max_bytes_per_line = 1_048_576;
-    var file = std.fs.cwd().openFile(filename, .{}) catch {
-        return;
-    };
-    defer file.close();
-    var buffered_reader = std.io.bufferedReader(file.reader());
-
-    var _raw_keys: std.ArrayList([]const u8) = std.ArrayList([]const u8).init(allocator);
-    var _scores: std.ArrayList(f32) = std.ArrayList(f32).init(allocator);
-    defer {
-        _ = _raw_keys.deinit();
-        _ = _scores.deinit();
-    }
-
-    const reader = buffered_reader.reader();
-    while (try reader.readUntilDelimiterOrEofAlloc(allocator, '\n', max_bytes_per_line)) |line| {
-        if (line.len == 0) continue;
-        var it = std.mem.splitSequence(u8, line, "\t");
-
-        var idx: usize = 0;
-        while (it.next()) |field| {
-            if (field.len == 0) continue;
-
-            if (idx == 0) {
-                try _raw_keys.append(field);
-                idx += 1;
-                continue;
-            }
-
-            try _scores.append(try std.fmt.parseFloat(f32, field));
-            idx += 1;
-        }
-    }
-
-    try trie.nodes.ensureTotalCapacity(_raw_keys.items.len);
-
-    const raw_keys = try _raw_keys.toOwnedSlice();
-    const _N = raw_keys.len;
-
-    print("Finished reading file\n", .{});
-    print("Num keys: {d}\n", .{_N});
-
-    const start_freq_table = std.time.microTimestamp();
-    _ = trie.buildFrequencyTable(raw_keys);
-    const end_freq_table = std.time.microTimestamp();
-    const elapsed_freq_table = end_freq_table - start_freq_table;
-
-    print("Finished building frequency table\n", .{});
-
-    var dup_map = std.StringHashMap(u32).init(allocator);
-    defer dup_map.deinit();
-
-    var start = std.time.microTimestamp();
-    for (0.._N) |i| {
-        if (raw_keys[i].len == 0) continue;
-        const val = try keys.fetchPut(raw_keys[i], i);
-        if (val) |_| {
-            try dup_map.put(raw_keys[i], 0);
-        }
-    }
-    var end = std.time.microTimestamp();
-    const elapsed_insert_hashmap = end - start;
-    print("Finished inserting into hashmap\n", .{});
-
-    const N = keys.count();
-
-    print("N: {d}\n", .{N});
-    print("num_scores: {d}\n", .{_scores.items.len});
-
-    start = std.time.microTimestamp();
-    var i: u32 = 0;
-    for (0.._N) |j| {
-        const init_count = trie.num_keys;
-        try trie.insert(raw_keys[j], i);
-        if ((trie.num_keys == init_count) and (dup_map.get(raw_keys[j]) == null)) {
-            print("Failed to insert key: {s}\n", .{raw_keys[j]});
-        }
-        i += 1;
-    }
-    end = std.time.microTimestamp();
-    const elapsed_insert_trie = end - start;
-    print("Finished inserting into trie\n", .{});
-
-    start = std.time.microTimestamp();
-    var keys_not_found: usize = 0;
-    for (0.._N) |j| {
-        _ = trie.find(raw_keys[j]) catch {
-            keys_not_found += 1;
-        };
-    }
-    std.debug.print("Keys not found: {d}\n", .{keys_not_found});
-    end = std.time.microTimestamp();
-    const elapsed_trie_find = end - start;
-
-    start = std.time.microTimestamp();
-    for (0.._N) |j| {
-        _ = std.mem.doNotOptimizeAway(keys.get(raw_keys[j]));
-    }
-    end = std.time.microTimestamp();
-    const elapsed_hashmap_find = end - start;
-
-    try std.testing.expectEqual(N, trie.num_keys);
-
-    print("Num trie keys:  {d}\n", .{trie.num_keys});
-    print("Num trie nodes: {d}\n", .{trie.num_nodes});
-    print("Num trie edges: {d}\n", .{trie.num_edges});
-    print("Theoretical trie memory usage: {d}MB\n", .{trie.getMemoryUsage() / 1_048_576});
-
-    const million_insertions_per_second_trie = @as(f32, @floatFromInt(N)) / @as(f32, @floatFromInt(elapsed_insert_trie));
-    const million_lookups_per_second_trie    = @as(f32, @floatFromInt(N)) / @as(f32, @floatFromInt(elapsed_trie_find));
-    std.debug.print("-------------------  RADIX TRIE  -------------------\n", .{});
-    std.debug.print("\nConstruction time:   {}ms\n", .{@divFloor(elapsed_insert_trie, 1000)});
-    std.debug.print("Million insertions per second: {d}\n", .{million_insertions_per_second_trie});
-    std.debug.print("Million lookups per second:    {d}\n", .{million_lookups_per_second_trie});
-    std.debug.print("Average lookup time:           {}ns\n", .{@divFloor(1000 * elapsed_trie_find, N)});
-
-    std.debug.print("\n\n", .{});
-
-    const million_insertions_per_second_hashmap = @as(f32, @floatFromInt(N)) / @as(f32, @floatFromInt(elapsed_insert_hashmap));
-    const million_lookups_per_second_hashmap    = @as(f32, @floatFromInt(N)) / @as(f32, @floatFromInt(elapsed_hashmap_find));
-    std.debug.print("-------------------  HASHMAP  -------------------\n", .{});
-    std.debug.print("\nConstruction time:   {}ms\n", .{@divFloor(elapsed_insert_hashmap, 1000)});
-    std.debug.print("Million insertions per second: {d}\n", .{million_insertions_per_second_hashmap});
-    std.debug.print("Million lookups per second:    {d}\n", .{million_lookups_per_second_hashmap});
-    std.debug.print("Average lookup time:           {}ns\n", .{@divFloor(1000 * elapsed_hashmap_find, N)});
-
-    std.debug.print("\n\n", .{});
-
-
-    const million_insertions_per_second_freq_table = @as(f32, @floatFromInt(N)) / @as(f32, @floatFromInt(elapsed_freq_table));
-    std.debug.print("------------------  FREQ TABLE ------------------\n", .{});
-    std.debug.print("\nFrequency table construction time: {}ms\n", .{@divFloor(elapsed_freq_table, 1000)});
-    std.debug.print("Million insertions per second:     {d}\n", .{million_insertions_per_second_freq_table});
-
-
-    std.debug.print("\n\n", .{});
-
-    const limit: usize = 10;
-
-    var matching_nodes = try trie.allocator.alloc(RadixTrie(u32).Entry, limit);
-    const start_prefix = std.time.nanoTimestamp();
-    const nodes_found = try trie.getPrefixNodes("m", &matching_nodes);
-    const end_prefix = std.time.nanoTimestamp();
-
-    const elapsed_prefix = end_prefix - start_prefix;
-    print("Prefix search time: {}us\n", .{@divFloor(elapsed_prefix, 1000)});
-    print("Num nodes found: {d}\n", .{nodes_found});
-
-    for (0..@min(nodes_found, 100)) |idx| {
-        print("Node {d} - Key: {s} Value: {d}\n", .{idx, matching_nodes[idx].key, matching_nodes[idx].value});
-    }
-}
+// 
+    // const reader = buffered_reader.reader();
+    // while (try reader.readUntilDelimiterOrEofAlloc(allocator, '\n', max_bytes_per_line)) |line| {
+        // if (line.len == 0) continue;
+        // var it = std.mem.splitSequence(u8, line, "\t");
+// 
+        // var idx: usize = 0;
+        // while (it.next()) |field| {
+            // if (field.len == 0) continue;
+// 
+            // if (idx == 0) {
+                // try _raw_keys.append(field);
+                // idx += 1;
+                // continue;
+            // }
+// 
+            // try _scores.append(try std.fmt.parseFloat(f32, field));
+            // idx += 1;
+        // }
+    // }
+// 
+    // try trie.nodes.ensureTotalCapacity(_raw_keys.items.len);
+// 
+    // const raw_keys = try _raw_keys.toOwnedSlice();
+    // const _N = raw_keys.len;
+// 
+    // print("Finished reading file\n", .{});
+    // print("Num keys: {d}\n", .{_N});
+// 
+    // const start_freq_table = std.time.microTimestamp();
+    // _ = trie.buildFrequencyTable(raw_keys);
+    // const end_freq_table = std.time.microTimestamp();
+    // const elapsed_freq_table = end_freq_table - start_freq_table;
+// 
+    // print("Finished building frequency table\n", .{});
+// 
+    // var dup_map = std.StringHashMap(u32).init(allocator);
+    // defer dup_map.deinit();
+// 
+    // var start = std.time.microTimestamp();
+    // for (0.._N) |i| {
+        // if (raw_keys[i].len == 0) continue;
+        // const val = try keys.fetchPut(raw_keys[i], i);
+        // if (val) |_| {
+            // try dup_map.put(raw_keys[i], 0);
+        // }
+    // }
+    // var end = std.time.microTimestamp();
+    // const elapsed_insert_hashmap = end - start;
+    // print("Finished inserting into hashmap\n", .{});
+// 
+    // const N = keys.count();
+// 
+    // print("N: {d}\n", .{N});
+    // print("num_scores: {d}\n", .{_scores.items.len});
+// 
+    // start = std.time.microTimestamp();
+    // var i: u32 = 0;
+    // for (0.._N) |j| {
+        // const init_count = trie.num_keys;
+        // try trie.insert(raw_keys[j], i);
+        // if ((trie.num_keys == init_count) and (dup_map.get(raw_keys[j]) == null)) {
+            // print("Failed to insert key: {s}\n", .{raw_keys[j]});
+        // }
+        // i += 1;
+    // }
+    // end = std.time.microTimestamp();
+    // const elapsed_insert_trie = end - start;
+    // print("Finished inserting into trie\n", .{});
+// 
+    // start = std.time.microTimestamp();
+    // var keys_not_found: usize = 0;
+    // for (0.._N) |j| {
+        // _ = trie.find(raw_keys[j]) catch {
+            // keys_not_found += 1;
+        // };
+    // }
+    // std.debug.print("Keys not found: {d}\n", .{keys_not_found});
+    // end = std.time.microTimestamp();
+    // const elapsed_trie_find = end - start;
+// 
+    // start = std.time.microTimestamp();
+    // for (0.._N) |j| {
+        // _ = std.mem.doNotOptimizeAway(keys.get(raw_keys[j]));
+    // }
+    // end = std.time.microTimestamp();
+    // const elapsed_hashmap_find = end - start;
+// 
+    // try std.testing.expectEqual(N, trie.num_keys);
+// 
+    // print("Num trie keys:  {d}\n", .{trie.num_keys});
+    // print("Num trie nodes: {d}\n", .{trie.num_nodes});
+    // print("Num trie edges: {d}\n", .{trie.num_edges});
+    // print("Theoretical trie memory usage: {d}MB\n", .{trie.getMemoryUsage() / 1_048_576});
+// 
+    // const million_insertions_per_second_trie = @as(f32, @floatFromInt(N)) / @as(f32, @floatFromInt(elapsed_insert_trie));
+    // const million_lookups_per_second_trie    = @as(f32, @floatFromInt(N)) / @as(f32, @floatFromInt(elapsed_trie_find));
+    // std.debug.print("-------------------  RADIX TRIE  -------------------\n", .{});
+    // std.debug.print("\nConstruction time:   {}ms\n", .{@divFloor(elapsed_insert_trie, 1000)});
+    // std.debug.print("Million insertions per second: {d}\n", .{million_insertions_per_second_trie});
+    // std.debug.print("Million lookups per second:    {d}\n", .{million_lookups_per_second_trie});
+    // std.debug.print("Average lookup time:           {}ns\n", .{@divFloor(1000 * elapsed_trie_find, N)});
+// 
+    // std.debug.print("\n\n", .{});
+// 
+    // const million_insertions_per_second_hashmap = @as(f32, @floatFromInt(N)) / @as(f32, @floatFromInt(elapsed_insert_hashmap));
+    // const million_lookups_per_second_hashmap    = @as(f32, @floatFromInt(N)) / @as(f32, @floatFromInt(elapsed_hashmap_find));
+    // std.debug.print("-------------------  HASHMAP  -------------------\n", .{});
+    // std.debug.print("\nConstruction time:   {}ms\n", .{@divFloor(elapsed_insert_hashmap, 1000)});
+    // std.debug.print("Million insertions per second: {d}\n", .{million_insertions_per_second_hashmap});
+    // std.debug.print("Million lookups per second:    {d}\n", .{million_lookups_per_second_hashmap});
+    // std.debug.print("Average lookup time:           {}ns\n", .{@divFloor(1000 * elapsed_hashmap_find, N)});
+// 
+    // std.debug.print("\n\n", .{});
+// 
+// 
+    // const million_insertions_per_second_freq_table = @as(f32, @floatFromInt(N)) / @as(f32, @floatFromInt(elapsed_freq_table));
+    // std.debug.print("------------------  FREQ TABLE ------------------\n", .{});
+    // std.debug.print("\nFrequency table construction time: {}ms\n", .{@divFloor(elapsed_freq_table, 1000)});
+    // std.debug.print("Million insertions per second:     {d}\n", .{million_insertions_per_second_freq_table});
+// 
+// 
+    // std.debug.print("\n\n", .{});
+// 
+    // const limit: usize = 10;
+// 
+    // var matching_nodes = try trie.allocator.alloc(RadixTrie(u32).Entry, limit);
+    // const start_prefix = std.time.nanoTimestamp();
+    // const nodes_found = try trie.getPrefixNodes("m", &matching_nodes);
+    // const end_prefix = std.time.nanoTimestamp();
+// 
+    // const elapsed_prefix = end_prefix - start_prefix;
+    // print("Prefix search time: {}us\n", .{@divFloor(elapsed_prefix, 1000)});
+    // print("Num nodes found: {d}\n", .{nodes_found});
+// 
+    // for (0..@min(nodes_found, 100)) |idx| {
+        // print("Node {d} - Key: {s} Value: {d}\n", .{idx, matching_nodes[idx].key, matching_nodes[idx].value});
+    // }
+// }

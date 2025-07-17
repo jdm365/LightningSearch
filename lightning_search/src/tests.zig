@@ -1,6 +1,9 @@
 const std = @import("std");
 
+const SHM = @import("indexing/index.zig").SHM;
 const idx = @import("indexing/index.zig");
+const IndexManager = @import("indexing/index_manager.zig").IndexManager;
+const FileType = @import("storage/file_utils.zig").FileType;
 
 test "PostingFullBlock compression/decompression" {
     const allocator = std.heap.page_allocator;
@@ -131,7 +134,7 @@ test "PostingPartialBlock compression/decompression" {
     );
 
     for (0..idx.BLOCK_SIZE) |i| {
-        try pb.add(allocator, sorted_vals[i]);
+        _ = try pb.add(allocator, sorted_vals[i]);
     }
     defer pb.doc_ids.buffer.deinit(allocator);
     defer pb.tfs.buffer.deinit(allocator);
@@ -147,5 +150,137 @@ test "PostingPartialBlock compression/decompression" {
     for (0..idx.BLOCK_SIZE) |i| {
         try std.testing.expectEqual(sorted_vals[i], sorted_vals_cpy[i]);
         try std.testing.expectEqual(tf_arr[i], tf_arr_cpy[i]);
+    }
+}
+
+test "BM25 Rank Ordering" {
+    var gpa = std.heap.DebugAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const filename = "../data/mb_tiny.csv";
+    const queries_filename = "../data/bm25_results.bin";
+
+    var index_manager = try IndexManager.init(allocator);
+
+    defer {
+        // index_manager.deinit(gpa.allocator()) catch {};
+        // _ = gpa.deinit();
+    }
+
+    var filetype: FileType = undefined;
+
+    if (std.mem.endsWith(u8, filename, ".csv")) {
+        filetype = FileType.CSV;
+
+    } else if (std.mem.endsWith(u8, filename, ".parquet")) {
+        filetype = FileType.PARQUET;
+
+    } else if (std.mem.endsWith(u8, filename, ".json")) {
+        filetype = FileType.JSON;
+
+    } else {
+        @panic("Unsupported filetype.");
+    }
+
+    try index_manager.readHeader(filename, filetype);
+    try index_manager.scanFile();
+
+    try index_manager.addSearchCol("title");
+
+    try index_manager.indexFile();
+
+    var boost_factors = std.ArrayList(f32).init(allocator);
+    defer boost_factors.deinit();
+
+    try boost_factors.append(1.0);
+
+    var query_map = SHM.init(allocator);
+    defer query_map.deinit();
+
+    const queries_buffer = try std.fs.Dir.readFileAlloc(
+        std.fs.cwd(),
+        allocator,
+        queries_filename,
+        1 << 20,
+    );
+    defer allocator.free(queries_buffer);
+
+    var queries = std.ArrayListUnmanaged([]const u8){};
+    defer queries.deinit(allocator);
+
+    var correct_doc_ids = std.ArrayListUnmanaged(u32){};
+    defer correct_doc_ids.deinit(allocator);
+
+    var i: usize = 0;
+    var start_idx: usize = 0;
+    loop: while (i < queries_buffer.len) {
+        switch (queries_buffer[i]) {
+            '\n' => {
+                try queries.append(
+                    allocator, 
+                    queries_buffer[start_idx..i],
+                    );
+                i += 1;
+                break :loop;
+            },
+            '|' => {
+                try queries.append(
+                    allocator, 
+                    queries_buffer[start_idx..i],
+                    );
+                i += 1;
+                start_idx = i;
+            },
+            else => {
+                i += 1;
+                continue;
+            },
+        }
+    }
+
+    while (i < queries_buffer.len) {
+        const k = std.mem.readInt(
+            u32,
+            @ptrCast(@as([*]u8, @ptrCast(queries_buffer))[i..(i+4)]),
+            std.builtin.Endian.little,
+        );
+        i += 4;
+
+        for (0..k) |_| {
+            try correct_doc_ids.append(
+                allocator,
+                std.mem.readInt(
+                    u32,
+                    @ptrCast(@as([*]u8, @ptrCast(queries_buffer))[i..(i+4)]),
+                    std.builtin.Endian.little,
+                ),
+            );
+            i += 4;
+        }
+    }
+
+    for (0.., queries.items) |_i, q| {
+        std.debug.print("Queries: {s}\n", .{q});
+        std.debug.print("Doc IDs: {any}\n", .{correct_doc_ids.items[_i * 10..][0..10]});
+    }
+
+    for (0.., queries.items) |_i, q| {
+        try query_map.put("TITLE", q);
+
+        try index_manager.query(
+            query_map,
+            10,
+            boost_factors,
+            );
+
+        for (0..10, ) |_j| {
+            const res = index_manager.query_state.results_arrays[0].items[_j];
+            std.testing.expectEqual(res.doc_id, correct_doc_ids.items[_i * 10 + _j]) catch |err| {
+                std.debug.print("Queries: {s}\n", .{q});
+                std.debug.print("Match: {s}\n", .{index_manager.query_state.result_strings[_j].items});
+                return err;
+            };
+        }
     }
 }

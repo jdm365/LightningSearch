@@ -46,7 +46,7 @@ pub fn csvLineToJson(
     allocator: std.mem.Allocator,
     csv_line: std.ArrayListUnmanaged(u8),
     term_positions: []TermPos,
-    columns: std.ArrayList([]const u8),
+    columns: std.ArrayListUnmanaged([]const u8),
 ) !std.json.Value {
     var json_object = std.json.ObjectMap.init(allocator);
     errdefer json_object.deinit();
@@ -381,7 +381,7 @@ pub const QueryHandlerZap = struct {
         r: zap.Request,
     ) !void {
         r.setHeader("Access-Control-Allow-Origin", "*") catch |err| {
-            std.debug.print("Error setting header: {?}\n", .{err});
+            std.debug.print("Error setting header: {any}\n", .{err});
         };
 
         self.output_buffer.clearRetainingCapacity();
@@ -451,7 +451,7 @@ pub const QueryHandlerZap = struct {
         r: zap.Request,
     ) !void {
         r.setHeader("Access-Control-Allow-Origin", "*") catch |err| {
-            std.debug.print("Error setting header: {?}\n", .{err});
+            std.debug.print("Error setting header: {any}\n", .{err});
         };
 
         self.output_buffer.clearRetainingCapacity();
@@ -798,7 +798,9 @@ pub export fn getNumDocs(
 
 test "csv_parse" {
     const _csv_line = "26859,13859,1,1,WoM27813813,006,Under My Skin (You Go To My Head (Set One)),02:44,David McAlmont,You_Go_To_My_Head_(Set_One),2005,,";
-    const csv_line = std.ArrayListUnmanaged(u8).fromOwnedSlice(_csv_line);
+    const csv_line = std.ArrayListUnmanaged(u8).fromOwnedSlice(
+        std.mem.bytesAsSlice(u8, @constCast(_csv_line))
+        );
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -809,10 +811,10 @@ test "csv_parse" {
 
     try csv.parseRecordCSV(_csv_line, result_positions);
 
-    var columns = std.ArrayList([]const u8).init(allocator);
-    defer columns.deinit();
+    var columns = std.ArrayListUnmanaged([]const u8){};
+    defer columns.deinit(allocator);
 
-    try columns.appendSlice(&[_][]const u8{
+    try columns.appendSlice(allocator, &[_][]const u8{
         "id",
         "artist_id",
         "album_id",
@@ -829,7 +831,12 @@ test "csv_parse" {
 
     for (0..12) |col_idx| {
         std.debug.print("start_pos: {d}, field_len: {d}\n", .{result_positions[col_idx].start_pos, result_positions[col_idx].field_len});
-        std.debug.print("Term: {s}\n", .{csv_line[result_positions[col_idx].start_pos..result_positions[col_idx].start_pos + result_positions[col_idx].field_len]});
+        std.debug.print(
+            "Term: {s}\n", 
+            .{
+                csv_line.items[result_positions[col_idx].start_pos..result_positions[col_idx].start_pos + result_positions[col_idx].field_len]
+            },
+            );
     }
 
     const json_object = try csvLineToJson(
@@ -845,7 +852,7 @@ test "csv_parse" {
         std.debug.print("Column: {s}, Value: {s}\n", .{column_name, field_value});
     }
 
-    try columns.append("SCORE");
+    try columns.append(allocator, "SCORE");
 
     const json_object_score = try csvLineToJsonScore(
         allocator,
