@@ -18,6 +18,7 @@ const rt = @import("../utils/radix_trie.zig");
 
 const TermPos = @import("../server/server.zig").TermPos;
 
+const scoreBM25 = @import("index.zig").scoreBM25;
 const ID = @import("index.zig").ID;
 const PostingsIteratorV2 = @import("index.zig").PostingsIteratorV2;
 const fetchRecordsDocStore = @import("index.zig").BM25Partition.fetchRecordsDocStore;
@@ -39,8 +40,8 @@ const AtomicCounter = std.atomic.Value(u64);
 
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 
-const MAX_NUM_THREADS: usize = 1;
-// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+// const MAX_NUM_THREADS: usize = 1;
+const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -1265,16 +1266,17 @@ pub const IndexManager = struct {
                                 @truncate(II_idx),
                                 idf,
                                 boost_factors.items[II_idx],
+                                II.avg_doc_size,
                             );
 
-                            std.debug.print(
-                                "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
-                                .{
-                                    term_buffer[0..term_len],
-                                    _token,
-                                    II.doc_freqs.items[_token],
-                                },
-                            );
+                            // std.debug.print(
+                                // "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
+                                // .{
+                                    // term_buffer[0..term_len],
+                                    // _token,
+                                    // II.doc_freqs.items[_token],
+                                // },
+                            // );
 
                             term_pos += 1;
                             empty_query = false;
@@ -1322,16 +1324,17 @@ pub const IndexManager = struct {
                                     @truncate(II_idx),
                                     idf,
                                     boost_factors.items[II_idx],
+                                    II.avg_doc_size,
                                 );
 
-                                std.debug.print(
-                                    "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
-                                    .{
-                                        term_buffer[0..term_len],
-                                        _token,
-                                        II.doc_freqs.items[_token],
-                                    },
-                                );
+                                // std.debug.print(
+                                    // "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
+                                    // .{
+                                        // term_buffer[0..term_len],
+                                        // _token,
+                                        // II.doc_freqs.items[_token],
+                                    // },
+                                // );
 
                                 term_pos += 1;
                                 empty_query = false;
@@ -1378,17 +1381,18 @@ pub const IndexManager = struct {
                         @truncate(II_idx),
                         idf,
                         boost_factors.items[II_idx],
+                        II.avg_doc_size,
                     );
 
-                    std.debug.print(
-                        "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
-                        .{
-                            term_buffer[0..term_len],
-                            _token,
-                            II.doc_freqs.items[_token],
-                        },
-                    );
-
+                    // std.debug.print(
+                        // "FOUND TERM: {s} | ID: {d} WITH DF: {d}\n",
+                        // .{
+                            // term_buffer[0..term_len],
+                            // _token,
+                            // II.doc_freqs.items[_token],
+                        // },
+                    // );
+// 
                     term_pos += 1;
                     empty_query = false;
                     idf_remaining += iterator_ptr.boost_weighted_idf;
@@ -1521,7 +1525,7 @@ pub const IndexManager = struct {
                     doc_id_vec[idx] = iterators.items[idx].currentDocId().?;
                     score_vec[idx] = @as(
                         u16, 
-                        @intFromFloat(50.0 * iterators.items[idx].currentBlockMaxScore()),
+                        @intFromFloat(10.0 * iterators.items[idx].currentBlockMaxScore()),
                         );
                 } else {
                     score_vec[idx] = 0;
@@ -1551,7 +1555,7 @@ pub const IndexManager = struct {
                 // TODO: Need to change to only skip block now.
 
 
-                if (upper_bound > 50.0 * sorted_scores.lastScoreCapacity()) continue;
+                if (upper_bound > 10.0 * sorted_scores.lastScoreCapacity()) continue;
                 max_doc_id = @max(c_doc_id, max_doc_id);
             }
 
@@ -1606,9 +1610,17 @@ pub const IndexManager = struct {
 
                 std.debug.assert(c_doc_id.? == current_doc_id);
 
+                const II = self.partitions.index_partitions[partition_idx].II[it.col_idx];
+
                 const _res = try it.next();
                 if (_res) |res| {
-                    base_score += it.boost_weighted_idf * @as(f32, @floatFromInt(res.term_freq));
+                    // base_score += (it.boost_weighted_idf * @as(f32, @floatFromInt(res.term_freq))) / (@as(f32, @floatFromInt(II.doc_sizes[res.doc_id])) / II.avg_doc_size);
+                    base_score += scoreBM25(
+                        it.boost_weighted_idf,
+                        res.term_freq,
+                        II.doc_sizes[res.doc_id],
+                        it.avg_doc_size,
+                    );
                 } else {
                     consumed_mask[idx] = true;
                 }
@@ -1658,7 +1670,7 @@ pub const IndexManager = struct {
             }
         }
 
-        std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{total_docs_scored});
+        // std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{total_docs_scored});
 
         for (0..sorted_scores.count) |idx| {
             const result = QueryResult{
