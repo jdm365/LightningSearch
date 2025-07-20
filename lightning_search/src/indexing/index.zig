@@ -27,11 +27,12 @@ pub const MAX_LINE_LENGTH = 1_048_576;
 pub const ENDIANESS = builtin.cpu.arch.endian();
 
 
-const POST_ALIGNMENT = std.mem.Alignment.fromByteUnits(512);
-// const POST_ALIGNMENT = 512;
+const POST_ALIGNMENT = std.mem.Alignment.fromByteUnits(64);
+// const POST_ALIGNMENT = 64;
 
 const K1: f32 = 1.4;
 const B:  f32 = 0.75;
+const C1: f32 = K1 * (1 - B);
 
 pub inline fn scoreBM25(
     idf: f32,
@@ -46,6 +47,22 @@ pub inline fn scoreBM25(
     const denom = (ftf + (K1 * (1 - B + (B * fds / avg_doc_size))));
 
     return num / denom;
+}
+
+
+pub inline fn scoreBM25Fast(
+    term_freq: u16, 
+    doc_size: u16,
+    A: f32,
+    C2: f32,
+    ) f32 {
+    const tf: f32 = @floatFromInt(term_freq);
+    const d:  f32 = @floatFromInt(doc_size);
+
+    const L = tf + C1 + C2 * d;
+    var r = 1.0 / L;
+    r = r * (2.0 - L * r);
+    return A * tf * r;
 }
 
 inline fn lowerBound(comptime T: type, slice: []const T, target: T) usize {
@@ -135,6 +152,11 @@ pub const PostingsIteratorV2 = struct {
     tp_idx: usize,
     boost_weighted_idf: f32,
     boost: f32,
+
+    current_block_max_score_10: u16,
+    A: f32,
+    C2: f32,
+
     term_id: u32,
     col_idx: u32,
     avg_doc_size: f32,
@@ -166,6 +188,11 @@ pub const PostingsIteratorV2 = struct {
             .tp_idx = undefined,
             .boost_weighted_idf = idf * boost,
             .boost = boost,
+
+            .current_block_max_score_10 = 0,
+            .A = (K1 + 1) * idf * boost,
+            .C2 = (K1 * B) / avg_doc_size,
+
             .term_id = term_id,
             .col_idx = col_idx,
             .avg_doc_size = avg_doc_size,
@@ -179,12 +206,24 @@ pub const PostingsIteratorV2 = struct {
                 &it.uncompressed_doc_ids_buffer,
                 &it.uncompressed_tfs_buffer,
                 );
+            it.current_block_max_score_10 = @as(u16, @intFromFloat(scoreBM25Fast(
+                it.posting.partial_block.max_tf,
+                it.posting.partial_block.max_doc_size,
+                it.A,
+                it.C2,
+            ) * 10.0));
         } else {
             // Decompress full
             try it.posting.full_blocks.items[0].decompressToBuffers(
                 &it.uncompressed_doc_ids_buffer,
                 &it.uncompressed_tfs_buffer,
                 );
+            it.current_block_max_score_10 = @as(u16, @intFromFloat(scoreBM25Fast(
+                it.posting.full_blocks.items[0].max_tf,
+                it.posting.full_blocks.items[0].max_doc_size,
+                it.A,
+                it.C2,
+            ) * 10.0));
         }
 
         return it;
@@ -243,6 +282,18 @@ pub const PostingsIteratorV2 = struct {
                     // .{block_idx, self.uncompressed_doc_ids_buffer},
                 // );
             }
+
+            self.current_block_max_score_10 = @as(
+                u16,
+                @intFromFloat(scoreBM25Fast(
+                    self.uncompressed_tfs_buffer[self.current_doc_idx % BLOCK_SIZE],
+                    if (self.on_partial_block) self.posting.partial_block.max_doc_size
+                    else self.posting.full_blocks.items[block_idx].max_doc_size,
+                    self.A,
+                    self.C2,
+
+                ) * 10.0),
+            );
         }
         // std.debug.print("Current doc id: {d}\n", .{self.uncompressed_doc_ids_buffer[self.current_doc_idx % BLOCK_SIZE]});
 
@@ -380,10 +431,16 @@ pub const PostingsIteratorV2 = struct {
                         self.current_doc_idx,
                         BLOCK_SIZE,
                     ) + matched_idx;
-                    // std.debug.print(
-                        // "current_doc_idx: {d} | BLOCK IDX: {d} | max_doc_id: {d} | num full blocks: {d} | target_id: {d} | matched_idx: {d}\n",
-                        // .{self.current_doc_idx, block_idx, self.posting.full_blocks.items[block_idx].max_doc_id, num_full_blocks, target_id, matched_idx},
-                    // );
+
+                    self.current_block_max_score_10 = @as(
+                        u16,
+                        @intFromFloat(scoreBM25Fast(
+                            self.uncompressed_tfs_buffer[matched_idx],
+                            self.posting.full_blocks.items[block_idx].max_doc_size,
+                            self.A,
+                            self.C2,
+                        ) * 10.0),
+                    );
                     return .{
                         .doc_id = self.uncompressed_doc_ids_buffer[matched_idx],
                         .term_freq = self.uncompressed_tfs_buffer[matched_idx],
@@ -419,6 +476,16 @@ pub const PostingsIteratorV2 = struct {
             self.current_doc_idx = std.math.maxInt(u32);
             return null;
         }
+
+        self.current_block_max_score_10 = @as(
+            u16,
+            @intFromFloat(scoreBM25Fast(
+                self.uncompressed_tfs_buffer[idx],
+                self.posting.partial_block.max_doc_size,
+                self.A,
+                self.C2,
+            ) * 10.0),
+        );
 
         idx = self.current_doc_idx % BLOCK_SIZE;
         return .{

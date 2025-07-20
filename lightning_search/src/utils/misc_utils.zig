@@ -63,6 +63,23 @@ pub fn sortStruct(
     }
 }
 
+pub inline fn bitIsSet(
+    comptime T: type,
+    value: T,
+    idx: usize,
+) bool {
+    const bit_mask: T = @as(T, 1) << @truncate(idx);
+    return (value & bit_mask) != 0;
+}
+
+pub inline fn setBit(
+    comptime T: type,
+    value: *T,
+    idx: usize,
+) void {
+    const bit_mask: T = @as(T, 1) << @truncate(idx);
+    value.* |= bit_mask;
+}
 
 
 test "sortStruct" {

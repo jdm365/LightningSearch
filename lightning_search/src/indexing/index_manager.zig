@@ -18,7 +18,8 @@ const rt = @import("../utils/radix_trie.zig");
 
 const TermPos = @import("../server/server.zig").TermPos;
 
-const scoreBM25 = @import("index.zig").scoreBM25;
+const scoreBM25     = @import("index.zig").scoreBM25;
+const scoreBM25Fast = @import("index.zig").scoreBM25Fast;
 const ID = @import("index.zig").ID;
 const PostingsIteratorV2 = @import("index.zig").PostingsIteratorV2;
 const fetchRecordsDocStore = @import("index.zig").BM25Partition.fetchRecordsDocStore;
@@ -35,13 +36,15 @@ const ScorePair             = @import("../utils/sorted_array.zig").ScorePair;
 const findSorted            = @import("../utils/misc_utils.zig").findSorted;
 const sortStruct            = @import("../utils/misc_utils.zig").sortStruct;
 const printPercentiles      = @import("../utils/misc_utils.zig").printPercentiles;
+const bitIsSet              = @import("../utils/misc_utils.zig").bitIsSet;
+const setBit                = @import("../utils/misc_utils.zig").setBit;
 
 const AtomicCounter = std.atomic.Value(u64);
 
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 
-// const MAX_NUM_THREADS: usize = 1;
-const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+const MAX_NUM_THREADS: usize = 1;
+// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -1500,9 +1503,9 @@ pub const IndexManager = struct {
 
         const max_terms: usize = 16;
 
-        var consumed_mask:  @Vector(max_terms, bool) = @splat(false);
+        var consumed_mask: u16 = 0;
         for (iterators.items.len..max_terms) |idx| {
-            consumed_mask[idx] = true;
+            setBit(u16, &consumed_mask, idx);
         }
         var doc_id_vec: @Vector(max_terms, u32) = @splat(0);
         var score_vec:  @Vector(max_terms, u16) = @splat(0);
@@ -1518,77 +1521,77 @@ pub const IndexManager = struct {
 
         // --- MAIN WAND LOOP ---
         var current_doc_id: u32 = 0;
-        while (std.simd.countTrues(consumed_mask) < max_terms) {
+        while (consumed_mask != comptime std.math.maxInt(u16)) {
 
-            inline for (0..max_terms) |idx| {
-                if (!consumed_mask[idx]) {
-                    doc_id_vec[idx] = iterators.items[idx].currentDocId().?;
-                    score_vec[idx] = @as(
-                        u16, 
-                        @intFromFloat(10.0 * iterators.items[idx].currentBlockMaxScore()),
-                        );
-                } else {
-                    score_vec[idx] = 0;
-                }
-            }
+            // for (0..iterators.items.len) |idx| {
+                // if (!bitIsSet(u16, consumed_mask, idx)) {
+                    // doc_id_vec[idx] = iterators.items[idx].currentDocId().?;
+                    // score_vec[idx] = iterators.items[idx].current_block_max_score_10;
+                // } else {
+                    // score_vec[idx] = 0;
+                // }
+            // }
 
-            var max_doc_id: u32 = 0;
-            var min_doc_id: u32 = std.math.maxInt(u32);
+            var nearest_candidate: u32 = std.math.maxInt(u32);
+            var furthest_candidate: u32 = 0;
+            var do_skip: bool = false;
 
-            for (0.., iterators.items) |idx, *it| {
-                if (consumed_mask[idx]) continue;
+            for (0..iterators.items.len) |idx| {
+                if (bitIsSet(u16, consumed_mask, idx)) continue;
+                const it = &iterators.items[idx];
+
                 const c_doc_id = it.currentDocId().?;
 
                 const doc_id: @Vector(max_terms, u32) = @splat(c_doc_id);
-                const upper_bound: f32 = @floatFromInt(
-                    @reduce(
+                const upper_bound: u16 = @reduce(
                     .Add,
                     score_vec * @as(@Vector(max_terms, u16), @intFromBool(doc_id_vec <= doc_id)),
-                    )
-                );
+                    );
 
-                min_doc_id = @min(c_doc_id, min_doc_id);
 
                 // If True, we need to consider the candidates. 
                 // `THEORETICAL MAX SCORE > MIN SCORE NEEDED TO BREAK INTO TOP K`
                 // Else we can safely skip this block.
                 // TODO: Need to change to only skip block now.
 
-
-                if (upper_bound > 10.0 * sorted_scores.lastScoreCapacity()) continue;
-                max_doc_id = @max(c_doc_id, max_doc_id);
+                if (upper_bound <= @as(u16, @intFromFloat(10.0 * sorted_scores.lastScoreCapacity()))) {
+                    do_skip = true;
+                    furthest_candidate = @max(c_doc_id, furthest_candidate);
+                } else {
+                    nearest_candidate = @min(c_doc_id, nearest_candidate);
+                }
             }
 
-            if (max_doc_id > min_doc_id) {
-                // Doing skipping
+            if (do_skip) {
+                @branchHint(.likely);
 
                 current_doc_id = std.math.maxInt(u32);
                 for (0..iterators.items.len) |idx| {
-                    if (consumed_mask[idx]) continue;
+                    if (bitIsSet(u16, consumed_mask, idx)) continue;
 
                     var iterator = &iterators.items[idx];
-                    const _res = try iterator.advanceTo(max_doc_id + 1);
+                    const _res = try iterator.advanceTo(furthest_candidate + 1);
 
                     if (_res) |res| {
-                        std.debug.assert(res.doc_id >= max_doc_id + 1);
+                        std.debug.assert(res.doc_id >= furthest_candidate + 1);
                         std.debug.assert(res.doc_id == iterator.currentDocId().?);
 
                         current_doc_id = @min(res.doc_id, current_doc_id);
 
+                        doc_id_vec[idx] = res.doc_id;
+                        score_vec[idx]  = iterator.current_block_max_score_10;
+
                     } else {
-                        consumed_mask[idx] = true;
+                        setBit(u16, &consumed_mask, idx);
+                        doc_id_vec[idx] = std.math.maxInt(u32);
+                        score_vec[idx]  = 0;
                     }
                 }
 
                 continue;
             } else {
                 std.debug.assert(current_doc_id != std.math.maxInt(u32));
-                current_doc_id = min_doc_id;
-            }
-
-            if (current_doc_id == std.math.maxInt(u32)) {
-                std.debug.assert(std.simd.countTrues(consumed_mask) == max_terms);
-                continue;
+                current_doc_id = nearest_candidate;
             }
 
             total_docs_scored += 1;
@@ -1599,13 +1602,19 @@ pub const IndexManager = struct {
 
             var base_score: f32 = 0.0;
             for (0.., iterators.items) |idx, *it| {
-                if (consumed_mask[idx]) continue;
+                if (bitIsSet(u16, consumed_mask, idx)) continue;
 
                 const c_doc_id = it.currentDocId();
                 if (c_doc_id == null) {
-                    consumed_mask[idx] = true;
+                    @branchHint(.unlikely);
+                    setBit(u16, &consumed_mask, idx);
+                    doc_id_vec[idx] = std.math.maxInt(u32);
+                    score_vec[idx]  = 0;
                     continue;
                 }
+                doc_id_vec[idx] = c_doc_id.?;
+                score_vec[idx]  = it.current_block_max_score_10;
+
                 if (c_doc_id.? > current_doc_id) continue;
 
                 std.debug.assert(c_doc_id.? == current_doc_id);
@@ -1614,15 +1623,19 @@ pub const IndexManager = struct {
 
                 const _res = try it.next();
                 if (_res) |res| {
-                    // base_score += (it.boost_weighted_idf * @as(f32, @floatFromInt(res.term_freq))) / (@as(f32, @floatFromInt(II.doc_sizes[res.doc_id])) / II.avg_doc_size);
-                    base_score += scoreBM25(
-                        it.boost_weighted_idf,
+                    @branchHint(.likely);
+
+                    base_score += scoreBM25Fast(
                         res.term_freq,
                         II.doc_sizes[res.doc_id],
-                        it.avg_doc_size,
+                        it.A,
+                        it.C2,
                     );
+
+                    doc_id_vec[idx] = res.doc_id;
+                    score_vec[idx]  = it.current_block_max_score_10;
                 } else {
-                    consumed_mask[idx] = true;
+                    setBit(u16, &consumed_mask, idx);
                 }
                 // for (0.., res.term_pos) |tp_idx, tp| {
                     // if (tp_idx == 64) {
@@ -1670,7 +1683,7 @@ pub const IndexManager = struct {
             }
         }
 
-        // std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{total_docs_scored});
+        std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{total_docs_scored});
 
         for (0..sorted_scores.count) |idx| {
             const result = QueryResult{
