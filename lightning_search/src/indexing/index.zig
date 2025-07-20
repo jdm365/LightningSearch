@@ -142,6 +142,71 @@ inline fn linearLowerBoundSIMD(
     return null;
 }
 
+pub const IteratorHeap = struct {
+    its: []PostingsIteratorV2,
+    current_idx: usize,
+
+    // WIP
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        iterators_arr: []PostingsIteratorV2,
+        ) !IteratorHeap {
+        return IteratorHeap{
+            .its = try allocator.alignedAlloc(
+                PostingsIteratorV2, 
+                .@"16",
+                iterators_arr.len,
+                ),
+            .current_idx = 0,
+        };
+    }
+
+    pub fn deinit(
+        self: IteratorHeap,
+        allocator: std.mem.Allocator,
+        ) void {
+        allocator.free(self.its);
+    }
+
+    pub inline fn pop(self: IteratorHeap) PostingsIteratorV2 {
+        const init_idx = self.current_idx;
+        self.current_idx += 1;
+        return self.its[init_idx];
+    }
+
+    pub inline fn push(self: IteratorHeap, new_it: PostingsIteratorV2) void {
+        std.debug.assert(self.current_idx != 0);
+
+        self.its[self.current_idx] = new_it;
+        self.current_idx -= 1;
+
+        self.heapify();
+    }
+
+    pub inline fn heapify(self: IteratorHeap) void {
+        var idx = self.current_idx;
+        while (idx < self.its.len) {
+            const cur_it = self.its[idx];
+            const parent_idx = (idx - 1) >> 1;
+
+            if (parent_idx >= self.current_idx) {
+                break;
+            }
+
+            const parent_it = self.its[parent_idx];
+            if (cur_it.current_block_max_score > 
+                parent_it.current_block_max_score) {
+
+                self.its[idx] = parent_it;
+                self.its[parent_idx] = cur_it;
+                idx = parent_idx;
+            } else {
+                break;
+            }
+        }
+    }
+};
 
 pub const PostingsIteratorV2 = struct {
     posting: PostingV3,
@@ -153,7 +218,7 @@ pub const PostingsIteratorV2 = struct {
     boost_weighted_idf: f32,
     boost: f32,
 
-    current_block_max_score_10: u16,
+    current_block_max_score: f32,
     A: f32,
     C2: f32,
 
@@ -189,7 +254,7 @@ pub const PostingsIteratorV2 = struct {
             .boost_weighted_idf = idf * boost,
             .boost = boost,
 
-            .current_block_max_score_10 = 0,
+            .current_block_max_score = 0.0,
             .A = (K1 + 1) * idf * boost,
             .C2 = (K1 * B) / avg_doc_size,
 
@@ -206,24 +271,24 @@ pub const PostingsIteratorV2 = struct {
                 &it.uncompressed_doc_ids_buffer,
                 &it.uncompressed_tfs_buffer,
                 );
-            it.current_block_max_score_10 = @as(u16, @intFromFloat(scoreBM25Fast(
+            it.current_block_max_score = scoreBM25Fast(
                 it.posting.partial_block.max_tf,
                 it.posting.partial_block.max_doc_size,
                 it.A,
                 it.C2,
-            ) * 10.0));
+            );
         } else {
             // Decompress full
             try it.posting.full_blocks.items[0].decompressToBuffers(
                 &it.uncompressed_doc_ids_buffer,
                 &it.uncompressed_tfs_buffer,
                 );
-            it.current_block_max_score_10 = @as(u16, @intFromFloat(scoreBM25Fast(
+            it.current_block_max_score = scoreBM25Fast(
                 it.posting.full_blocks.items[0].max_tf,
                 it.posting.full_blocks.items[0].max_doc_size,
                 it.A,
                 it.C2,
-            ) * 10.0));
+            );
         }
 
         return it;
@@ -283,17 +348,14 @@ pub const PostingsIteratorV2 = struct {
                 // );
             }
 
-            self.current_block_max_score_10 = @as(
-                u16,
-                @intFromFloat(scoreBM25Fast(
+            self.current_block_max_score = scoreBM25Fast(
                     self.uncompressed_tfs_buffer[self.current_doc_idx % BLOCK_SIZE],
                     if (self.on_partial_block) self.posting.partial_block.max_doc_size
                     else self.posting.full_blocks.items[block_idx].max_doc_size,
                     self.A,
                     self.C2,
 
-                ) * 10.0),
-            );
+                );
         }
         // std.debug.print("Current doc id: {d}\n", .{self.uncompressed_doc_ids_buffer[self.current_doc_idx % BLOCK_SIZE]});
 
@@ -432,15 +494,12 @@ pub const PostingsIteratorV2 = struct {
                         BLOCK_SIZE,
                     ) + matched_idx;
 
-                    self.current_block_max_score_10 = @as(
-                        u16,
-                        @intFromFloat(scoreBM25Fast(
+                    self.current_block_max_score = scoreBM25Fast(
                             self.uncompressed_tfs_buffer[matched_idx],
                             self.posting.full_blocks.items[block_idx].max_doc_size,
                             self.A,
                             self.C2,
-                        ) * 10.0),
-                    );
+                        );
                     return .{
                         .doc_id = self.uncompressed_doc_ids_buffer[matched_idx],
                         .term_freq = self.uncompressed_tfs_buffer[matched_idx],
@@ -477,15 +536,12 @@ pub const PostingsIteratorV2 = struct {
             return null;
         }
 
-        self.current_block_max_score_10 = @as(
-            u16,
-            @intFromFloat(scoreBM25Fast(
+        self.current_block_max_score = scoreBM25Fast(
                 self.uncompressed_tfs_buffer[idx],
                 self.posting.partial_block.max_doc_size,
                 self.A,
                 self.C2,
-            ) * 10.0),
-        );
+            );
 
         idx = self.current_doc_idx % BLOCK_SIZE;
         return .{

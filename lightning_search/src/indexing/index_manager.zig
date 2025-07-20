@@ -1507,8 +1507,8 @@ pub const IndexManager = struct {
         for (iterators.items.len..max_terms) |idx| {
             setBit(u16, &consumed_mask, idx);
         }
-        var doc_id_vec: @Vector(max_terms, u32) = @splat(0);
-        var score_vec:  @Vector(max_terms, u16) = @splat(0);
+        var doc_ids = [_]u32{0} ** max_terms;
+        var scores  = [_]f32{0.0} ** max_terms;
         std.debug.assert(iterators.items.len <= max_terms);
 
 
@@ -1523,30 +1523,31 @@ pub const IndexManager = struct {
         var current_doc_id: u32 = 0;
         while (consumed_mask != comptime std.math.maxInt(u16)) {
 
-            // for (0..iterators.items.len) |idx| {
-                // if (!bitIsSet(u16, consumed_mask, idx)) {
-                    // doc_id_vec[idx] = iterators.items[idx].currentDocId().?;
-                    // score_vec[idx] = iterators.items[idx].current_block_max_score_10;
-                // } else {
-                    // score_vec[idx] = 0;
-                // }
-            // }
-
             var nearest_candidate: u32 = std.math.maxInt(u32);
             var furthest_candidate: u32 = 0;
             var do_skip: bool = false;
 
             for (0..iterators.items.len) |idx| {
-                if (bitIsSet(u16, consumed_mask, idx)) continue;
-                const it = &iterators.items[idx];
+                if (bitIsSet(u16, consumed_mask, idx)) {
+                    @branchHint(.unlikely);
+                    continue;
+                }
 
-                const c_doc_id = it.currentDocId().?;
+                const c_doc_id = doc_ids[idx];
 
-                const doc_id: @Vector(max_terms, u32) = @splat(c_doc_id);
-                const upper_bound: u16 = @reduce(
-                    .Add,
-                    score_vec * @as(@Vector(max_terms, u16), @intFromBool(doc_id_vec <= doc_id)),
-                    );
+                var upper_bound: f32 = 0.0;
+                for (0..iterators.items.len) |jdx| {
+                    if (bitIsSet(u16, consumed_mask, jdx)) {
+                        @branchHint(.unlikely);
+                        continue;
+                    }
+                    if (doc_ids[jdx] > c_doc_id) {
+                        @branchHint(.unpredictable);
+                        continue;
+                    }
+
+                    upper_bound += scores[jdx];
+                }
 
 
                 // If True, we need to consider the candidates. 
@@ -1554,7 +1555,7 @@ pub const IndexManager = struct {
                 // Else we can safely skip this block.
                 // TODO: Need to change to only skip block now.
 
-                if (upper_bound <= @as(u16, @intFromFloat(10.0 * sorted_scores.lastScoreCapacity()))) {
+                if (upper_bound <= sorted_scores.lastScoreCapacity()) {
                     do_skip = true;
                     furthest_candidate = @max(c_doc_id, furthest_candidate);
                 } else {
@@ -1567,30 +1568,37 @@ pub const IndexManager = struct {
 
                 current_doc_id = std.math.maxInt(u32);
                 for (0..iterators.items.len) |idx| {
-                    if (bitIsSet(u16, consumed_mask, idx)) continue;
+                    if (bitIsSet(u16, consumed_mask, idx)) {
+                        @branchHint(.unlikely);
+                        continue;
+                    }
 
                     var iterator = &iterators.items[idx];
                     const _res = try iterator.advanceTo(furthest_candidate + 1);
 
                     if (_res) |res| {
+                        @branchHint(.likely);
+
                         std.debug.assert(res.doc_id >= furthest_candidate + 1);
                         std.debug.assert(res.doc_id == iterator.currentDocId().?);
 
                         current_doc_id = @min(res.doc_id, current_doc_id);
 
-                        doc_id_vec[idx] = res.doc_id;
-                        score_vec[idx]  = iterator.current_block_max_score_10;
+                        doc_ids[idx] = res.doc_id;
+                        scores[idx]  = iterator.current_block_max_score;
 
                     } else {
                         setBit(u16, &consumed_mask, idx);
-                        doc_id_vec[idx] = std.math.maxInt(u32);
-                        score_vec[idx]  = 0;
+                        // doc_id_vec[idx] = std.math.maxInt(u32);
+                        // score_vec[idx]  = 0;
+                        doc_ids[idx] = comptime std.math.maxInt(u32);
+                        scores[idx]  = 0.0;
                     }
                 }
 
                 continue;
             } else {
-                std.debug.assert(current_doc_id != std.math.maxInt(u32));
+                std.debug.assert(current_doc_id != comptime std.math.maxInt(u32));
                 current_doc_id = nearest_candidate;
             }
 
@@ -1602,20 +1610,26 @@ pub const IndexManager = struct {
 
             var base_score: f32 = 0.0;
             for (0.., iterators.items) |idx, *it| {
-                if (bitIsSet(u16, consumed_mask, idx)) continue;
+                if (bitIsSet(u16, consumed_mask, idx)) {
+                    @branchHint(.unlikely);
+                    continue;
+                }
 
                 const c_doc_id = it.currentDocId();
                 if (c_doc_id == null) {
                     @branchHint(.unlikely);
                     setBit(u16, &consumed_mask, idx);
-                    doc_id_vec[idx] = std.math.maxInt(u32);
-                    score_vec[idx]  = 0;
+                    doc_ids[idx] = comptime std.math.maxInt(u32);
+                    scores[idx]  = 0.0;
                     continue;
                 }
-                doc_id_vec[idx] = c_doc_id.?;
-                score_vec[idx]  = it.current_block_max_score_10;
+                doc_ids[idx] = c_doc_id.?;
+                scores[idx]  = it.current_block_max_score;
 
-                if (c_doc_id.? > current_doc_id) continue;
+                if (c_doc_id.? > current_doc_id) {
+                    @branchHint(.unpredictable);
+                    continue;
+                }
 
                 std.debug.assert(c_doc_id.? == current_doc_id);
 
@@ -1632,8 +1646,8 @@ pub const IndexManager = struct {
                         it.C2,
                     );
 
-                    doc_id_vec[idx] = res.doc_id;
-                    score_vec[idx]  = it.current_block_max_score_10;
+                    doc_ids[idx] = res.doc_id;
+                    scores[idx]  = it.current_block_max_score;
                 } else {
                     setBit(u16, &consumed_mask, idx);
                 }
