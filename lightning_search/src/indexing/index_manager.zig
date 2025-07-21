@@ -38,6 +38,7 @@ const sortStruct            = @import("../utils/misc_utils.zig").sortStruct;
 const printPercentiles      = @import("../utils/misc_utils.zig").printPercentiles;
 const bitIsSet              = @import("../utils/misc_utils.zig").bitIsSet;
 const setBit                = @import("../utils/misc_utils.zig").setBit;
+const unsetBit              = @import("../utils/misc_utils.zig").unsetBit;
 
 const AtomicCounter = std.atomic.Value(u64);
 
@@ -1503,13 +1504,16 @@ pub const IndexManager = struct {
 
         const max_terms: usize = 16;
 
-        var consumed_mask: u16 = 0;
-        for (iterators.items.len..max_terms) |idx| {
-            setBit(u16, &consumed_mask, idx);
-        }
+        var remove_mask: u16 = 0;
+        // for (iterators.items.len..max_terms) |idx| {
+            // setBit(u16, &remove_mask, idx);
+        // }
+
         var doc_ids = [_]u32{0} ** max_terms;
         var scores  = [_]f32{0.0} ** max_terms;
         std.debug.assert(iterators.items.len <= max_terms);
+
+        // TODO: Keep array of live iterators instead of using mask.
 
 
         // PROCESS
@@ -1521,32 +1525,32 @@ pub const IndexManager = struct {
 
         // --- MAIN WAND LOOP ---
         var current_doc_id: u32 = 0;
-        while (consumed_mask != comptime std.math.maxInt(u16)) {
+        // while (consumed_mask != comptime std.math.maxInt(u16)) {
+        while (iterators.items.len > 0) {
+            remove_mask = 0;
+            // remove_mask = (comptime std.math.maxInt(u16)) << @truncate(iterators.items.len);
 
             var nearest_candidate: u32 = std.math.maxInt(u32);
             var furthest_candidate: u32 = 0;
             var do_skip: bool = false;
 
             for (0..iterators.items.len) |idx| {
-                if (bitIsSet(u16, consumed_mask, idx)) {
-                    @branchHint(.unlikely);
-                    continue;
-                }
+                // if (bitIsSet(u16, consumed_mask, idx)) {
+                    // @branchHint(.unlikely);
+                    // continue;
+                // }
 
                 const c_doc_id = doc_ids[idx];
 
                 var upper_bound: f32 = 0.0;
                 for (0..iterators.items.len) |jdx| {
-                    if (bitIsSet(u16, consumed_mask, jdx)) {
-                        @branchHint(.unlikely);
-                        continue;
-                    }
-                    if (doc_ids[jdx] > c_doc_id) {
-                        @branchHint(.unpredictable);
-                        continue;
-                    }
-
-                    upper_bound += scores[jdx];
+                    // if (doc_ids[jdx] > c_doc_id) {
+                        // @branchHint(.unpredictable);
+                        // continue;
+                    // }
+// 
+                    // upper_bound += scores[jdx];
+                    upper_bound += scores[jdx] * @as(f32, @floatFromInt(@intFromBool(doc_ids[jdx] <= c_doc_id)));
                 }
 
 
@@ -1568,10 +1572,6 @@ pub const IndexManager = struct {
 
                 current_doc_id = std.math.maxInt(u32);
                 for (0..iterators.items.len) |idx| {
-                    if (bitIsSet(u16, consumed_mask, idx)) {
-                        @branchHint(.unlikely);
-                        continue;
-                    }
 
                     var iterator = &iterators.items[idx];
                     const _res = try iterator.advanceTo(furthest_candidate + 1);
@@ -1588,14 +1588,17 @@ pub const IndexManager = struct {
                         scores[idx]  = iterator.current_block_max_score;
 
                     } else {
-                        setBit(u16, &consumed_mask, idx);
-                        // doc_id_vec[idx] = std.math.maxInt(u32);
-                        // score_vec[idx]  = 0;
+                        setBit(u16, &remove_mask, idx);
                         doc_ids[idx] = comptime std.math.maxInt(u32);
                         scores[idx]  = 0.0;
                     }
                 }
 
+                while (remove_mask != 0) {
+                    const remove_idx: usize = (comptime @bitSizeOf(@TypeOf(remove_mask)) - 1) - @clz(remove_mask);
+                    _ = iterators.swapRemove(remove_idx);
+                    unsetBit(u16, &remove_mask, remove_idx);
+                }
                 continue;
             } else {
                 std.debug.assert(current_doc_id != comptime std.math.maxInt(u32));
@@ -1610,17 +1613,18 @@ pub const IndexManager = struct {
 
             var base_score: f32 = 0.0;
             for (0.., iterators.items) |idx, *it| {
-                if (bitIsSet(u16, consumed_mask, idx)) {
-                    @branchHint(.unlikely);
-                    continue;
-                }
+                // if (bitIsSet(u16, consumed_mask, idx)) {
+                    // @branchHint(.unlikely);
+                    // continue;
+                // }
 
                 const c_doc_id = it.currentDocId();
                 if (c_doc_id == null) {
                     @branchHint(.unlikely);
-                    setBit(u16, &consumed_mask, idx);
                     doc_ids[idx] = comptime std.math.maxInt(u32);
                     scores[idx]  = 0.0;
+
+                    setBit(u16, &remove_mask, idx);
                     continue;
                 }
                 doc_ids[idx] = c_doc_id.?;
@@ -1649,7 +1653,13 @@ pub const IndexManager = struct {
                     doc_ids[idx] = res.doc_id;
                     scores[idx]  = it.current_block_max_score;
                 } else {
-                    setBit(u16, &consumed_mask, idx);
+                    setBit(u16, &remove_mask, idx);
+                }
+
+                while (remove_mask != 0) {
+                    const remove_idx: usize = (comptime @bitSizeOf(@TypeOf(remove_mask)) - 1) - @clz(remove_mask);
+                    _ = iterators.swapRemove(remove_idx);
+                    unsetBit(u16, &remove_mask, remove_idx);
                 }
                 // for (0.., res.term_pos) |tp_idx, tp| {
                     // if (tp_idx == 64) {

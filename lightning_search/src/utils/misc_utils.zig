@@ -81,6 +81,15 @@ pub inline fn setBit(
     value.* |= bit_mask;
 }
 
+pub inline fn unsetBit(
+    comptime T: type,
+    value: *T,
+    idx: usize,
+) void {
+    const bit_mask: T = @as(T, 1) << @truncate(idx);
+    value.* &= ~bit_mask;
+}
+
 
 test "sortStruct" {
     const misc_utils = @import("misc_utils.zig");
