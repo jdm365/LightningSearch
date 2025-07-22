@@ -317,7 +317,10 @@ pub const IndexManager = struct {
                 const matched_col_idx = self.columns.find(col_name_upper) catch {
                     return error.ColumnNotFound;
                 };
-                try self.search_col_idxs.append(self.stringArena(), @truncate(matched_col_idx));
+                try self.search_col_idxs.append(
+                    self.stringArena(), 
+                    @truncate(matched_col_idx),
+                    );
             },
         }
     }

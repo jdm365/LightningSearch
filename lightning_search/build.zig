@@ -10,24 +10,28 @@ pub fn build(b: *std.Build) void {
         .openssl = false,
     });
 
-    // const shared_lib = b.addSharedLibrary(.{
-        // .name = "search_app",
-        // .root_source_file = b.path("src/main.zig"),
-        // .target = target,
-        // .optimize = optimize,
-        // // .optimize = .ReleaseFast,
-        // // .optimize = .ReleaseSafe,
-        // // .optimize = .Debug,
-    // });
-    // shared_lib.linkLibC();
-    // shared_lib.linkSystemLibrary("unwind");
-    // shared_lib.addIncludePath(b.path("lib"));
-    // shared_lib.addObjectFile(b.path("lib/libparquet_bindings.a"));
-    // shared_lib.installHeader(b.path("lib/parquet_bindings.h"), "parquet_bindings.h");
-// 
-// 
-    // const shared_install = b.addInstallArtifact(shared_lib, .{});
-    // b.installArtifact(shared_lib);
+    const shared_lib = b.addLibrary(.{
+        .name = "lightning_search",
+        .linkage = .dynamic,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/ffi.zig"),
+            .target = target,
+            .optimize = optimize,
+            // .optimize = .ReleaseFast,
+            // .optimize = .ReleaseSafe,
+            // .optimize = .Debug,
+            }),
+    });
+    shared_lib.linkLibC();
+    shared_lib.linkSystemLibrary("unwind");
+    shared_lib.addIncludePath(b.path("lib"));
+    shared_lib.addObjectFile(b.path("lib/libparquet_bindings.a"));
+    shared_lib.installHeader(b.path("lib/parquet_bindings.h"), "parquet_bindings.h");
+    shared_lib.installHeader(b.path("lib/ffi.h"), "ffi.h");
+    b.installArtifact(shared_lib);
+
+    const shared_step = b.step("shared", "Build the shared library");
+    shared_step.dependOn(&shared_lib.step);
 
     const exe = b.addExecutable(.{
         .name = "lightning_search.bin",

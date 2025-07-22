@@ -1,17 +1,12 @@
-EXEC_PATH := ./swift/build/search_app
 BIN_PATH  := lightning_search.bin
 DATA_PATH := ../../data/mb.csv
 
-build:
-	zig build shared
-	mkdir -p src/swift/build
-	swiftc -O swift/main.swift \
-		-sdk "$(shell xcrun --show-sdk-path)" \
-		-o swift/build/search_app \
-		-L zig-out/lib \
-		-lsearch_app \
-		-Xlinker -rpath -Xlinker @executable_path/
-	mv zig-out/lib/libsearch_app.dylib swift/build/
+install_python:
+	## zig build shared -Doptimize=ReleaseFast
+	zig build -Doptimize=ReleaseFast
+	mv zig-out/lib/liblightning_search.so ./python/lightning_search/
+	mv zig-out/include/ffi.h ./python/lightning_search/ffi.h
+	cd python && uv pip install .
 
 bench:
 	zig build -Doptimize=ReleaseFast

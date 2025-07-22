@@ -41,7 +41,6 @@ pub fn urlDecode(
 
     return try output.toOwnedSlice(allocator);
 }
-
 pub fn csvLineToJson(
     allocator: std.mem.Allocator,
     csv_line: std.ArrayListUnmanaged(u8),

@@ -27,8 +27,7 @@ pub const MAX_LINE_LENGTH = 1_048_576;
 pub const ENDIANESS = builtin.cpu.arch.endian();
 
 
-const POST_ALIGNMENT = std.mem.Alignment.fromByteUnits(64);
-// const POST_ALIGNMENT = 64;
+const POST_ALIGNMENT = 64;
 
 const K1: f32 = 1.4;
 const B:  f32 = 0.75;
