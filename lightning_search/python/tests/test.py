@@ -11,7 +11,7 @@ if __name__ == '__main__':
     filename = os.path.join(
             CURRENT_DIR,
             "../../../data",
-            "enwiki_small.csv",
+            "enwiki.csv",
             )
 
     index = Index()
@@ -22,13 +22,13 @@ if __name__ == '__main__':
                 ],
             )
 
-    print(index.query(
+    print(json.dumps(index.query(
             query_map={
-                "text": "Booty"
+                "text": "griffith observatory"
             },
             boost_factors={
                 "text": 1.0
             },
             k=5,
-            ))
+            ), indent=2))
     sys.stdout.flush()

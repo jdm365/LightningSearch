@@ -46,8 +46,8 @@ const AtomicCounter = std.atomic.Value(u64);
 
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 
-// const MAX_NUM_THREADS: usize = 1;
-const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+const MAX_NUM_THREADS: usize = 1;
+// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -1800,7 +1800,7 @@ pub const IndexManager = struct {
             }
         }
 
-        std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{total_docs_scored});
+        // std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{total_docs_scored});
 
         for (0..sorted_scores.count) |idx| {
             const result = QueryResult{
@@ -2185,7 +2185,7 @@ pub const IndexManager = struct {
 
         var wg: std.Thread.WaitGroup = .{};
 
-        const _start = std.time.microTimestamp();
+        // const _start = std.time.microTimestamp();
         for (0..num_partitions) |partition_idx| {
             self.query_state.results_arrays[partition_idx].clear();
             self.query_state.results_arrays[partition_idx].resize(k);
@@ -2202,12 +2202,12 @@ pub const IndexManager = struct {
         }
 
         wg.wait();
-        const _end = std.time.microTimestamp();
-        const time_taken_us_query_only = _end - _start;
-        std.debug.print(
-            "Query took {d} us\n", 
-            .{time_taken_us_query_only},
-        );
+        // const _end = std.time.microTimestamp();
+        // const time_taken_us_query_only = _end - _start;
+        // std.debug.print(
+            // "Query took {d} us\n", 
+            // .{time_taken_us_query_only},
+        // );
 
         if (self.partitions.index_partitions.len > 1) {
             for (self.query_state.results_arrays[1..]) |*tr| {

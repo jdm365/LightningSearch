@@ -347,14 +347,21 @@ pub const PostingsIteratorV2 = struct {
                 // );
             }
 
-            self.current_block_max_score = scoreBM25Fast(
-                    self.uncompressed_tfs_buffer[self.current_doc_idx % BLOCK_SIZE],
-                    if (self.on_partial_block) self.posting.partial_block.max_doc_size
-                    else self.posting.full_blocks.items[block_idx].max_doc_size,
-                    self.A,
-                    self.C2,
-
-                );
+            if (self.on_partial_block) {
+                self.current_block_max_score = scoreBM25Fast(
+                        self.posting.partial_block.max_tf,
+                        self.posting.partial_block.max_doc_size,
+                        self.A,
+                        self.C2,
+                    );
+            } else {
+                self.current_block_max_score = scoreBM25Fast(
+                        self.posting.full_blocks.items[block_idx].max_tf,
+                        self.posting.full_blocks.items[block_idx].max_doc_size,
+                        self.A,
+                        self.C2,
+                    );
+            }
         }
         // std.debug.print("Current doc id: {d}\n", .{self.uncompressed_doc_ids_buffer[self.current_doc_idx % BLOCK_SIZE]});
 
@@ -494,7 +501,7 @@ pub const PostingsIteratorV2 = struct {
                     ) + matched_idx;
 
                     self.current_block_max_score = scoreBM25Fast(
-                            self.uncompressed_tfs_buffer[matched_idx],
+                            self.posting.full_blocks.items[block_idx].max_tf,
                             self.posting.full_blocks.items[block_idx].max_doc_size,
                             self.A,
                             self.C2,
@@ -536,7 +543,7 @@ pub const PostingsIteratorV2 = struct {
         }
 
         self.current_block_max_score = scoreBM25Fast(
-                self.uncompressed_tfs_buffer[idx],
+                self.posting.partial_block.max_tf,
                 self.posting.partial_block.max_doc_size,
                 self.A,
                 self.C2,
