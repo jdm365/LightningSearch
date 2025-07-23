@@ -1,15 +1,14 @@
 const std     = @import("std");
 const builtin = @import("builtin");
 
+const misc = @import("utils/misc_utils.zig");
 const SHM = @import("indexing/index.zig").SHM;
 const IndexManager = @import("indexing/index_manager.zig").IndexManager;
 const FileType = @import("storage/file_utils.zig").FileType;
 
 const server = @import("server/server.zig");
 
-inline fn contains(haystack: []const u8, needle: []const u8) bool {
-    return std.mem.indexOf(u8, haystack, needle) != null;
-}
+const contains = misc.contains;
 
 fn bench(filename: []const u8) !void {
     var gpa = std.heap.DebugAllocator(.{}){};
@@ -61,29 +60,41 @@ fn bench(filename: []const u8) !void {
 
     try index_manager.indexFile();
 
-    var boost_factors = std.ArrayList(f32).init(allocator);
-    defer boost_factors.deinit();
-
-    try boost_factors.append(2.0);
-    try boost_factors.append(1.0);
-    try boost_factors.append(1.0);
-    // try boost_factors.append(1.0);
-    // try boost_factors.append(1.0);
-
-    var query_map = SHM.init(allocator);
-    defer query_map.deinit();
-
     if (contains(filename, "hn")) {
-        try query_map.put("STORY_TEXT", "zig");
-        try query_map.put("COMMENT_TEXT", "gotta go fast");
+        try index_manager.addQueryField(
+            "STORY_TEXT",
+            "zig",
+            2.0,
+        );
+        try index_manager.addQueryField(
+            "COMMENT_TEXT",
+            "gotta go fast",
+            1.0,
+        );
 
     } else if (contains(filename, "enwik")) {
-        try query_map.put("TEXT", "griffith observatory");
+        try index_manager.addQueryField(
+            "TEXT",
+            "griffith observatory",
+            1.0,
+        );
 
     } else if (contains(filename, "mb")) {
-        try query_map.put("TITLE", "UNDER MY SKIN");
-        try query_map.put("ARTIST", "FRANK SINATRA");
-        try query_map.put("ALBUM", "LIGHTNING");
+        try index_manager.addQueryField(
+            "TITLE",
+            "UNDER MY SKIN",
+            2.0,
+        );
+        try index_manager.addQueryField(
+            "ARTIST",
+            "FRANK SINATRA",
+            1.0,
+        );
+        try index_manager.addQueryField(
+            "ALBUM",
+            "LIGHTNING",
+            1.0,
+        );
 
     } else {
         @panic("File not supported yet.");
@@ -93,11 +104,7 @@ fn bench(filename: []const u8) !void {
 
     const start_time = std.time.microTimestamp();
     for (0..num_queries) |_| {
-        try index_manager.query(
-            query_map,
-            10,
-            boost_factors,
-            );
+        try index_manager.query(10);
 
         // std.debug.print(
             // "Query result: {s}\n",

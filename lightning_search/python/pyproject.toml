@@ -6,3 +6,19 @@ build-backend = "setuptools.build_meta"
 name = "lightning_search"
 version = "0.1.0"
 description = "FTS search engine with first class python bindings."
+## readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+]
+
+## [project.urls]
+## Homepage = "https://github.com/yourusername/lightning_search"  # Update as needed
+## Repository = "https://github.com/yourusername/lightning_search"
+
+[tool.setuptools]
+packages = ["lightning_search"]
+zip-safe = false
+
+[tool.setuptools.package-data]
+lightning_search = ["liblightning_search.so", "ffi.h"]

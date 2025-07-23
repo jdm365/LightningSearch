@@ -33,19 +33,21 @@ const SHM = @import("index.zig").SHM;
 const SortedScoreMultiArray = @import("../utils/sorted_array.zig").SortedScoreMultiArray;
 const SortedIntMultiArray   = @import("../utils/sorted_array.zig").SortedIntMultiArray;
 const ScorePair             = @import("../utils/sorted_array.zig").ScorePair;
-const findSorted            = @import("../utils/misc_utils.zig").findSorted;
-const sortStruct            = @import("../utils/misc_utils.zig").sortStruct;
-const printPercentiles      = @import("../utils/misc_utils.zig").printPercentiles;
-const bitIsSet              = @import("../utils/misc_utils.zig").bitIsSet;
-const setBit                = @import("../utils/misc_utils.zig").setBit;
-const unsetBit              = @import("../utils/misc_utils.zig").unsetBit;
+
+const misc = @import("../utils/misc_utils.zig");
+const findSorted            = misc.findSorted;
+const sortStruct            = misc.sortStruct;
+const printPercentiles      = misc.printPercentiles;
+const bitIsSet              = misc.bitIsSet;
+const setBit                = misc.setBit;
+const unsetBit              = misc.unsetBit;
 
 const AtomicCounter = std.atomic.Value(u64);
 
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 
-const MAX_NUM_THREADS: usize = 1;
-// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+// const MAX_NUM_THREADS: usize = 1;
+const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -67,9 +69,6 @@ pub const IndexManager = struct {
     file_data: FileData,
     query_state: QueryState,
     indexing_state: IndexingState,
-
-    columns: rt.RadixTrie(u32),
-    search_col_idxs: std.ArrayListUnmanaged(u32),
 
     const Partitions = struct {
         index_partitions: []BM25Partition,
@@ -98,18 +97,27 @@ pub const IndexManager = struct {
 
         mmap_buffer: []u8,
 
+        column_idx_map:  rt.RadixTrie(u32),
+        search_col_idxs: std.ArrayListUnmanaged(u32),
+        boost_factors:   std.ArrayListUnmanaged(f32),
+        column_names:    std.ArrayListUnmanaged([]const u8),
+
         inline fn inputFilename(self: *FileData) []const u8 {
             return std.mem.span(self.input_filename_c);
         }
     };
 
     const QueryState = struct {
+        query_map: SHM,
         bit_sizes: [MAX_NUM_RESULTS][]u32,
 
         result_positions: [MAX_NUM_RESULTS][]TermPos,
         result_strings: [MAX_NUM_RESULTS]std.ArrayListUnmanaged(u8),
         results_arrays: []SortedScoreMultiArray(QueryResult),
         thread_pool: std.Thread.Pool,
+
+        json_objects: std.ArrayListUnmanaged(std.json.Value),
+        json_output_buffer: std.ArrayListUnmanaged(u8),
     };
 
     const IndexingState = struct {
@@ -139,38 +147,49 @@ pub const IndexManager = struct {
                 .file_handles     = undefined,
                 .file_type        = undefined,
                 .mmap_buffer      = undefined,
+
+                .column_idx_map  = undefined,
+                .search_col_idxs = std.ArrayListUnmanaged(u32){},
+                .boost_factors   = std.ArrayListUnmanaged(f32){},
+                .column_names    = std.ArrayListUnmanaged([]const u8){},
             },
 
             .query_state = QueryState{
+                .query_map = undefined,
                 .bit_sizes = undefined,
 
                 .result_positions = undefined,
                 .result_strings   = undefined,
                 .results_arrays   = undefined,
                 .thread_pool      = undefined,
+
+                .json_objects = std.ArrayListUnmanaged(std.json.Value){},
+                .json_output_buffer = std.ArrayListUnmanaged(u8){},
             },
 
             .indexing_state = IndexingState{
                 .last_progress = 0,
                 .partition_is_indexing = undefined,
             },
-
-            .columns         = undefined,
-            .search_col_idxs = std.ArrayListUnmanaged(u32){},
         };
         manager.allocators.gpa.*           = std.heap.DebugAllocator(.{.thread_safe = true}){};
         manager.allocators.string_arena.*  = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         manager.allocators.scratch_arena.* = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
-        try manager.search_col_idxs.ensureTotalCapacity(
+        try manager.file_data.search_col_idxs.ensureTotalCapacity(
             manager.gpa(), 
             4,
             );
-        manager.columns = try rt.RadixTrie(u32).initCapacity(
+        try manager.file_data.boost_factors.ensureTotalCapacity(
+            manager.gpa(), 
+            4,
+            );
+        manager.file_data.column_idx_map = try rt.RadixTrie(u32).initCapacity(
             manager.gpa(),
             32,
             );
 
+        manager.query_state.query_map = SHM.init(manager.stringArena());
 
         return manager;
     }
@@ -216,8 +235,8 @@ pub const IndexManager = struct {
             }
         }
 
-        self.search_col_idxs.deinit(self.gpa());
-        self.columns.deinit();
+        self.file_data.search_col_idxs.deinit(self.gpa());
+        self.file_data.column_idx_map.deinit();
         self.query_state.thread_pool.deinit();
 
         self.allocators.string_arena.deinit();
@@ -273,7 +292,13 @@ pub const IndexManager = struct {
                     self.file_data.input_filename_c,
                     );
                 for (0.., cols.items) |idx, col| {
-                    try self.columns.insert(col, @truncate(idx));
+                    try self.file_data.column_idx_map.insert(col, @truncate(idx));
+
+                    const cloned_col = try self.stringArena().dupe(u8, col);
+                    try self.file_data.column_names.append(
+                        self.stringArena(),
+                        cloned_col,
+                        );
                 }
 
                 self.file_data.pq_data = PQData{
@@ -284,20 +309,19 @@ pub const IndexManager = struct {
             },
         }
 
-        std.debug.assert(self.columns.num_keys > 0);
+        std.debug.assert(self.file_data.column_idx_map.num_keys > 0);
 
         for (0..MAX_NUM_RESULTS) |idx| {
             self.query_state.bit_sizes[idx] = try self.gpa().alloc(
                 u32, 
-                self.columns.num_keys,
+                self.file_data.column_idx_map.num_keys,
                 );
             self.query_state.result_positions[idx] = try self.gpa().alloc(
                 TermPos, 
-                self.columns.num_keys,
+                self.file_data.column_idx_map.num_keys,
                 );
             self.query_state.result_strings[idx] = std.ArrayListUnmanaged(u8){};
             try self.query_state.result_strings[idx].resize(self.gpa(), 4096);
-            // try self.query_state.result_strings[idx].resize(self.gpa(), 65_536);
         }
     }
 
@@ -314,15 +338,78 @@ pub const IndexManager = struct {
 
         switch (self.file_data.file_type) {
             fu.FileType.CSV, fu.FileType.JSON, fu.FileType.PARQUET => {
-                const matched_col_idx = self.columns.find(col_name_upper) catch {
+                const matched_col_idx = self.file_data.column_idx_map.find(col_name_upper) catch {
                     return error.ColumnNotFound;
                 };
-                try self.search_col_idxs.append(
+                try self.file_data.search_col_idxs.append(
                     self.stringArena(), 
                     @truncate(matched_col_idx),
                     );
+                try self.file_data.boost_factors.append(
+                    self.stringArena(), 
+                    1.0,
+                    );
             },
         }
+    }
+
+    pub fn addQueryField(
+        self: *IndexManager,
+        col_name: []const u8,
+        _query: []const u8,
+        boost_factor: f32,
+    ) !void {
+        const col_name_upper = try self.stringArena().dupe(u8, col_name);
+        const query_upper    = try self.stringArena().dupe(u8, _query);
+
+        string_utils.stringToUpper(
+            col_name_upper.ptr,
+            col_name_upper.len,
+        );
+        string_utils.stringToUpper(
+            query_upper.ptr,
+            query_upper.len,
+        );
+
+        switch (self.file_data.file_type) {
+            fu.FileType.CSV, fu.FileType.JSON, fu.FileType.PARQUET => {
+                const matched_col_idx = self.file_data.column_idx_map.find(
+                    col_name_upper
+                    ) catch {
+                    return error.ColumnNotFound;
+                };
+
+                const relative_idx = findSorted(
+                    u32,
+                    self.file_data.search_col_idxs.items,
+                    matched_col_idx,
+                ) catch {
+                    return error.ColumnNotSearchable;
+                };
+
+                try self.query_state.query_map.put(
+                    col_name_upper,
+                    query_upper,
+                );
+                self.file_data.boost_factors.items[relative_idx] = boost_factor;
+            },
+        }
+    }
+
+    pub inline fn addQueryFieldIdx(
+        self: *IndexManager,
+        search_col_idx: u32,
+        query_upper: []const u8,
+        boost_factor: f32,
+    ) !void {
+        // search_col_idx: The nth searchable column of all searchable columns.
+        try self.query_state.query_map.put(
+            self.file_data.column_names.items[
+                self.file_data.search_col_idxs.items[search_col_idx]
+            ],
+            query_upper,
+        );
+        self.file_data.boost_factors.items[search_col_idx] = boost_factor;
     }
 
     // pub fn printDebugInfo(self: *IndexManager) !void {
@@ -404,9 +491,15 @@ pub const IndexManager = struct {
             std.debug.assert(field_len < MAX_TERM_LENGTH);
 
             string_utils.stringToUpper(term[0..], field_len);
-            try self.columns.insert(
+            try self.file_data.column_idx_map.insert(
                 term[0..field_len],
-                @truncate(self.columns.num_keys),
+                @truncate(self.file_data.column_idx_map.num_keys),
+                );
+
+            const cloned_col = try self.stringArena().dupe(u8, term[0..field_len]);
+            try self.file_data.column_names.append(
+                self.stringArena(),
+                cloned_col,
                 );
 
             if (buffer[byte_idx - 1] == '\n') break;
@@ -444,7 +537,7 @@ pub const IndexManager = struct {
             try json.iterLineJSONGetUniqueKeys(
                 buffer,
                 &index,
-                &self.columns,
+                &self.file_data.column_idx_map,
                 true,
                 );
             file_pos += index;
@@ -589,7 +682,7 @@ pub const IndexManager = struct {
         defer literal_col_idxs.deinit(self.gpa());
         defer huffman_col_idxs.deinit(self.gpa());
 
-        for (0..self.columns.num_keys) |idx| {
+        for (0..self.file_data.column_idx_map.num_keys) |idx| {
             try huffman_col_idxs.append(self.gpa(), idx);
         }
 
@@ -645,7 +738,7 @@ pub const IndexManager = struct {
                     prev_col       = 0;
 
                     while (search_col_idx < num_search_cols) {
-                        for (prev_col..self.search_col_idxs.items[search_col_idx]) |col_idx| {
+                        for (prev_col..self.file_data.search_col_idxs.items[search_col_idx]) |col_idx| {
                             const init_byte_idx = row_byte_idx;
                             is_quoted = buffer[init_byte_idx] == '"';
 
@@ -667,17 +760,17 @@ pub const IndexManager = struct {
                             &terms_seen_bitset,
                             );
 
-                        self.query_state.result_positions[partition_idx][self.search_col_idxs.items[search_col_idx]] = TermPos{
+                        self.query_state.result_positions[partition_idx][self.file_data.search_col_idxs.items[search_col_idx]] = TermPos{
                             .start_pos = @truncate(init_byte_idx + @as(u32, @intFromBool(is_quoted))),
                             .field_len = @truncate(row_byte_idx - init_byte_idx - 1 - 2 * @as(u32, @intFromBool(is_quoted))),
                         };
 
                         // Add one because we just iterated over the last field.
-                        prev_col = self.search_col_idxs.items[search_col_idx] + 1;
+                        prev_col = self.file_data.search_col_idxs.items[search_col_idx] + 1;
                         search_col_idx += 1;
                     }
 
-                    for (prev_col..self.columns.num_keys) |col_idx| {
+                    for (prev_col..self.file_data.column_idx_map.num_keys) |col_idx| {
                         const init_byte_idx = row_byte_idx;
                         is_quoted = buffer[init_byte_idx] == '"';
 
@@ -699,8 +792,8 @@ pub const IndexManager = struct {
                         current_IP.processDocRfc8259(
                             // &token_stream,
                             buffer,
-                            &self.columns,
-                            &self.search_col_idxs,
+                            &self.file_data.column_idx_map,
+                            &self.file_data.search_col_idxs,
                             &row_byte_idx,
                             @intCast(doc_id), 
                             &terms_seen_bitset,
@@ -763,7 +856,7 @@ pub const IndexManager = struct {
         // var token_stream = try fu.TokenStreamV2(fu.token_32t_v2).init(
             // output_filename,
             // self.gpa(),
-            // self.search_col_idxs.items.len,
+            // self.file_data.search_col_idxs.items.len,
         // );
         // defer token_stream.deinit();
 
@@ -787,7 +880,7 @@ pub const IndexManager = struct {
         defer literal_col_idxs.deinit(self.gpa());
         defer huffman_col_idxs.deinit(self.gpa());
 
-        for (0..self.columns.num_keys) |idx| {
+        for (0..self.file_data.column_idx_map.num_keys) |idx| {
             try huffman_col_idxs.append(self.gpa(), idx);
         }
 
@@ -830,9 +923,9 @@ pub const IndexManager = struct {
                 var col_idx: usize        = 0;
                 const start_byte_idx = byte_idx;
 
-                while (col_idx < self.columns.num_keys) {
+                while (col_idx < self.file_data.column_idx_map.num_keys) {
                     var current_col_idx = col_idx;
-                    for (current_col_idx..self.search_col_idxs.items[search_col_idx]) |_| {
+                    for (current_col_idx..self.file_data.search_col_idxs.items[search_col_idx]) |_| {
                         field_length = pq.decodeVbyte(
                             buffer.ptr,
                             &byte_idx,
@@ -864,9 +957,9 @@ pub const IndexManager = struct {
                     byte_idx += field_length;
                     col_idx  += 1;
 
-                    if (search_col_idx == self.search_col_idxs.items.len) {
+                    if (search_col_idx == self.file_data.search_col_idxs.items.len) {
                         current_col_idx = col_idx;
-                        for (current_col_idx..self.columns.num_keys) |_| {
+                        for (current_col_idx..self.file_data.column_idx_map.num_keys) |_| {
                             field_length = pq.decodeVbyte(
                                 buffer.ptr,
                                 &byte_idx,
@@ -877,7 +970,7 @@ pub const IndexManager = struct {
                             byte_idx += field_length;
                             col_idx  += 1;
                         }
-                        std.debug.assert(col_idx == self.columns.num_keys);
+                        std.debug.assert(col_idx == self.file_data.column_idx_map.num_keys);
                     }
                 }
                 doc_id += 1;
@@ -1117,7 +1210,7 @@ pub const IndexManager = struct {
         var total_docs_read = AtomicCounter.init(0);
         var progress_bar = progress.ProgressBar.init(num_lines, .K);
 
-        const num_search_cols = self.search_col_idxs.items.len;
+        const num_search_cols = self.file_data.search_col_idxs.items.len;
         
         for (0..num_partitions) |partition_idx| {
             try self.partitions.index_partitions[partition_idx].resizeNumSearchCols(
@@ -1185,12 +1278,10 @@ pub const IndexManager = struct {
 
     fn collectQueryTerms(
         self: *IndexManager,
-        queries: SHM,
-        boost_factors: std.ArrayList(f32),
         partition_idx: usize,
         iterators: *std.ArrayListUnmanaged(PostingsIteratorV2),
     ) void {
-        const num_search_cols = self.search_col_idxs.items.len;
+        const num_search_cols = self.file_data.search_col_idxs.items.len;
         std.debug.assert(num_search_cols > 0);
 
         var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
@@ -1220,26 +1311,24 @@ pub const IndexManager = struct {
 
         var empty_query = true; 
 
-        var idf_remaining: f32 = 0.0;
-
-        var query_it = queries.iterator();
+        var query_it = self.query_state.query_map.iterator();
         while (query_it.next()) |entry| {
-            const col_idx = self.columns.find(entry.key_ptr.*) catch {
+            const col_idx = self.file_data.column_idx_map.find(entry.key_ptr.*) catch {
                 std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
                 continue;
             };
             const II_idx = findSorted(
                 u32,
-                self.search_col_idxs.items,
+                self.file_data.search_col_idxs.items,
                 col_idx,
             ) catch {
                 std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
                 @panic(
-                    "Column not found. Check findSorted function and self.columns map."
+                    "Column not found. Check findSorted function and self.file_data.column_idx_map."
                     );
             };
 
-            std.debug.assert(II_idx <= self.search_col_idxs.items.len);
+            std.debug.assert(II_idx <= self.file_data.search_col_idxs.items.len);
 
             var term_len: usize = 0;
 
@@ -1262,7 +1351,7 @@ pub const IndexManager = struct {
                                 1.0 + std.math.log2(inner_term)
                                 );
 
-                            std.debug.assert(II_idx <= self.search_col_idxs.items.len);
+                            std.debug.assert(II_idx <= self.file_data.search_col_idxs.items.len);
 
                             const iterator_ptr = iterators.addOne(
                                 self.gpa(),
@@ -1272,7 +1361,7 @@ pub const IndexManager = struct {
                                 _token,
                                 @truncate(II_idx),
                                 idf,
-                                boost_factors.items[II_idx],
+                                self.file_data.boost_factors.items[II_idx],
                                 II.avg_doc_size,
                             );
 
@@ -1287,7 +1376,6 @@ pub const IndexManager = struct {
 
                             term_pos += 1;
                             empty_query = false;
-                            idf_remaining += iterator_ptr.boost_weighted_idf;
 
                             search_col_counts[II_idx] += 1;
                             if (search_col_counts[II_idx] > 1) {
@@ -1330,7 +1418,7 @@ pub const IndexManager = struct {
                                     _token,
                                     @truncate(II_idx),
                                     idf,
-                                    boost_factors.items[II_idx],
+                                    self.file_data.boost_factors.items[II_idx],
                                     II.avg_doc_size,
                                 );
 
@@ -1345,7 +1433,6 @@ pub const IndexManager = struct {
 
                                 term_pos += 1;
                                 empty_query = false;
-                                idf_remaining += iterator_ptr.boost_weighted_idf;
 
                                 search_col_counts[II_idx] += 1;
                                 if (search_col_counts[II_idx] > 1) {
@@ -1387,7 +1474,7 @@ pub const IndexManager = struct {
                         _token,
                         @truncate(II_idx),
                         idf,
-                        boost_factors.items[II_idx],
+                        self.file_data.boost_factors.items[II_idx],
                         II.avg_doc_size,
                     );
 
@@ -1399,10 +1486,9 @@ pub const IndexManager = struct {
                             // II.doc_freqs.items[_token],
                         // },
                     // );
-// 
+
                     term_pos += 1;
                     empty_query = false;
-                    idf_remaining += iterator_ptr.boost_weighted_idf;
 
                     search_col_counts[II_idx] += 1;
                     if (search_col_counts[II_idx] > 1) {
@@ -1421,7 +1507,7 @@ pub const IndexManager = struct {
 
         if (empty_query) {
             std.debug.print("Empty query\n", .{});
-            var iterator = queries.iterator();
+            var iterator = self.query_state.query_map.iterator();
             std.debug.print("\n", .{});
             std.debug.print("-----------------------------------------", .{});
             while (iterator.next()) |item| {
@@ -1434,11 +1520,25 @@ pub const IndexManager = struct {
 
     }
 
+    pub inline fn removeIterator(
+        remove_mask: *u16,
+        iterators: *std.ArrayListUnmanaged(PostingsIteratorV2),
+        doc_ids: *[16]u32,
+        scores: *[16]f32,
+    ) void {
+        while (remove_mask.* != 0) {
+            const remove_idx: usize = (comptime @bitSizeOf(@TypeOf(remove_mask.*)) - 1) - @clz(remove_mask.*);
+            _ = iterators.swapRemove(remove_idx);
+            unsetBit(u16, remove_mask, remove_idx);
+
+            std.mem.swap(u32, &doc_ids[remove_idx], &doc_ids[iterators.items.len]);
+            std.mem.swap(f32, &scores[remove_idx], &scores[iterators.items.len]);
+        }
+    }
+
 
     pub fn queryPartitionDAATUnion(
         self: *IndexManager,
-        queries: SHM,
-        boost_factors: std.ArrayList(f32),
         partition_idx: usize,
         query_results: *SortedScoreMultiArray(QueryResult),
     ) void {
@@ -1446,8 +1546,6 @@ pub const IndexManager = struct {
         defer iterators.deinit(self.gpa());
 
         self.collectQueryTerms(
-            queries,
-            boost_factors,
             partition_idx,
             &iterators,
         );
@@ -1508,9 +1606,6 @@ pub const IndexManager = struct {
         const max_terms: usize = 16;
 
         var remove_mask: u16 = 0;
-        // for (iterators.items.len..max_terms) |idx| {
-            // setBit(u16, &remove_mask, idx);
-        // }
 
         var doc_ids = [_]u32{0} ** max_terms;
         var scores  = [_]f32{0.0} ** max_terms;
@@ -1528,31 +1623,20 @@ pub const IndexManager = struct {
 
         // --- MAIN WAND LOOP ---
         var current_doc_id: u32 = 0;
-        // while (consumed_mask != comptime std.math.maxInt(u16)) {
         while (iterators.items.len > 0) {
             remove_mask = 0;
-            // remove_mask = (comptime std.math.maxInt(u16)) << @truncate(iterators.items.len);
 
             var nearest_candidate: u32 = std.math.maxInt(u32);
             var furthest_candidate: u32 = 0;
             var do_skip: bool = false;
 
             for (0..iterators.items.len) |idx| {
-                // if (bitIsSet(u16, consumed_mask, idx)) {
-                    // @branchHint(.unlikely);
-                    // continue;
-                // }
+                std.debug.assert(iterators.items[idx].consumed == false);
 
                 const c_doc_id = doc_ids[idx];
 
                 var upper_bound: f32 = 0.0;
                 for (0..iterators.items.len) |jdx| {
-                    // if (doc_ids[jdx] > c_doc_id) {
-                        // @branchHint(.unpredictable);
-                        // continue;
-                    // }
-// 
-                    // upper_bound += scores[jdx];
                     upper_bound += scores[jdx] * @as(f32, @floatFromInt(@intFromBool(doc_ids[jdx] <= c_doc_id)));
                 }
 
@@ -1563,6 +1647,8 @@ pub const IndexManager = struct {
                 // TODO: Need to change to only skip block now.
 
                 if (upper_bound <= sorted_scores.lastScoreCapacity()) {
+                    std.debug.assert(c_doc_id != comptime std.math.maxInt(u32));
+
                     do_skip = true;
                     furthest_candidate = @max(c_doc_id, furthest_candidate);
                 } else {
@@ -1597,11 +1683,12 @@ pub const IndexManager = struct {
                     }
                 }
 
-                while (remove_mask != 0) {
-                    const remove_idx: usize = (comptime @bitSizeOf(@TypeOf(remove_mask)) - 1) - @clz(remove_mask);
-                    _ = iterators.swapRemove(remove_idx);
-                    unsetBit(u16, &remove_mask, remove_idx);
-                }
+                removeIterator(
+                    &remove_mask,
+                    &iterators,
+                    &doc_ids,
+                    &scores,
+                );
                 continue;
             } else {
                 std.debug.assert(current_doc_id != comptime std.math.maxInt(u32));
@@ -1657,13 +1744,10 @@ pub const IndexManager = struct {
                     scores[idx]  = it.current_block_max_score;
                 } else {
                     setBit(u16, &remove_mask, idx);
+                    doc_ids[idx] = comptime std.math.maxInt(u32);
+                    scores[idx]  = 0.0;
                 }
 
-                while (remove_mask != 0) {
-                    const remove_idx: usize = (comptime @bitSizeOf(@TypeOf(remove_mask)) - 1) - @clz(remove_mask);
-                    _ = iterators.swapRemove(remove_idx);
-                    unsetBit(u16, &remove_mask, remove_idx);
-                }
                 // for (0.., res.term_pos) |tp_idx, tp| {
                     // if (tp_idx == 64) {
                         // @branchHint(.cold);
@@ -1673,6 +1757,12 @@ pub const IndexManager = struct {
                                   // 25.0 * @as(f32, @floatFromInt(@intFromBool(tp == 0)));
                 // }
             }
+            removeIterator(
+                &remove_mask,
+                &iterators,
+                &doc_ids,
+                &scores,
+            );
 
             // 3c. Apply Phrase Scoring Boost
             // var final_score = base_score;
@@ -1723,12 +1813,10 @@ pub const IndexManager = struct {
 
     // pub fn queryPartitionDAATIntersection(
         // self: *IndexManager,
-        // queries: SHM,
-        // boost_factors: std.ArrayList(f32),
         // partition_idx: usize,
         // query_results: *SortedScoreMultiArray(QueryResult),
     // ) void {
-        // const num_search_cols = self.search_col_idxs.items.len;
+        // const num_search_cols = self.file_data.search_col_idxs.items.len;
         // std.debug.assert(num_search_cols > 0);
 // 
         // var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
@@ -1764,7 +1852,6 @@ pub const IndexManager = struct {
         // ){};
         // defer iterators.deinit(self.gpa());
 // 
-        // var idf_remaining: f32 = 0.0;
 // 
         // var query_it = queries.iterator();
         // while (query_it.next()) |entry| {
@@ -1774,14 +1861,14 @@ pub const IndexManager = struct {
             // };
             // const II_idx = findSorted(
                 // u32,
-                // self.search_col_idxs.items,
+                // self.file_data.search_col_idxs.items,
                 // col_idx,
             // ) catch {
                 // std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
                 // @panic("Column not found. Check findSorted function and self.columns map.");
             // };
 // 
-            // std.debug.assert(II_idx <= self.search_col_idxs.items.len);
+            // std.debug.assert(II_idx <= self.file_data.search_col_idxs.items.len);
 // 
             // var term_len: usize = 0;
 // 
@@ -1804,7 +1891,7 @@ pub const IndexManager = struct {
                                 // 1.0 + std.math.log2(inner_term)
                                 // ) * boost_factors.items[II_idx];
 // 
-                            // std.debug.assert(II_idx <= self.search_col_idxs.items.len);
+                            // std.debug.assert(II_idx <= self.file_data.search_col_idxs.items.len);
 // 
                             // const iterator_ptr = iterators.addOne(
                                 // self.gpa(),
@@ -1821,7 +1908,6 @@ pub const IndexManager = struct {
 // 
                             // term_pos += 1;
                             // empty_query = false;
-                            // idf_remaining += boost_weighted_idf;
 // 
                             // search_col_counts[II_idx] += 1;
                             // if (search_col_counts[II_idx] > 1) {
@@ -1872,7 +1958,6 @@ pub const IndexManager = struct {
 // 
                                 // term_pos += 1;
                                 // empty_query = false;
-                                // idf_remaining += boost_weighted_idf;
 // 
                                 // search_col_counts[II_idx] += 1;
                                 // if (search_col_counts[II_idx] > 1) {
@@ -1920,7 +2005,6 @@ pub const IndexManager = struct {
 // 
                     // term_pos += 1;
                     // empty_query = false;
-                    // idf_remaining += boost_weighted_idf;
 // 
                     // search_col_counts[II_idx] += 1;
                     // if (search_col_counts[II_idx] > 1) {
@@ -2086,12 +2170,7 @@ pub const IndexManager = struct {
         // }
     // }
 
-    pub fn query(
-        self: *IndexManager,
-        queries: SHM,
-        k: usize,
-        boost_factors: std.ArrayList(f32),
-    ) !void {
+    pub fn query(self: *IndexManager, k: usize) !void {
         defer {
             _ = self.allocators.scratch_arena.reset(.retain_capacity);
         }
@@ -2116,8 +2195,6 @@ pub const IndexManager = struct {
                 queryPartitionDAATUnion,
                 .{
                     self,
-                    queries,
-                    boost_factors,
                     partition_idx,
                     &self.query_state.results_arrays[partition_idx],
                 },

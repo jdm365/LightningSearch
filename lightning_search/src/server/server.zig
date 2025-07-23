@@ -14,7 +14,7 @@ var URL_BUFFER: [4096]u8 = undefined;
 
 const K: usize = 10;
 
-pub const TermPos = struct {
+pub const TermPos = extern struct {
     start_pos: u32,
     field_len: u32,
 };
@@ -110,7 +110,6 @@ pub fn csvLineToJsonScore(
 pub const QueryHandlerZap = struct {
     index_manager: *IndexManager,
     boost_factors: std.ArrayList(f32),
-    query_map: SHM,
 
     json_objects: std.ArrayListUnmanaged(std.json.Value),
     output_buffer: std.ArrayListUnmanaged(u8),
@@ -132,10 +131,6 @@ pub const QueryHandlerZap = struct {
         const handler = QueryHandlerZap{
             .index_manager = index_manager,
             .boost_factors = boost_factors,
-            .query_map     = SHM.init(
-                index_manager.stringArena(),
-                // index_manager.scratchArena(),
-                ),
             .json_objects  = std.ArrayListUnmanaged(std.json.Value){},
             .output_buffer = std.ArrayListUnmanaged(u8){},
             .column_names   = std.ArrayListUnmanaged([]const u8){},
@@ -308,24 +303,17 @@ pub const QueryHandlerZap = struct {
         if (r.query) |query| {
             parseKeys(
                 query,
-                self.query_map,
-                // self.index_manager.scratchArena(),
+                self.index_manager.query_state.query_map,
                 self.index_manager.stringArena(),
             );
 
             // Do search.
-            try self.index_manager.query(
-                self.query_map,
-                K,
-                self.boost_factors,
-                );
+            try self.index_manager.query(K);
 
             for (0..self.index_manager.query_state.results_arrays[0].count) |idx| {
                 try self.json_objects.append(
-                    // self.index_manager.scratchArena(),
                     self.index_manager.stringArena(),
                     try csvLineToJsonScore(
-                        // self.index_manager.scratchArena(),
                         self.index_manager.stringArena(),
                         self.index_manager.query_state.result_strings[idx],
                         self.index_manager.query_state.result_positions[idx],
@@ -339,14 +327,12 @@ pub const QueryHandlerZap = struct {
 
             var response = std.json.Value{
                 .object = std.StringArrayHashMap(std.json.Value).init(
-                    // self.index_manager.scratchArena()
                     self.index_manager.stringArena()
                     ),
             };
 
             try response.object.put(
                 "results",
-                // std.json.Value{ .array = self.json_objects.toManaged(self.index_manager.scratchArena()) },
                 std.json.Value{ 
                     .array = self.json_objects.toManaged(
                         self.index_manager.stringArena()
@@ -361,7 +347,6 @@ pub const QueryHandlerZap = struct {
             try std.json.stringify(
                 response,
                 .{},
-                // self.output_buffer.writer(self.index_manager.scratchArena()),
                 self.output_buffer.writer(self.index_manager.stringArena()),
             );
 
@@ -395,7 +380,7 @@ pub const QueryHandlerZap = struct {
         var json_cols = std.ArrayListUnmanaged(std.json.Value).initCapacity(
             // self.index_manager.scratchArena(), 
             self.index_manager.stringArena(), 
-            self.index_manager.columns.num_keys,
+            self.index_manager.file_data.column_idx_map.num_keys,
             ) catch {
             std.debug.print("ERROR GETTING COLUMNS\n", .{});
             @panic("Failed to initialize json_cols.\n");
@@ -403,10 +388,10 @@ pub const QueryHandlerZap = struct {
 
         json_cols.resize(
             self.index_manager.stringArena(), 
-            self.index_manager.columns.num_keys,
+            self.index_manager.file_data.column_idx_map.num_keys,
             ) catch return;
 
-        var it = self.index_manager.columns.iterator() catch {
+        var it = self.index_manager.file_data.column_idx_map.iterator() catch {
             std.debug.print("ERROR GETTING COLUMNS\n", .{});
             return;
         };
@@ -465,17 +450,18 @@ pub const QueryHandlerZap = struct {
         json_cols.resize(
             // self.index_manager.scratchArena(), 
             self.index_manager.stringArena(), 
-            self.index_manager.search_col_idxs.items.len,
+            self.index_manager.file_data.search_col_idxs.items.len,
             ) catch unreachable;
 
-        for (0.., self.index_manager.search_col_idxs.items) |idx, col_idx| {
+        for (0.., self.index_manager.file_data.search_col_idxs.items) |idx, col_idx| {
             json_cols.items[idx] = std.json.Value{
                 .string = self.column_names.items[col_idx],
             };
 
-            self.query_map.put(
+            self.index_manager.addQueryField(
                 self.column_names.items[col_idx],
                 "",
+                1.0,
             ) catch unreachable;
         }
 
@@ -559,8 +545,6 @@ pub const QueryHandlerZap = struct {
 pub const QueryHandlerLocal = struct {
     index_manager: *IndexManager,
     boost_factors: std.ArrayList(f32),
-    // query_map: std.StringHashMap([]const u8),
-    query_map: SHM,
     search_cols: std.ArrayList([]u8),
     allocator: std.mem.Allocator,
 
@@ -571,7 +555,6 @@ pub const QueryHandlerLocal = struct {
         return QueryHandlerLocal{
             .index_manager = index_manager,
             .boost_factors = std.ArrayList(f32).init(allocator),
-            .query_map = SHM.init(allocator),
             .search_cols = undefined,
             .allocator = allocator,
         };
@@ -580,7 +563,6 @@ pub const QueryHandlerLocal = struct {
     pub fn deinit(self: *QueryHandlerLocal) void {
         self.index_manager.deinit();
         self.boost_factors.deinit();
-        self.query_map.deinit();
         self.search_cols.deinit();
     }
 
@@ -618,7 +600,7 @@ pub const QueryHandlerLocal = struct {
             if (query_string[idx] == '=') {
                 idx += 1;
 
-                const result = self.query_map.getPtr(
+                const result = self.index_manager.query_state.query_map.getPtr(
                     scratch_buffer[0..count]
                     );
 
@@ -651,148 +633,11 @@ pub const QueryHandlerLocal = struct {
         ) !void {
         try self.parseQueryString(std.mem.span(query_string));
         try self.index_manager.query(
-            self.query_map,
             K,
-            self.boost_factors,
             );
         std.debug.print("Finished query\n", .{});
     }
 };
-
-
-var global_arena: std.heap.ArenaAllocator = undefined;
-pub export fn init_allocators() void {
-    global_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    std.debug.print("Zig: Arena initialized\n", .{});
-}
-
-pub export fn deinit_allocators() void {
-    global_arena.deinit();
-}
-
-pub export fn getQueryHandlerLocal() *anyopaque {
-    const index_manager = global_arena.allocator().create(IndexManager) catch @panic("BAD\n");
-    index_manager.* = IndexManager.init(global_arena.allocator()) catch @panic("BAD\n");
-
-    const query_handler = global_arena.allocator().create(QueryHandlerLocal) catch @panic("BAD\n");
-    query_handler.* = QueryHandlerLocal.init(
-        index_manager,
-        global_arena.allocator(),
-    ) catch @panic("BAD\n");
-
-    return @ptrCast(query_handler);
-}
-
-pub export fn scanFile(query_handler: *QueryHandlerLocal) void {
-    std.debug.assert(query_handler.index_manager.columns.num_keys > 0);
-
-    query_handler.index_manager.scanFile() catch {
-        @panic("Error scanning file.\n");
-    };
-}
-
-pub export fn indexFile(query_handler: *QueryHandlerLocal) void {
-    std.debug.assert(query_handler.index_manager.search_col_idxs.items.len > 0);
-
-    query_handler.index_manager.indexFile() catch {
-        @panic("Error indexing file.\n");
-    };
-}
-
-pub export fn addSearchCol(
-    query_handler: *QueryHandlerLocal,
-    col_name: [*:0]const u8,
-) void {
-    const upper_col = query_handler.index_manager.stringArena().dupe(
-        u8,
-        std.mem.span(col_name)
-    ) catch @panic("Failed to copy input string.\n");
-    string_utils.stringToUpper(upper_col.ptr, upper_col.len);
-
-    query_handler.index_manager.addSearchCol(upper_col) catch {
-        @panic("Failed to add search col.\n");
-    };
-    query_handler.query_map.put(upper_col, "") catch {
-        @panic("Failed to add search col to query_map.\n");
-    };
-    query_handler.boost_factors.append(1.0) catch {
-        @panic("Failed to add boost factor.\n");
-    };
-}
-
-export fn search(
-    query_handler: *QueryHandlerLocal, 
-    query_string: [*:0]const u8,
-    result_count: *u32,
-    start_positions: [*]u32,
-    lengths: [*]u32,
-    result_buffers: [*][*]u8,
-    ) void {
-    query_handler.search(query_string) catch {
-        std.debug.print("Search for {s} failed\n.", .{query_string});
-        @panic("Search failed\n.");
-    };
-
-    const m = &query_handler.index_manager;
-
-    std.debug.assert(m.*.query_state.results_arrays[0].count < MAX_NUM_RESULTS);
-    result_count.* = @intCast(m.*.query_state.results_arrays[0].count);
-
-    for (0..result_count.*) |doc_idx| {
-        const num_cols = m.*.columns.num_keys;
-        const start_idx = doc_idx * num_cols;
-        const end_idx   = start_idx + num_cols;
-
-        for (0.., start_idx..end_idx) |col_idx, i| {
-            start_positions[i] = m.*.query_state.result_positions[doc_idx][col_idx].start_pos;
-            lengths[i]         = m.*.query_state.result_positions[doc_idx][col_idx].field_len;
-        }
-        result_buffers[doc_idx] = m.*.query_state.result_strings[doc_idx].items.ptr;
-    }
-}
-
-pub export fn getColumnNames(
-    query_handler: *const QueryHandlerLocal, 
-    column_names: [*][*:0]u8,
-    num_columns: *u32,
-    ) void {
-    const num_cols = query_handler.index_manager.columns.num_keys;
-    num_columns.* = @truncate(num_cols);
-
-    var iterator = query_handler.index_manager.columns.iterator() catch {
-        @panic("Error reading column keys.\n");
-    };
-    defer iterator.deinit();
-
-    while (iterator.next() catch {@panic("Error reading column keys.\n");}) |*item| {
-        const idx = item.value;
-        @memcpy(column_names[idx], item.key);
-        column_names[idx][item.key.len] = 0;
-    }
-}
-
-pub export fn getSearchColumns(
-    query_handler: *const QueryHandlerLocal, 
-    col_mask: [*]u8,
-    ) void {
-    for (query_handler.index_manager.search_col_idxs.items) |idx| {
-        col_mask[idx] = 1;
-    }
-}
-
-pub export fn getIndexingProgress(
-    query_handler: *const QueryHandlerLocal, 
-    ) u64 {
-    return @intCast(query_handler.index_manager.indexing_state.last_progress);
-}
-
-pub export fn getNumDocs(
-    query_handler: *const QueryHandlerLocal, 
-    ) u64 {
-    return @intCast(query_handler.index_manager.partitions.row_offsets[
-        query_handler.index_manager.partitions.row_offsets.len - 1
-    ]);
-}
 
 
 test "csv_parse" {

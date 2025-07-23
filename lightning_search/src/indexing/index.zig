@@ -795,6 +795,9 @@ pub const PostingsBlockFull = struct {
     max_doc_size: u16,
     max_doc_id: u32,
 
+    // TODO: Store `impacts` (scores) as u16.
+    //       Keep small (~4) exception array of highest impact docs, [impact, doc_id]
+
     pub inline fn decompressToBuffers(
         self: *const PostingsBlockFull,
         doc_ids: *[BLOCK_SIZE]u32,

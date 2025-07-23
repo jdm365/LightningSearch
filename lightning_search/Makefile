@@ -1,12 +1,15 @@
 BIN_PATH  := lightning_search.bin
 DATA_PATH := ../../data/mb.csv
 
-install_python:
+install:
 	## zig build shared -Doptimize=ReleaseFast
 	zig build -Doptimize=ReleaseFast
+	## zig build -Doptimize=ReleaseSafe
+	## zig build -Doptimize=Debug
 	mv zig-out/lib/liblightning_search.so ./python/lightning_search/
 	mv zig-out/include/ffi.h ./python/lightning_search/ffi.h
-	cd python && uv pip install .
+	uv pip uninstall lightning_search
+	cd python && uv pip install -n -e .
 
 bench:
 	zig build -Doptimize=ReleaseFast

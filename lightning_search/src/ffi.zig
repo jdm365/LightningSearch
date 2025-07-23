@@ -1,7 +1,10 @@
 const std    = @import("std");
 
+const SHM = @import("indexing/index.zig").SHM;
 const IndexManager = @import("indexing/index_manager.zig").IndexManager;
 const FileType = @import("storage/file_utils.zig").FileType;
+const TermPos = @import("server/server.zig").TermPos;
+const csvLineToJsonScore = @import("server/server.zig").csvLineToJsonScore;
 
 
 pub export fn create_index() ?*anyopaque {
@@ -73,4 +76,95 @@ pub export fn index_file(
         std.debug.print("Error: {any}\n", .{err});
         @panic("Failed to index file.");
     };
+}
+
+pub export fn c_query(
+    idx_ptr: *IndexManager, 
+    search_col_idxs: [*]u32,
+    queries: [*][*:0]const u8,
+    boost_factors: [*]f32,
+    num_query_cols: u32,
+    k: u32,
+
+    num_matched_records: *u32,
+    result_json_str_buf: *[*]u8,
+    result_json_str_buf_size: *u64,
+    ) void {
+    // const reset_successful = idx_ptr.allocators.scratch_arena.reset(.{ .retain_with_limit =  });
+    _ = idx_ptr.allocators.scratch_arena.reset(.{ .retain_with_limit = (comptime 1 << 20) });
+
+    for (0..num_query_cols) |idx| {
+        std.debug.print(
+            "Adding query field index for column {d}: '{s}'\n", 
+            .{search_col_idxs[idx], std.mem.span(queries[idx])},
+        );
+        idx_ptr.addQueryFieldIdx(
+            search_col_idxs[idx],
+            std.mem.span(queries[idx]),
+            boost_factors[idx],
+            ) catch |err| {
+            std.debug.print("Error: {any}\n", .{err});
+            @panic("Failed to add query field index.");
+        };
+    }
+
+    idx_ptr.query(k) catch |err| {
+        std.debug.print("Error: {any}\n", .{err});
+        @panic("Failed to execute query.");
+    };
+    num_matched_records.* = @truncate(idx_ptr.query_state.results_arrays[0].count);
+
+    for (0..idx_ptr.query_state.results_arrays[0].count) |idx| {
+        idx_ptr.query_state.json_objects.append(
+            idx_ptr.scratchArena(),
+            csvLineToJsonScore(
+                idx_ptr.scratchArena(),
+                idx_ptr.query_state.result_strings[idx],
+                idx_ptr.query_state.result_positions[idx],
+                idx_ptr.file_data.column_names,
+                idx_ptr.query_state.results_arrays[0].scores[idx],
+                idx,
+            ) catch |err| {
+                std.debug.print("Error: {any}\n", .{err});
+                @panic("Failed to convert CSV line to JSON score.");
+            },
+        ) catch |err| {
+            std.debug.print("Error: {any}\n", .{err});
+            @panic("Failed to append JSON object.");
+        };
+    }
+
+    var response = std.json.Value{
+        .object = std.StringArrayHashMap(std.json.Value).init(
+            idx_ptr.scratchArena()
+            ),
+    };
+
+    response.object.put(
+        "results",
+        std.json.Value{ 
+            .array = idx_ptr.query_state.json_objects.toManaged(
+                idx_ptr.scratchArena()
+                ) 
+        },
+    ) catch |err| {
+        std.debug.print("Error: {any}\n", .{err});
+        @panic("Failed to put results in JSON object.");
+    };
+
+    std.json.stringify(
+        response,
+        .{},
+        idx_ptr.query_state.json_output_buffer.writer(idx_ptr.scratchArena()),
+    ) catch |err| {
+        std.debug.print("Error: {any}\n", .{err});
+        @panic("Failed to stringify JSON response.");
+    };
+
+    result_json_str_buf.* = idx_ptr.query_state.json_output_buffer.items.ptr;
+    result_json_str_buf_size.* = idx_ptr.query_state.json_output_buffer.items.len;
+}
+
+pub export fn get_num_cols(idx_ptr: *IndexManager) u32 {
+    return @truncate(idx_ptr.file_data.column_idx_map.num_keys);
 }
