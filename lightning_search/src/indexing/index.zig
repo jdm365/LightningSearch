@@ -1228,49 +1228,51 @@ pub const PostingV3 = struct {
         current_pos: *usize,
         ) !void {
 
+        pq.encodeVbyte(
+            buffer.items,
+            current_pos,
+            self.full_blocks.items.len,
+        );
         for (self.full_blocks.items) |*block| {
             const max_range = current_pos.* + 
-                (block.doc_ids.buffer.len + block.tfs.buffer.len) + @sizeOf(u32) * 3
-                + @sizeOf(u8) * 2;
+                (block.doc_ids.buffer.len + block.tfs.buffer.len) + 
+                @sizeOf(u32) * 3 + 
+                @sizeOf(u8) * 2;
 
             if (max_range > buffer.items.len) {
                 @branchHint(.unlikely);
                 try buffer.resize(allocator, 2 * max_range);
             }
 
-            std.mem.writePackedInt(
-                u32,
-                buffer.items[current_pos.*..][0..4],
-                0,
-                block.max_doc_id,
-                ENDIANESS,
+            pq.encodeVbyte(
+                buffer.items,
+                current_pos,
+                @intCast(block.max_doc_id),
             );
-            current_pos.* += 4;
-
-            // block.max_score *= idf * avg_doc_size;
-            @memcpy(
-                buffer.items[current_pos.*..][0..2],
-                @as([2]u8, @bitCast(block.max_tf))[0..2],
+            pq.encodeVbyte(
+                buffer.items,
+                current_pos,
+                @intCast(block.max_tf),
             );
-            current_pos.* += 2;
-            @memcpy(
-                buffer.items[current_pos.*..][0..2],
-                @as([2]u8, @bitCast(block.max_doc_size))[0..2],
+            pq.encodeVbyte(
+                buffer.items,
+                current_pos,
+                @intCast(block.max_doc_size),
             );
-            current_pos.* += 2;
-
-            std.mem.writePackedInt(
-                u32,
-                buffer.items[current_pos.*..][0..4],
-                0,
-                block.doc_ids.min_val,
-                ENDIANESS,
+            pq.encodeVbyte(
+                buffer.items,
+                current_pos,
+                @intCast(block.doc_ids.min_val),
             );
-            current_pos.* += 4;
 
             buffer.items[current_pos.*] = block.doc_ids.bit_size;
             current_pos.* += 1;
 
+            pq.encodeVbyte(
+                buffer.items,
+                current_pos,
+                block.doc_ids.buffer.len,
+            );
             @memcpy(
                 buffer.items[current_pos.*..][0..block.doc_ids.buffer.len],
                 block.doc_ids.buffer,
@@ -1280,6 +1282,11 @@ pub const PostingV3 = struct {
             buffer.items[current_pos.*] = block.tfs.bit_size;
             current_pos.* += 1;
 
+            pq.encodeVbyte(
+                buffer.items,
+                current_pos,
+                block.tfs.buffer.len,
+            );
             @memcpy(
                 buffer.items[current_pos.*..][0..block.tfs.buffer.len],
                 block.tfs.buffer,
@@ -1298,17 +1305,22 @@ pub const PostingV3 = struct {
         buffer.items[current_pos.*] = self.partial_block.num_docs;
         current_pos.* += 1;
 
-        @memcpy(
-            buffer.items[current_pos.*..][0..2],
-            @as([2]u8, @bitCast(self.partial_block.max_tf))[0..2],
+        pq.encodeVbyte(
+            buffer.items,
+            current_pos,
+            @intCast(self.partial_block.max_tf),
         );
-        current_pos.* += 2;
-        @memcpy(
-            buffer.items[current_pos.*..][0..2],
-            @as([2]u8, @bitCast(self.partial_block.max_doc_size))[0..2],
+        pq.encodeVbyte(
+            buffer.items,
+            current_pos,
+            @intCast(self.partial_block.max_doc_size),
         );
-        current_pos.* += 2;
 
+        pq.encodeVbyte(
+            buffer.items,
+            current_pos,
+            self.partial_block.doc_ids.buffer.items.len,
+        );
         @memcpy(
             buffer.items[current_pos.*..][
                 0..self.partial_block.doc_ids.buffer.items.len
@@ -1317,6 +1329,11 @@ pub const PostingV3 = struct {
         );
         current_pos.* += self.partial_block.doc_ids.buffer.items.len;
 
+        pq.encodeVbyte(
+            buffer.items,
+            current_pos,
+            self.partial_block.tfs.buffer.items.len,
+        );
         @memcpy(
             buffer.items[current_pos.*..][
                 0..self.partial_block.tfs.buffer.items.len
@@ -1332,6 +1349,76 @@ pub const PostingV3 = struct {
         buffer: []u8,
         current_pos: *usize,
         ) !void {
+        const num_full_blocks = pq.decodeVbyte(
+            buffer.ptr,
+            current_pos,
+        );
+        try self.full_blocks.resize(allocator, num_full_blocks);
+
+        for (0..num_full_blocks) |idx| {
+            var block = &self.full_blocks.items[idx];
+
+            block.max_doc_id      = @truncate(pq.decodeVbyte(buffer, current_pos));
+            block.max_tf          = @truncate(pq.decodeVbyte(buffer, current_pos));
+            block.max_doc_size    = @truncate(pq.decodeVbyte(buffer, current_pos));
+            block.doc_ids.min_val = @truncate(pq.decodeVbyte(buffer, current_pos));
+
+            block.doc_ids.bit_size = buffer[current_pos.*];
+            current_pos.* += 1;
+
+            const doc_id_buf_len = pq.decodeVbyte(buffer, current_pos);
+            block.doc_ids.buffer = try allocator.alignedAlloc(
+                u8,
+                POST_ALIGNMENT,
+                doc_id_buf_len,
+            );
+            @memcpy(
+                block.doc_ids.buffer[0..doc_id_buf_len],
+                buffer[current_pos.*..][0..doc_id_buf_len],
+            );
+            current_pos.* += doc_id_buf_len;
+
+            const tf_buf_len = pq.decodeVbyte(buffer, current_pos);
+            block.tfs.buffer = try allocator.alignedAlloc(
+                u8,
+                POST_ALIGNMENT,
+                tf_buf_len,
+            );
+            @memcpy(
+                block.tfs.buffer[0..tf_buf_len],
+                buffer[current_pos.*..][0..tf_buf_len],
+            );
+            current_pos.* += tf_buf_len;
+        }
+
+        self.partial_block.num_docs = buffer[current_pos.*];
+        current_pos.* += 1;
+        
+        self.partial_block.max_tf       = @truncate(
+            pq.decodeVbyte(buffer.items, current_pos)
+            );
+        self.partial_block.max_doc_size = @truncate(
+            pq.decodeVbyte(buffer.items, current_pos)
+            );
+
+
+        const doc_id_buf_len = pq.decodeVbyte(buffer.items, current_pos);
+        try self.partial_block.doc_ids.buffer.resize(allocator, doc_id_buf_len);
+
+        @memcpy(
+            self.partial_block.doc_ids.buffer.items,
+            buffer[current_pos.*..][0..doc_id_buf_len],
+        );
+        current_pos.* += doc_id_buf_len;
+
+        const tf_buf_len = pq.decodeVbyte(buffer.items, current_pos);
+        try self.partial_block.tfs.buffer.resize(allocator, tf_buf_len);
+
+        @memcpy(
+            self.partial_block.tfs.buffer.items,
+            buffer[current_pos.*..][0..tf_buf_len],
+        );
+        current_pos.* += tf_buf_len;
     }
 };
 
