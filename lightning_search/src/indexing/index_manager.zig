@@ -46,8 +46,8 @@ const AtomicCounter = std.atomic.Value(u64);
 
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 
-const MAX_NUM_THREADS: usize = 1;
-// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+// const MAX_NUM_THREADS: usize = 1;
+const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -2171,9 +2171,9 @@ pub const IndexManager = struct {
     // }
 
     pub fn query(self: *IndexManager, k: usize) !void {
-        defer {
-            _ = self.allocators.scratch_arena.reset(.retain_capacity);
-        }
+        // defer {
+            // _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        // }
 
         if (k > MAX_NUM_RESULTS) {
             std.debug.print("k must be less than or equal to {d}\n", .{MAX_NUM_RESULTS});

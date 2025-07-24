@@ -90,8 +90,8 @@ pub export fn c_query(
     result_json_str_buf: *[*]u8,
     result_json_str_buf_size: *u64,
     ) void {
-    // const reset_successful = idx_ptr.allocators.scratch_arena.reset(.{ .retain_with_limit =  });
-    _ = idx_ptr.allocators.scratch_arena.reset(.{ .retain_with_limit = (comptime 1 << 20) });
+    idx_ptr.query_state.json_objects.clearRetainingCapacity();
+    idx_ptr.query_state.json_output_buffer.clearRetainingCapacity();
 
     for (0..num_query_cols) |idx| {
         idx_ptr.addQueryFieldIdx(
@@ -116,9 +116,9 @@ pub export fn c_query(
 
     for (0..idx_ptr.query_state.results_arrays[0].count) |idx| {
         idx_ptr.query_state.json_objects.append(
-            idx_ptr.scratchArena(),
+            idx_ptr.stringArena(),
             csvLineToJsonScore(
-                idx_ptr.scratchArena(),
+                idx_ptr.stringArena(),
                 idx_ptr.query_state.result_strings[idx],
                 idx_ptr.query_state.result_positions[idx],
                 idx_ptr.file_data.column_names,
@@ -136,7 +136,7 @@ pub export fn c_query(
 
     var response = std.json.Value{
         .object = std.StringArrayHashMap(std.json.Value).init(
-            idx_ptr.scratchArena()
+            idx_ptr.stringArena()
             ),
     };
 
@@ -144,7 +144,7 @@ pub export fn c_query(
         "results",
         std.json.Value{ 
             .array = idx_ptr.query_state.json_objects.toManaged(
-                idx_ptr.scratchArena()
+                idx_ptr.stringArena()
                 ) 
         },
     ) catch |err| {
@@ -155,7 +155,7 @@ pub export fn c_query(
     std.json.stringify(
         response,
         .{},
-        idx_ptr.query_state.json_output_buffer.writer(idx_ptr.scratchArena()),
+        idx_ptr.query_state.json_output_buffer.writer(idx_ptr.stringArena()),
     ) catch |err| {
         std.debug.print("Error: {any}\n", .{err});
         @panic("Failed to stringify JSON response.");

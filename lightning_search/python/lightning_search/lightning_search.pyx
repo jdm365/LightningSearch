@@ -134,9 +134,15 @@ cdef class Index:
             )
 
         if num_matched_records == 0:
+            free(search_col_idxs)
+            free(queries)
+            free(boost_factors_arr)
             return []
 
         if result_json_str_buf is NULL or result_json_str_buf_len == 0:
+            free(search_col_idxs)
+            free(queries)
+            free(boost_factors_arr)
             raise ValueError("Results are empty or malformed.")
 
         cdef str result_json_str = PyUnicode_DecodeUTF8(
