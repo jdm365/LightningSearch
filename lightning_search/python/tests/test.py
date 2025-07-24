@@ -147,14 +147,16 @@ if __name__ == '__main__':
     filename = os.path.join(
             CURRENT_DIR,
             "../../../data",
-            "enwiki.csv",
+            ## "enwiki.csv",
+            "mb.csv",
             )
 
     index = Index()
     index.index_file(
             filename=filename,
             query_cols=[
-                "text"
+                ## "text"
+                "title"
                 ],
             )
 
@@ -171,16 +173,18 @@ if __name__ == '__main__':
     '''
     query_maps = []
     boost_factor = {
-            "text": 1.0
+            ## "text": 1.0
+            "title": 1.0
             }
 
     N = 10_000
     M_min = 1
     M_max = 4
-    for i in range(N):
+    for i in tqdm(range(N), desc="Preparing test queries"):
         num_words = random.randint(M_min, M_max)
         query_maps.append({
-            "text": " ".join(random.sample(list(NLTK_WORDS), num_words))
+            ## "text": " ".join(random.sample(list(NLTK_WORDS), num_words))
+            "title": " ".join(random.sample(list(NLTK_WORDS), num_words))
         })
 
     init = perf_counter()

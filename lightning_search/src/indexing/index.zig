@@ -1287,9 +1287,9 @@ pub const PostingV3 = struct {
             current_pos.* += block.tfs.buffer.len;
         }
 
-        // self.partial_block.max_score *= idf;
         const max_range = current_pos.* + 1 + 4 +
-            (self.partial_block.doc_ids.buffer.items.len + self.partial_block.tfs.buffer.items.len);
+            (self.partial_block.doc_ids.buffer.items.len + 
+             self.partial_block.tfs.buffer.items.len);
         if (max_range > buffer.items.len) {
             @branchHint(.unlikely);
             try buffer.resize(allocator, 2 * max_range);
@@ -1310,16 +1310,28 @@ pub const PostingV3 = struct {
         current_pos.* += 2;
 
         @memcpy(
-            buffer.items[current_pos.*..][0..self.partial_block.doc_ids.buffer.items.len],
+            buffer.items[current_pos.*..][
+                0..self.partial_block.doc_ids.buffer.items.len
+            ],
             self.partial_block.doc_ids.buffer.items,
         );
         current_pos.* += self.partial_block.doc_ids.buffer.items.len;
 
         @memcpy(
-            buffer.items[current_pos.*..][0..self.partial_block.tfs.buffer.items.len],
+            buffer.items[current_pos.*..][
+                0..self.partial_block.tfs.buffer.items.len
+            ],
             self.partial_block.tfs.buffer.items,
         );
         current_pos.* += self.partial_block.tfs.buffer.items.len;
+    }
+
+    pub fn deserialize(
+        self: *PostingV3, 
+        allocator: std.mem.Allocator,
+        buffer: []u8,
+        current_pos: *usize,
+        ) !void {
     }
 };
 
@@ -1375,28 +1387,23 @@ pub const PostingsList = struct {
 pub const InvertedIndexV2 = struct {
     posting_list: PostingsList,
     vocab: Vocab,
-    doc_freqs: std.ArrayListUnmanaged(u32), // Should be needed soon. Visible in posting.
-    doc_sizes: []u16, // Consider PFOR encoding w/ blocks.
+    doc_freqs: std.ArrayListUnmanaged(u32),
+    doc_sizes: std.ArrayListUnmanaged(u16),
 
-    // TODO: Remove num_terms and num_docs.
-    num_terms: u32,
-    num_docs: u32,
     avg_doc_size: f32,
 
     file_handle: std.fs.File,
 
     pub fn init(
         allocator: std.mem.Allocator,
-        num_docs: usize,
+        num_docs: ?usize,
         filename: []const u8,
         ) !InvertedIndexV2 {
         var II = InvertedIndexV2{
             .posting_list = PostingsList.init(allocator),
             .vocab = undefined,
             .doc_freqs = std.ArrayListUnmanaged(u32){},
-            .doc_sizes = try allocator.alloc(u16, num_docs),
-            .num_terms = 0,
-            .num_docs = @intCast(num_docs),
+            .doc_sizes = std.ArrayListUnmanaged(u16){},
             .avg_doc_size = 0.0,
             .file_handle = undefined,
         };
@@ -1404,63 +1411,85 @@ pub const InvertedIndexV2 = struct {
              filename, 
              .{ .read = true },
              );
-
-        @memset(II.doc_sizes, 0);
-
-        // Guess capacity.
-        II.doc_freqs = try std.ArrayListUnmanaged(u32).initCapacity(
-            allocator, 
-            @as(usize, @intFromFloat(@as(f32, @floatFromInt(num_docs)) * 0.1))
-            );
-
         II.vocab = Vocab.init();
 
-        // Guess capacity
-        try II.vocab.string_bytes.ensureTotalCapacity(allocator, @intCast(num_docs));
-        try II.vocab.map.ensureTotalCapacityContext(allocator, @intCast(num_docs / 25), II.vocab.getCtx());
+        if (num_docs) |nd| {
+            try II.doc_sizes.resize(allocator, nd);
+            @memset(II.doc_sizes.items, 0);
+
+            // Guess capacity.
+            II.doc_freqs = try std.ArrayListUnmanaged(u32).initCapacity(
+                allocator, 
+                @as(usize, @intFromFloat(@as(f32, @floatFromInt(nd)) * 0.1))
+                );
+
+            // Guess capacity
+            try II.vocab.string_bytes.ensureTotalCapacity(allocator, @intCast(nd));
+            try II.vocab.map.ensureTotalCapacityContext(allocator, @intCast(nd / 25), II.vocab.getCtx());
+        }
 
         return II;
     }
 
-    pub fn deinit(
-        self: *InvertedIndexV2, 
-        allocator: std.mem.Allocator,
-        ) void {
-
+    pub fn deinit(self: *InvertedIndexV2, allocator: std.mem.Allocator) void {
         self.file_handle.close();
 
         self.posting_list.deinit();
 
         self.vocab.deinit(allocator);
-        // self.prt_vocab.deinit();
 
         self.doc_freqs.deinit(allocator);
-        allocator.free(self.doc_sizes);
+        self.doc_sizes.deinit(allocator);
     }
 
-    pub fn commit(
-        self: *InvertedIndexV2,
-        allocator: std.mem.Allocator,
-    ) !void {
+    pub fn commit(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
         var buf = std.ArrayListUnmanaged(u8){};
         try buf.resize(allocator, 1 << 22);
         defer buf.deinit(allocator);
 
-        buf.items[0] = 0;
-
         var current_pos: u64 = 0;
+        std.mem.writePackedInt(
+            u32,
+            buf.items[current_pos..][0..4],
+            0,
+            @truncate(self.posting_list.postings.items.len),
+            ENDIANESS,
+        );
+        current_pos += 4;
+
         for (self.posting_list.postings.items) |*pos| {
             try pos.serialize(&buf, allocator, &current_pos);
         }
 
+        std.mem.writePackedInt(
+            u32,
+            buf.items[current_pos..][0..4],
+            0,
+            @truncate(self.vocab.string_bytes.items.len),
+            ENDIANESS,
+        );
+        current_pos += 4;
+
         if (current_pos + self.vocab.string_bytes.items.len > buf.items.len) {
-            try buf.resize(allocator, buf.items.len + 2 * self.vocab.string_bytes.items.len);
+            try buf.resize(
+                allocator, 
+                buf.items.len + 2 * self.vocab.string_bytes.items.len,
+                );
         }
         @memcpy(
             buf.items[current_pos..][0..self.vocab.string_bytes.items.len],
             self.vocab.string_bytes.items,
         );
         current_pos += self.vocab.string_bytes.items.len;
+
+        std.mem.writePackedInt(
+            u32,
+            buf.items[current_pos..][0..4],
+            0,
+            @truncate(self.vocab.map.count()),
+            ENDIANESS,
+        );
+        current_pos += 4;
 
         var max_range = current_pos + (self.vocab.map.count() * 2 * @sizeOf(u32));
         if (max_range > buf.items.len) {
@@ -1484,16 +1513,17 @@ pub const InvertedIndexV2 = struct {
             );
             current_pos += 8;
         }
-        // std.debug.print("\nVocab size: {d}MB for {d} terms\n",
-            // .{
-                // @divFloor(
-                    // self.vocab.string_bytes.items.len + 8 * self.vocab.map.count(),
-                    // 1 << 20,
-                // ),
-                // self.vocab.map.count(),
-            // });
 
-        max_range = current_pos + self.doc_sizes.len * @sizeOf(u16);
+        std.mem.writePackedInt(
+            u32,
+            buf.items[current_pos..][0..4],
+            0,
+            @truncate(self.doc_sizes.items.len),
+            ENDIANESS,
+        );
+        current_pos += 4;
+
+        max_range = current_pos + self.doc_sizes.items.len * @sizeOf(u16);
         if (max_range > buf.items.len) {
             try buf.resize(
                 allocator, 
@@ -1501,28 +1531,144 @@ pub const InvertedIndexV2 = struct {
                 );
         }
         @memcpy(
-            buf.items[current_pos..][0..(self.doc_sizes.len * @sizeOf(u16))],
-            std.mem.sliceAsBytes(self.doc_sizes),
+            buf.items[current_pos..][0..(self.doc_sizes.items.len * @sizeOf(u16))],
+            std.mem.sliceAsBytes(self.doc_sizes.items),
         );
-        current_pos += self.doc_sizes.len * @sizeOf(u16);
+        current_pos += self.doc_sizes.items.len * @sizeOf(u16);
+
+        var ds_sum: u64 = 0;
+        for (self.doc_sizes.items) |ds| {
+            ds_sum += ds;
+        }
+
+        self.avg_doc_size = @as(f32, @floatFromInt(ds_sum)) / 
+                            @as(f32, @floatFromInt(self.doc_sizes.items.len));
+
+        std.mem.writePackedInt(
+            u32,
+            buf.items[current_pos..][0..4],
+            0,
+            @as(u32, @bitCast(self.avg_doc_size)),
+            ENDIANESS,
+        );
+        current_pos += 4;
 
         try self.file_handle.writeAll(
             buf.items[0..current_pos],
         );
 
-        var ds_sum: u64 = 0;
-        for (self.doc_sizes) |ds| {
-            ds_sum += ds;
+    }
+
+    pub fn load(
+        self: *InvertedIndexV2, 
+        allocator: std.mem.Allocator,
+        filename: []const u8,
+        ) !void {
+        self.file_handle = try std.fs.cwd().openFile(
+             filename, 
+             .{ .read = true },
+             );
+            
+        // TODO: Consider buffering on large indexes.
+        const file_size = try self.file_handle.getEndPos();
+        try self.file_handle.seekTo(0);
+
+        var buf = try allocator.alloc(u8, file_size);
+        defer allocator.free(buf);
+
+        _ = try self.file_handle.readAll(buf);
+
+        var current_pos: usize = 0;
+
+        // 1. Postings
+        const num_postings = std.mem.readPackedInt(
+            u32,
+            buf[current_pos..][0..4],
+            0,
+            ENDIANESS,
+        );
+        current_pos += 4;
+
+        try self.posting_list.postings.resize(num_postings);
+        for (0..num_postings) |idx| {
+            try self.posting_list.postings.items[idx].deserialize(
+                allocator,
+                buf,
+                current_pos,
+            );
         }
 
-        self.avg_doc_size = @as(f32, @floatFromInt(ds_sum)) / 
-                            @as(f32, @floatFromInt(self.doc_sizes.len));
+        // 2. Vocab
+        const num_string_bytes_vocab = std.mem.readPackedInt(
+            u32,
+            buf[current_pos..][0..4],
+            0,
+            ENDIANESS,
+        );
+        current_pos += 4;
+
+        try self.vocab.string_bytes.resize(num_string_bytes_vocab);
+        @memcpy(
+            self.vocab.string_bytes.items,
+            buf[current_pos..][0..num_string_bytes_vocab],
+        );
+        current_pos += num_string_bytes_vocab;
+
+        const num_terms_vocab = std.mem.readPackedInt(
+            u32,
+            buf[current_pos..][0..4],
+            0,
+            ENDIANESS,
+        );
+        current_pos += 4;
+
+        for (0..num_terms_vocab) |idx| {
+            const key = std.mem.readPackedInt(
+                u32,
+                buf.items[current_pos..][0..4],
+                0,
+                ENDIANESS,
+            );
+            const value = std.mem.readPackedInt(
+                u32,
+                buf.items[current_pos..][4..8],
+                0,
+                ENDIANESS,
+            );
+            current_pos += 8;
+
+            try self.vocab.map.putNoClobber(allocator, key, value);
+        }
+
+        // Doc sizes
+        const num_docs = std.mem.readPackedInt(
+            u32,
+            buf.items[current_pos..][0..4],
+            0,
+            ENDIANESS,
+        );
+        current_pos += 4;
+
+        try self.doc_sizes.resize(allocator, num_docs);
+        @memcpy(
+            std.mem.sliceAsBytes(self.doc_sizes.items),
+            buf[current_pos..][0..(num_docs * @sizeOf(u16))],
+        );
+        current_pos += num_docs * @sizeOf(u16);
+
+        // Avg doc size
+        self.avg_doc_size = @bitCast(std.mem.readPackedInt(
+            u32,
+            buf.items[current_pos..][0..4],
+            0,
+            ENDIANESS,
+        ));
+        current_pos += 4;
     }
 };
 
 pub const BM25Partition = struct {
     II: []InvertedIndexV2,
-    num_records: usize,
     allocator: std.mem.Allocator,
 
     doc_store: DocStore,
@@ -1538,7 +1684,6 @@ pub const BM25Partition = struct {
     ) !BM25Partition {
         var partition = BM25Partition{
             .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
-            .num_records = num_records,
             .allocator = allocator,
             .doc_store = undefined,
 
@@ -1573,6 +1718,41 @@ pub const BM25Partition = struct {
         try self.doc_store.deinit();
     }
 
+    pub fn initFromDisk(
+        allocator: std.mem.Allocator,
+        dir: []const u8, 
+        partition_idx: usize,
+        num_search_cols: usize,
+        ) !BM25Partition {
+
+        var partition = BM25Partition{
+            .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
+            .allocator = allocator,
+
+            // TODO: Implement doc_store loading.
+            .doc_store = undefined,
+
+            .scratch_arr = undefined,
+        };
+        @memset(partition.scratch_arr[0..BLOCK_SIZE], 0);
+
+        for (0..num_search_cols) |idx| {
+            const filename = try std.fmt.allocPrint(
+                allocator,
+                "{s}/posting_{d}_{d}.bin",
+                .{dir, idx, partition_idx},
+                );
+            defer allocator.free(filename);
+
+            partition.II[idx] = try InvertedIndexV2.init(
+                self.allocator, 
+                null,
+                filename,
+                );
+            try partition.II[idx].load(partition_idx.allocator, filename);
+        }
+    }
+
     pub fn resizeNumSearchCols(
         self: *BM25Partition, 
         num_search_cols: usize,
@@ -1582,18 +1762,19 @@ pub const BM25Partition = struct {
         const current_length = self.II.len;
         if (num_search_cols <= current_length) return;
 
+
         self.II = try self.allocator.realloc(self.II, num_search_cols);
         for (current_length..num_search_cols) |idx| {
             const output_filename = try std.fmt.allocPrint(
                 self.allocator, 
                 "{s}/posting_{d}_{d}.bin", 
-                .{tmp_dir, idx, partition_idx}
+                .{tmp_dir, idx, partition_idx},
                 );
             defer self.allocator.free(output_filename);
 
             self.II[idx] = try InvertedIndexV2.init(
                 self.allocator, 
-                self.num_records,
+                self.II[idx].doc_sizes.items.len,
                 output_filename,
                 );
         }
@@ -1623,7 +1804,7 @@ pub const BM25Partition = struct {
             self.II[col_idx].vocab.getCtx(),
             );
 
-        self.II[col_idx].doc_sizes[doc_id] += 1;
+        self.II[col_idx].doc_sizes.items[doc_id] += 1;
 
         if (!gop.found_existing) {
             try self.II[col_idx].vocab.string_bytes.appendSlice(
@@ -1640,7 +1821,7 @@ pub const BM25Partition = struct {
             try self.II[col_idx].doc_freqs.append(self.allocator, 1);
             try self.II[col_idx].posting_list.append(
                 doc_id,
-                self.II[col_idx].doc_sizes[doc_id],
+                self.II[col_idx].doc_sizes.items[doc_id],
                 &self.scratch_arr,
             );
 
@@ -1651,7 +1832,7 @@ pub const BM25Partition = struct {
             self.II[col_idx].doc_freqs.items[val] += try self.II[col_idx].posting_list.add(
                 val,
                 doc_id,
-                self.II[col_idx].doc_sizes[doc_id],
+                self.II[col_idx].doc_sizes.items[doc_id],
                 &self.scratch_arr,
                 );
         }
@@ -1740,7 +1921,7 @@ pub const BM25Partition = struct {
         if (is_quoted) {
 
             outer_loop: while (true) {
-                if (self.II[col_idx].doc_sizes[doc_id] >= MAX_NUM_TERMS) {
+                if (self.II[col_idx].doc_sizes.items[doc_id] >= MAX_NUM_TERMS) {
                     csv._iterFieldCSV(buffer, byte_idx);
                     return;
                 }
@@ -1815,7 +1996,7 @@ pub const BM25Partition = struct {
         } else {
 
             outer_loop: while (true) {
-                std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
+                std.debug.assert(self.II[col_idx].doc_sizes.items[doc_id] < MAX_NUM_TERMS);
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
@@ -1864,7 +2045,7 @@ pub const BM25Partition = struct {
         }
 
         if (cntr > 0) {
-            std.debug.assert(self.II[col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
+            std.debug.assert(self.II[col_idx].doc_sizes.items[doc_id] < MAX_NUM_TERMS);
 
             const start_idx = buffer_idx - @intFromBool(is_quoted) 
                               - @min(buffer_idx - @intFromBool(is_quoted), cntr + 1);
@@ -1908,7 +2089,7 @@ pub const BM25Partition = struct {
         var buffer_idx: usize = 0;
         while (buffer_idx < buffer.len) {
             std.debug.assert(
-                self.II[search_col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS
+                self.II[search_col_idx].doc_sizes.items[doc_id] < MAX_NUM_TERMS
                 );
 
             if (cntr > MAX_TERM_LENGTH - 4) {
@@ -1953,7 +2134,7 @@ pub const BM25Partition = struct {
 
         if (cntr > 0) {
             std.debug.assert(
-                self.II[search_col_idx].doc_sizes[doc_id] < MAX_NUM_TERMS
+                self.II[search_col_idx].doc_sizes.items[doc_id] < MAX_NUM_TERMS
                 );
 
             const start_idx = buffer_idx - @min(buffer_idx, cntr + 1);
@@ -2061,7 +2242,7 @@ pub const BM25Partition = struct {
         if (is_quoted) {
 
             outer_loop: while (true) {
-                if (self.II[II_idx].doc_sizes[doc_id] >= MAX_NUM_TERMS) {
+                if (self.II[II_idx].doc_sizes.items[doc_id] >= MAX_NUM_TERMS) {
                     buffer_idx = 0;
                     try json._iterFieldJSON(buffer, &buffer_idx);
                     byte_idx.* += buffer_idx;
@@ -2115,7 +2296,7 @@ pub const BM25Partition = struct {
         } else {
 
             outer_loop: while (true) {
-                std.debug.assert(self.II[II_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
+                std.debug.assert(self.II[II_idx].doc_sizes.items[doc_id] < MAX_NUM_TERMS);
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
@@ -2226,7 +2407,7 @@ pub const BM25Partition = struct {
         }
 
         if (cntr > 0) {
-            std.debug.assert(self.II[II_idx].doc_sizes[doc_id] < MAX_NUM_TERMS);
+            std.debug.assert(self.II[II_idx].doc_sizes.items[doc_id] < MAX_NUM_TERMS);
 
             const start_idx = buffer_idx - @intFromBool(is_quoted) - 
                               @min(buffer_idx - @intFromBool(is_quoted), cntr + 1);

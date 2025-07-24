@@ -226,7 +226,7 @@ pub const IndexManager = struct {
         self.gpa().free(self.file_data.file_handles);
         // std.posix.munmap(self.file_data.mmap_buffer);
 
-        try std.fs.cwd().deleteTree(self.file_data.tmp_dir);
+        // try std.fs.cwd().deleteTree(self.file_data.tmp_dir);
 
         self.gpa().free(self.query_state.results_arrays);
         for (0..MAX_NUM_RESULTS) |idx| {
@@ -268,11 +268,12 @@ pub const IndexManager = struct {
         };
         self.file_data.tmp_dir = try std.fmt.allocPrint(
             self.stringArena(),
-            "ls_data/{x}", 
-            .{file_hash[0..16]}
+            "ls_data/{x:0>32}",
+            .{std.fmt.fmtSliceHexLower(file_hash[0..16])},
             );
 
-        std.fs.cwd().makeDir(self.file_data.tmp_dir) catch {
+        std.fs.cwd().makeDir(self.file_data.tmp_dir) catch |err| {
+            std.debug.print("Error: {any}", .{err});
             try std.fs.cwd().deleteTree(self.file_data.tmp_dir);
             try std.fs.cwd().makeDir(self.file_data.tmp_dir);
         };
@@ -628,9 +629,9 @@ pub const IndexManager = struct {
         total_docs_read: *AtomicCounter,
         progress_bar: *progress.ProgressBar,
     ) !void {
-        defer {
-            _ = self.allocators.scratch_arena.reset(.retain_capacity);
-        }
+        // defer {
+            // _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        // }
 
         var timer = try std.time.Timer.start();
         const interval_ns: u64 = 1_000_000_000 / 30;
@@ -815,7 +816,6 @@ pub const IndexManager = struct {
 
         // Flush remaining tokens.
         for (0..current_IP.II.len) |_search_col_idx| {
-            // try token_stream.flushTokenStream(_search_col_idx);
             try current_IP.II[_search_col_idx].commit(
                 current_IP.allocator,
             );
@@ -824,9 +824,6 @@ pub const IndexManager = struct {
 
         // Flush remaining doc storage.
         try current_IP.doc_store.flush();
-
-        // Construct II
-        // try current_IP.constructFromTokenStream(&token_stream);
     }
 
 
@@ -838,9 +835,9 @@ pub const IndexManager = struct {
         total_docs_read: *AtomicCounter,
         progress_bar: *progress.ProgressBar,
     ) !void {
-        defer {
-            _ = self.allocators.scratch_arena.reset(.retain_capacity);
-        }
+        // defer {
+            // _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        // }
 
         var timer = try std.time.Timer.start();
         const interval_ns: u64 = 1_000_000_000 / 30;
@@ -1152,9 +1149,9 @@ pub const IndexManager = struct {
     }
 
     fn initPartitions(self: *IndexManager) !void {
-        defer {
-            _ = self.allocators.scratch_arena.reset(.retain_capacity);
-        }
+        // defer {
+            // _ = self.allocators.scratch_arena.reset(.retain_capacity);
+        // }
 
         const num_partitions = self.partitions.row_offsets.len - 1;
 
@@ -1345,7 +1342,7 @@ pub const IndexManager = struct {
                             II.vocab.getAdapter(),
                             );
                         if (token) |_token| {
-                            const inner_term = @as(f32, @floatFromInt(II.num_docs)) / 
+                            const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
                                                @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
                             const idf: f32 = (
                                 1.0 + std.math.log2(inner_term)
@@ -1404,7 +1401,7 @@ pub const IndexManager = struct {
                                 );
 
                             if (token) |_token| {
-                                const inner_term = @as(f32, @floatFromInt(II.num_docs)) / 
+                                const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
                                                    @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
                                 const idf: f32 = (
                                     1.0 + std.math.log2(inner_term)
@@ -1460,7 +1457,7 @@ pub const IndexManager = struct {
                     );
 
                 if (token) |_token| {
-                    const inner_term = @as(f32, @floatFromInt(II.num_docs)) / 
+                    const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
                                        @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
                     const idf: f32 = (
                         1.0 + std.math.log2(inner_term)
@@ -1735,7 +1732,7 @@ pub const IndexManager = struct {
 
                     base_score += scoreBM25Fast(
                         res.term_freq,
-                        II.doc_sizes[res.doc_id],
+                        II.doc_sizes.items[res.doc_id],
                         it.A,
                         it.C2,
                     );
@@ -1885,7 +1882,7 @@ pub const IndexManager = struct {
                             // II.vocab.getAdapter(),
                             // );
                         // if (token) |_token| {
-                            // const inner_term = @as(f32, @floatFromInt(II.num_docs)) / 
+                            // const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
                                                // @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
                             // const boost_weighted_idf: f32 = (
                                 // 1.0 + std.math.log2(inner_term)
@@ -1936,7 +1933,7 @@ pub const IndexManager = struct {
                                 // );
 // 
                             // if (token) |_token| {
-                                // const inner_term = @as(f32, @floatFromInt(II.num_docs)) / 
+                                // const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
                                                    // @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
                                 // const boost_weighted_idf: f32 = (
                                     // 1.0 + std.math.log2(inner_term)
@@ -1985,7 +1982,7 @@ pub const IndexManager = struct {
                     // );
 // 
                 // if (token) |_token| {
-                    // const inner_term = @as(f32, @floatFromInt(II.num_docs)) / 
+                    // const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
                                        // @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
                     // const boost_weighted_idf: f32 = (
                         // 1.0 + std.math.log2(inner_term)

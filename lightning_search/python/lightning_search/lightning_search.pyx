@@ -159,3 +159,6 @@ cdef class Index:
         free(boost_factors_arr)
 
         return results 
+
+    cpdef void save(self):
+        pass
