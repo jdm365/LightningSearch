@@ -84,6 +84,7 @@ pub inline fn decodeVbyte(buffer: [*]u8, idx: *usize) u64 {
     return value;
 }
 
+
 pub inline fn getVbyteSize(value: u64) usize {
     if (value == 0) return 1;
 

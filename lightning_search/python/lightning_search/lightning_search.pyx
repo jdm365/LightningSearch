@@ -133,8 +133,11 @@ cdef class Index:
                 &result_json_str_buf_len,
             )
 
+        if num_matched_records == 0:
+            return []
+
         if result_json_str_buf is NULL or result_json_str_buf_len == 0:
-            raise ValueError("No results found for the query.")
+            raise ValueError("Results are empty or malformed.")
 
         cdef str result_json_str = PyUnicode_DecodeUTF8(
             <char*>result_json_str_buf,

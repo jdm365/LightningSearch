@@ -59,8 +59,8 @@ pub inline fn scoreBM25Fast(
     const d:  f32 = @floatFromInt(doc_size);
 
     const L = tf + C1 + C2 * d;
-    var r = 1.0 / L;
-    r = r * (2.0 - L * r);
+    const r = 1.0 / L;
+    // r = r * (2.0 - L * r);
     return A * tf * r;
 }
 
@@ -1045,7 +1045,7 @@ pub const PostingsBlockPartial = struct {
     prev_doc_id: u32,
     max_tf: u16,
     max_doc_size: u16,
-    tf_cntr: u32,
+    prev_tf: u16,
     num_docs: u8,
 
     pub fn init() PostingsBlockPartial {
@@ -1054,10 +1054,9 @@ pub const PostingsBlockPartial = struct {
             .tfs = VByteBlock.init(),
 
             .prev_doc_id = 0,
-            // .max_score = undefined,
+            .prev_tf = 1,
             .max_tf = 1,
             .max_doc_size = 1,
-            .tf_cntr = 1,
             .num_docs = 0,
         };
     }
@@ -1072,11 +1071,10 @@ pub const PostingsBlockPartial = struct {
         self.num_docs = 0;
         self.doc_ids.clear();
         self.tfs.clear();
-        // self.max_score = 0.0;
         self.max_tf = 1;
         self.max_doc_size = 1;
         self.prev_doc_id = 0;
-        self.tf_cntr = 1;
+        self.prev_tf = 1;
 
         return full_map;
     }
@@ -1098,7 +1096,6 @@ pub const PostingsBlockPartial = struct {
             .tfs = try self.tfs.buildIntoBitpacked(
                 allocator,
             ),
-            // .max_score = max_score,
             .max_tf = self.max_tf,
             .max_doc_size = self.max_doc_size,
             .max_doc_id = undefined,
@@ -1117,35 +1114,46 @@ pub const PostingsBlockPartial = struct {
         // Return 1 if first_occurence of doc_id, 0 otherwise.
         // Needed to increment df in indexing loop.
 
-        if ((doc_id != self.prev_doc_id) or (doc_id + self.num_docs == 0)) {
-            try self.tfs.add(
-                allocator,
-                self.tf_cntr,
-            );
-            // self.max_score = @max(
-                // self.max_score, 
-                // self.tf_cntr,
-                // );
+        // if ((doc_id != self.prev_doc_id) or (doc_id + self.num_docs == 0)) {
+        if (doc_id != self.prev_doc_id or self.num_docs == 0) {
 
-            // TODO: This needs to incorporate doc sizes.
-            if (self.tf_cntr > self.max_tf) {
-                self.max_tf = @truncate(self.tf_cntr);
-                self.max_doc_size = doc_size;
-            }
-            self.tf_cntr = 1;
+            // TODO: 
+            // 1. Swith tf_cntr to tf_max.
+            // 2. Implement vbyte addition.
+            // 3. On first doc append new element to tfs/doc_ids.
+            // 4. Increment tf on subsequent docs.
 
-            try self.doc_ids.add(
-                allocator,
-                doc_id,
-                self.prev_doc_id,
-            );
+            try self.tfs.add(allocator, 1);
+
+            try self.doc_ids.add(allocator, doc_id, self.prev_doc_id);
             self.num_docs += 1;
             self.prev_doc_id = doc_id;
+            self.prev_tf = 1;
             return 1;
 
         } else {
-            self.tf_cntr += 1;
+            // TODO: Technincally when equal, doc size needs to be considered.
+            const new_tf          = self.prev_tf + 1;
+            const old_size        = pq.getVbyteSize(@intCast(self.prev_tf));
+            const new_size        = pq.getVbyteSize(@intCast(new_tf));
+            const start           = self.tfs.buffer.items.len - old_size;
+
+            // remove the old encoding
+            self.tfs.buffer.items.len -= old_size;
+
+            // make room for the new one
+            try self.tfs.buffer.resize(allocator, self.tfs.buffer.items.len + new_size);
+
+            var write_ptr: usize = start;
+            pq.encodeVbyte(self.tfs.buffer.items.ptr, &write_ptr, @intCast(new_tf));
+
+            self.prev_tf = new_tf;
             self.prev_doc_id = doc_id;
+
+            if (new_tf > self.max_tf) {
+                self.max_tf       = new_tf;
+                self.max_doc_size = doc_size;
+            }
             return 0;
         }
 

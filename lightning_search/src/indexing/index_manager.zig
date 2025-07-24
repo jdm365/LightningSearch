@@ -1506,15 +1506,15 @@ pub const IndexManager = struct {
         // @breakpoint();
 
         if (empty_query) {
-            std.debug.print("Empty query\n", .{});
-            var iterator = self.query_state.query_map.iterator();
-            std.debug.print("\n", .{});
-            std.debug.print("-----------------------------------------", .{});
-            while (iterator.next()) |item| {
-                std.debug.print("{s}: {s}\n", .{item.key_ptr.*, item.value_ptr.*});
-            }
-            std.debug.print("-----------------------------------------", .{});
-            std.debug.print("\n", .{});
+            // std.debug.print("Empty query\n", .{});
+            // var iterator = self.query_state.query_map.iterator();
+            // std.debug.print("\n", .{});
+            // std.debug.print("-----------------------------------------", .{});
+            // while (iterator.next()) |item| {
+                // std.debug.print("{s}: {s}\n", .{item.key_ptr.*, item.value_ptr.*});
+            // }
+            // std.debug.print("-----------------------------------------", .{});
+            // std.debug.print("\n", .{});
             return;
         }
 

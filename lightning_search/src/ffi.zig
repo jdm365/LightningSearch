@@ -94,10 +94,6 @@ pub export fn c_query(
     _ = idx_ptr.allocators.scratch_arena.reset(.{ .retain_with_limit = (comptime 1 << 20) });
 
     for (0..num_query_cols) |idx| {
-        std.debug.print(
-            "Adding query field index for column {d}: '{s}'\n", 
-            .{search_col_idxs[idx], std.mem.span(queries[idx])},
-        );
         idx_ptr.addQueryFieldIdx(
             search_col_idxs[idx],
             std.mem.span(queries[idx]),
@@ -113,6 +109,10 @@ pub export fn c_query(
         @panic("Failed to execute query.");
     };
     num_matched_records.* = @truncate(idx_ptr.query_state.results_arrays[0].count);
+
+    if (num_matched_records.* == 0) {
+        return;
+    }
 
     for (0..idx_ptr.query_state.results_arrays[0].count) |idx| {
         idx_ptr.query_state.json_objects.append(
