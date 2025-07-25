@@ -40,7 +40,7 @@ cdef extern from "ffi.h":
         uint64_t* result_json_str_buf_len
 		) nogil
     uint32_t get_num_cols(IndexManager* idx_ptr)
-
+    void load(IndexManager* idx_ptr, uint8_t* _dir)
 
 cdef class Index:
     cdef IndexManager* idx_ptr 
@@ -51,6 +51,11 @@ cdef class Index:
         self.idx_ptr = create_index()
         self.query_col_map = {}
         self.num_cols = 0
+
+    cpdef void load(self, str dir_name):
+        dname = (dir_name + '\0').encode('utf-8')
+        cdef uint8_t* c_dirname = <uint8_t*>dname
+        load(self.idx_ptr, c_dirname)
 
     def __del__(self):
         if self.idx_ptr:
@@ -159,6 +164,3 @@ cdef class Index:
         free(boost_factors_arr)
 
         return results 
-
-    cpdef void save(self):
-        pass

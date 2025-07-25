@@ -236,13 +236,15 @@ pub const IndexManager = struct {
 
     pub fn load(self: *IndexManager, dir_name: []const u8) !void {
         self.file_data.tmp_dir = try self.stringArena().alloc(u8, dir_name.len);
+        @memcpy(@constCast(self.file_data.tmp_dir), dir_name);
 
         const meta_file = try std.fmt.allocPrint(
             self.stringArena(),
             "{s}/meta.bin",
             .{self.file_data.tmp_dir},
             );
-        const file = try std.fs.cwd().openFile(meta_file, .{ .read = true });
+        std.debug.print("meta_file: {s}\n", .{meta_file});
+        const file = try std.fs.cwd().openFile(meta_file, .{});
 
         const file_size = try file.getEndPos();
         try file.seekTo(0);
@@ -274,14 +276,30 @@ pub const IndexManager = struct {
             BM25Partition,
             num_partitions,
         );
+
+        const time_start = std.time.milliTimestamp();
+
+        var threads = try self.scratchArena().alloc(std.Thread, num_partitions);
         for (0.., self.partitions.index_partitions) |partition_idx, *p| {
-            p.* = BM25Partition.initFromDisk(
-                self.gpa(),
-                self.file_data.tmp_dir,
-                partition_idx,
-                num_search_cols,
+
+            threads[partition_idx] = try std.Thread.spawn(
+                .{},
+                BM25Partition.initFromDisk,
+                .{
+                    p,
+                    self.gpa(),
+                    self.file_data.tmp_dir,
+                    partition_idx,
+                    @as(usize, @intCast(num_search_cols)),
+                },
             );
         }
+
+        for (threads) |thread| {
+            thread.join();
+        }
+        const time_taken = std.time.milliTimestamp() - time_start;
+        std.debug.print("Loaded in {d}ms\n", .{time_taken});
     }
 
     pub inline fn gpa(self: *IndexManager) std.mem.Allocator {

@@ -1240,6 +1240,8 @@ pub const PostingV3 = struct {
             if (max_range > buffer.items.len) {
                 @branchHint(.unlikely);
                 try buffer.resize(allocator, 2 * max_range);
+                const range = 2 * max_range - current_pos.*;
+                @memset(buffer.items[current_pos.*..][0..range], 0);
             }
 
             pq.encodeVbyte(
@@ -1298,6 +1300,8 @@ pub const PostingV3 = struct {
         if (max_range > buffer.items.len) {
             @branchHint(.unlikely);
             try buffer.resize(allocator, 2 * max_range);
+            const range = 2 * max_range - current_pos.*;
+            @memset(buffer.items[current_pos.*..][0..range], 0);
         }
 
         buffer.items[current_pos.*] = self.partial_block.num_docs;
@@ -1355,16 +1359,31 @@ pub const PostingV3 = struct {
 
         for (0..num_full_blocks) |idx| {
             var block = &self.full_blocks.items[idx];
+            block.* = PostingsBlockFull{
+                .doc_ids = DeltaBitpackedBlock{
+                    .min_val = 0,
+                    .bit_size = 0,
+                    .buffer = undefined,
+                },
+                .tfs = BitpackedBlock{
+                    .max_val = 0,
+                    .bit_size = 0,
+                    .buffer = undefined,
+                },
+                .max_tf = 1,
+                .max_doc_size = 1,
+                .max_doc_id = 0,
+            };
 
-            block.max_doc_id      = @truncate(pq.decodeVbyte(buffer, current_pos));
-            block.max_tf          = @truncate(pq.decodeVbyte(buffer, current_pos));
-            block.max_doc_size    = @truncate(pq.decodeVbyte(buffer, current_pos));
-            block.doc_ids.min_val = @truncate(pq.decodeVbyte(buffer, current_pos));
+            block.max_doc_id      = @truncate(pq.decodeVbyte(buffer.ptr, current_pos));
+            block.max_tf          = @truncate(pq.decodeVbyte(buffer.ptr, current_pos));
+            block.max_doc_size    = @truncate(pq.decodeVbyte(buffer.ptr, current_pos));
+            block.doc_ids.min_val = @truncate(pq.decodeVbyte(buffer.ptr, current_pos));
 
             block.doc_ids.bit_size = buffer[current_pos.*];
             current_pos.* += 1;
 
-            const doc_id_buf_len = pq.decodeVbyte(buffer, current_pos);
+            const doc_id_buf_len = pq.decodeVbyte(buffer.ptr, current_pos);
             block.doc_ids.buffer = try allocator.alignedAlloc(
                 u8,
                 POST_ALIGNMENT,
@@ -1376,7 +1395,10 @@ pub const PostingV3 = struct {
             );
             current_pos.* += doc_id_buf_len;
 
-            const tf_buf_len = pq.decodeVbyte(buffer, current_pos);
+            block.tfs.bit_size = buffer[current_pos.*];
+            current_pos.* += 1;
+
+            const tf_buf_len = pq.decodeVbyte(buffer.ptr, current_pos);
             block.tfs.buffer = try allocator.alignedAlloc(
                 u8,
                 POST_ALIGNMENT,
@@ -1389,27 +1411,29 @@ pub const PostingV3 = struct {
             current_pos.* += tf_buf_len;
         }
 
+        self.partial_block = PostingsBlockPartial.init();
+
         self.partial_block.num_docs = buffer[current_pos.*];
         current_pos.* += 1;
         
         self.partial_block.max_tf       = @truncate(
-            pq.decodeVbyte(buffer.items, current_pos)
+            pq.decodeVbyte(buffer.ptr, current_pos)
             );
         self.partial_block.max_doc_size = @truncate(
-            pq.decodeVbyte(buffer.items, current_pos)
+            pq.decodeVbyte(buffer.ptr, current_pos)
             );
 
+        const doc_id_buf_len = pq.decodeVbyte(buffer.ptr, current_pos);
 
-        const doc_id_buf_len = pq.decodeVbyte(buffer.items, current_pos);
         try self.partial_block.doc_ids.buffer.resize(allocator, doc_id_buf_len);
 
         @memcpy(
-            self.partial_block.doc_ids.buffer.items,
+            self.partial_block.doc_ids.buffer.items[0..doc_id_buf_len],
             buffer[current_pos.*..][0..doc_id_buf_len],
         );
         current_pos.* += doc_id_buf_len;
 
-        const tf_buf_len = pq.decodeVbyte(buffer.items, current_pos);
+        const tf_buf_len = pq.decodeVbyte(buffer.ptr, current_pos);
         try self.partial_block.tfs.buffer.resize(allocator, tf_buf_len);
 
         @memcpy(
@@ -1483,6 +1507,7 @@ pub const InvertedIndexV2 = struct {
         allocator: std.mem.Allocator,
         num_docs: ?usize,
         filename: []const u8,
+        create_file: bool,
         ) !InvertedIndexV2 {
         var II = InvertedIndexV2{
             .posting_list = PostingsList.init(allocator),
@@ -1492,10 +1517,17 @@ pub const InvertedIndexV2 = struct {
             .avg_doc_size = 0.0,
             .file_handle = undefined,
         };
-        II.file_handle = try std.fs.cwd().createFile(
-             filename, 
-             .{ .read = true },
-             );
+        if (create_file) {
+            II.file_handle = try std.fs.cwd().createFile(
+                 filename, 
+                 .{ .read = true },
+                 );
+        } else {
+            II.file_handle = try std.fs.cwd().openFile(
+                 filename, 
+                 .{},
+                 );
+        }
         II.vocab = Vocab.init();
 
         if (num_docs) |nd| {
@@ -1643,15 +1675,7 @@ pub const InvertedIndexV2 = struct {
 
     }
 
-    pub fn load(
-        self: *InvertedIndexV2, 
-        allocator: std.mem.Allocator,
-        filename: []const u8,
-        ) !void {
-        self.file_handle = try std.fs.cwd().openFile(
-             filename, 
-             .{ .read = true },
-             );
+    pub fn load(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
             
         // TODO: Consider buffering on large indexes.
         const file_size = try self.file_handle.getEndPos();
@@ -1660,7 +1684,8 @@ pub const InvertedIndexV2 = struct {
         var buf = try allocator.alloc(u8, file_size);
         defer allocator.free(buf);
 
-        _ = try self.file_handle.readAll(buf);
+        const bytes_read = try self.file_handle.readAll(buf);
+        std.debug.assert(bytes_read > 0);
 
         var current_pos: usize = 0;
 
@@ -1673,14 +1698,20 @@ pub const InvertedIndexV2 = struct {
         );
         current_pos += 4;
 
-        try self.posting_list.postings.resize(num_postings);
+        var arena = std.heap.ArenaAllocator.init(allocator);
+
+        const time_start = std.time.milliTimestamp();
+        try self.posting_list.postings.resize(arena.allocator(), num_postings);
         for (0..num_postings) |idx| {
+            self.posting_list.postings.items[idx] = PostingV3.init();
             try self.posting_list.postings.items[idx].deserialize(
-                allocator,
+                arena.allocator(),
                 buf,
-                current_pos,
+                &current_pos,
             );
         }
+        const time_taken = std.time.milliTimestamp() - time_start;
+        std.debug.print("Loaded in {d}ms\n", .{time_taken});
 
         // 2. Vocab
         const num_string_bytes_vocab = std.mem.readPackedInt(
@@ -1691,7 +1722,7 @@ pub const InvertedIndexV2 = struct {
         );
         current_pos += 4;
 
-        try self.vocab.string_bytes.resize(num_string_bytes_vocab);
+        try self.vocab.string_bytes.resize(allocator, num_string_bytes_vocab);
         @memcpy(
             self.vocab.string_bytes.items,
             buf[current_pos..][0..num_string_bytes_vocab],
@@ -1709,25 +1740,30 @@ pub const InvertedIndexV2 = struct {
         for (0..num_terms_vocab) |_| {
             const key = std.mem.readPackedInt(
                 u32,
-                buf.items[current_pos..][0..4],
+                buf[current_pos..][0..4],
                 0,
                 comptime builtin.cpu.arch.endian(),
             );
             const value = std.mem.readPackedInt(
                 u32,
-                buf.items[current_pos..][4..8],
+                buf[current_pos..][4..8],
                 0,
                 comptime builtin.cpu.arch.endian(),
             );
             current_pos += 8;
 
-            try self.vocab.map.putNoClobber(allocator, key, value);
+            try self.vocab.map.putNoClobberContext(
+                allocator, 
+                key, 
+                value, 
+                self.vocab.getCtx(),
+                );
         }
 
         // Doc sizes
         const num_docs = std.mem.readPackedInt(
             u32,
-            buf.items[current_pos..][0..4],
+            buf[current_pos..][0..4],
             0,
             comptime builtin.cpu.arch.endian(),
         );
@@ -1743,7 +1779,7 @@ pub const InvertedIndexV2 = struct {
         // Avg doc size
         self.avg_doc_size = @bitCast(std.mem.readPackedInt(
             u32,
-            buf.items[current_pos..][0..4],
+            buf[current_pos..][0..4],
             0,
             comptime builtin.cpu.arch.endian(),
         ));
@@ -1754,6 +1790,7 @@ pub const InvertedIndexV2 = struct {
 pub const BM25Partition = struct {
     II: []InvertedIndexV2,
     allocator: std.mem.Allocator,
+    arena: std.heap.ArenaAllocator,
 
     doc_store: DocStore,
 
@@ -1768,6 +1805,7 @@ pub const BM25Partition = struct {
     ) !BM25Partition {
         var partition = BM25Partition{
             .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
+            .arena = std.heap.ArenaAllocator.init(allocator),
             .allocator = allocator,
             .doc_store = undefined,
 
@@ -1787,6 +1825,7 @@ pub const BM25Partition = struct {
                 allocator, 
                 num_records,
                 output_filename,
+                true,
                 );
         }
 
@@ -1800,18 +1839,21 @@ pub const BM25Partition = struct {
         self.allocator.free(self.II);
 
         try self.doc_store.deinit();
+        self.arena.deinit();
     }
 
     pub fn initFromDisk(
+        partition: *BM25Partition,
         allocator: std.mem.Allocator,
         dir: []const u8, 
         partition_idx: usize,
         num_search_cols: usize,
-        ) !BM25Partition {
+        ) !void {
 
-        var partition = BM25Partition{
+        partition.* = BM25Partition{
             .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
             .allocator = allocator,
+            .arena = std.heap.ArenaAllocator.init(allocator),
 
             // TODO: Implement doc_store loading.
             .doc_store = undefined,
@@ -1823,17 +1865,18 @@ pub const BM25Partition = struct {
         for (0..num_search_cols) |idx| {
             const filename = try std.fmt.allocPrint(
                 allocator,
-                "{s}/posting_{d}_{d}.bin",
+                "{s}/postings/posting_{d}_{d}.bin",
                 .{dir, idx, partition_idx},
                 );
             defer allocator.free(filename);
 
             partition.II[idx] = try InvertedIndexV2.init(
-                allocator, 
+                partition.arena.allocator(), 
                 null,
                 filename,
+                false,
                 );
-            try partition.II[idx].load(partition_idx.allocator, filename);
+            try partition.II[idx].load(partition.arena.allocator());
         }
     }
 
@@ -1857,9 +1900,10 @@ pub const BM25Partition = struct {
             defer self.allocator.free(output_filename);
 
             self.II[idx] = try InvertedIndexV2.init(
-                self.allocator, 
+                self.arena.allocator(), 
                 self.II[idx].doc_sizes.items.len,
                 output_filename,
+                true,
                 );
         }
     }

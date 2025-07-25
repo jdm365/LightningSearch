@@ -1,4 +1,4 @@
-const std    = @import("std");
+const std = @import("std");
 
 const SHM = @import("indexing/index.zig").SHM;
 const IndexManager = @import("indexing/index_manager.zig").IndexManager;
@@ -167,4 +167,14 @@ pub export fn c_query(
 
 pub export fn get_num_cols(idx_ptr: *IndexManager) u32 {
     return @truncate(idx_ptr.file_data.column_idx_map.num_keys);
+}
+
+pub export fn load(
+    idx_ptr: *IndexManager, 
+    _dir: [*:0]const u8
+    ) void {
+    idx_ptr.load(std.mem.span(_dir)) catch |err| {
+        std.debug.print("Failed to load index from {s}: {any}\n", .{std.mem.span(_dir), err});
+        @panic("Failed to load index.");
+    };
 }

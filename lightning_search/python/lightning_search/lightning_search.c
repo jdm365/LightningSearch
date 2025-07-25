@@ -4,11 +4,11 @@
 {
     "distutils": {
         "depends": [
-            "/tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/_core/include/numpy/arrayobject.h",
-            "/tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/_core/include/numpy/arrayscalars.h",
-            "/tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/_core/include/numpy/ndarrayobject.h",
-            "/tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/_core/include/numpy/ndarraytypes.h",
-            "/tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/_core/include/numpy/ufuncobject.h",
+            "/tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/_core/include/numpy/arrayobject.h",
+            "/tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/_core/include/numpy/arrayscalars.h",
+            "/tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/_core/include/numpy/ndarrayobject.h",
+            "/tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/_core/include/numpy/ndarraytypes.h",
+            "/tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/_core/include/numpy/ufuncobject.h",
             "lightning_search/ffi.h"
         ],
         "extra_link_args": [
@@ -16,7 +16,7 @@
         ],
         "include_dirs": [
             "lightning_search",
-            "/tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/_core/include",
+            "/tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/_core/include",
             "/home/jakemehlman/LightningSearch/lightning_search/python/lightning_search"
         ],
         "language": "c",
@@ -1398,17 +1398,10 @@ static const char *__pyx_filename;
 static const char* const __pyx_f[] = {
   "lightning_search/lightning_search.pyx",
   "<stringsource>",
-  "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd",
+  "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd",
   "cpython/type.pxd",
 };
 /* #### Code section: utility_code_proto_before_types ### */
-/* NoFastGil.proto */
-#define __Pyx_PyGILState_Ensure PyGILState_Ensure
-#define __Pyx_PyGILState_Release PyGILState_Release
-#define __Pyx_FastGIL_Remember()
-#define __Pyx_FastGIL_Forget()
-#define __Pyx_FastGilFuncInit()
-
 /* Atomics.proto */
 #include <pythread.h>
 #ifndef CYTHON_ATOMICS
@@ -1541,6 +1534,13 @@ static const char* const __pyx_f[] = {
             __pyx_sub_acquisition_count_locked(__pyx_get_slice_count_pointer(memview), memview->lock)
 #endif
 
+/* NoFastGil.proto */
+#define __Pyx_PyGILState_Ensure PyGILState_Ensure
+#define __Pyx_PyGILState_Release PyGILState_Release
+#define __Pyx_FastGIL_Remember()
+#define __Pyx_FastGIL_Forget()
+#define __Pyx_FastGilFuncInit()
+
 /* IncludeStructmemberH.proto */
 #include <structmember.h>
 
@@ -1575,7 +1575,7 @@ static const char* const __pyx_f[] = {
 
 /* #### Code section: numeric_typedefs ### */
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":743
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":743
  * # in Cython to enable them only on the right systems.
  * 
  * ctypedef npy_int8       int8_t             # <<<<<<<<<<<<<<
@@ -1584,7 +1584,7 @@ static const char* const __pyx_f[] = {
 */
 typedef npy_int8 __pyx_t_5numpy_int8_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":744
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":744
  * 
  * ctypedef npy_int8       int8_t
  * ctypedef npy_int16      int16_t             # <<<<<<<<<<<<<<
@@ -1593,7 +1593,7 @@ typedef npy_int8 __pyx_t_5numpy_int8_t;
 */
 typedef npy_int16 __pyx_t_5numpy_int16_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":745
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":745
  * ctypedef npy_int8       int8_t
  * ctypedef npy_int16      int16_t
  * ctypedef npy_int32      int32_t             # <<<<<<<<<<<<<<
@@ -1602,7 +1602,7 @@ typedef npy_int16 __pyx_t_5numpy_int16_t;
 */
 typedef npy_int32 __pyx_t_5numpy_int32_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":746
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":746
  * ctypedef npy_int16      int16_t
  * ctypedef npy_int32      int32_t
  * ctypedef npy_int64      int64_t             # <<<<<<<<<<<<<<
@@ -1611,7 +1611,7 @@ typedef npy_int32 __pyx_t_5numpy_int32_t;
 */
 typedef npy_int64 __pyx_t_5numpy_int64_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":748
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":748
  * ctypedef npy_int64      int64_t
  * 
  * ctypedef npy_uint8      uint8_t             # <<<<<<<<<<<<<<
@@ -1620,7 +1620,7 @@ typedef npy_int64 __pyx_t_5numpy_int64_t;
 */
 typedef npy_uint8 __pyx_t_5numpy_uint8_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":749
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":749
  * 
  * ctypedef npy_uint8      uint8_t
  * ctypedef npy_uint16     uint16_t             # <<<<<<<<<<<<<<
@@ -1629,7 +1629,7 @@ typedef npy_uint8 __pyx_t_5numpy_uint8_t;
 */
 typedef npy_uint16 __pyx_t_5numpy_uint16_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":750
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":750
  * ctypedef npy_uint8      uint8_t
  * ctypedef npy_uint16     uint16_t
  * ctypedef npy_uint32     uint32_t             # <<<<<<<<<<<<<<
@@ -1638,7 +1638,7 @@ typedef npy_uint16 __pyx_t_5numpy_uint16_t;
 */
 typedef npy_uint32 __pyx_t_5numpy_uint32_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":751
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":751
  * ctypedef npy_uint16     uint16_t
  * ctypedef npy_uint32     uint32_t
  * ctypedef npy_uint64     uint64_t             # <<<<<<<<<<<<<<
@@ -1647,7 +1647,7 @@ typedef npy_uint32 __pyx_t_5numpy_uint32_t;
 */
 typedef npy_uint64 __pyx_t_5numpy_uint64_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":753
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":753
  * ctypedef npy_uint64     uint64_t
  * 
  * ctypedef npy_float32    float32_t             # <<<<<<<<<<<<<<
@@ -1656,7 +1656,7 @@ typedef npy_uint64 __pyx_t_5numpy_uint64_t;
 */
 typedef npy_float32 __pyx_t_5numpy_float32_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":754
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":754
  * 
  * ctypedef npy_float32    float32_t
  * ctypedef npy_float64    float64_t             # <<<<<<<<<<<<<<
@@ -1665,7 +1665,7 @@ typedef npy_float32 __pyx_t_5numpy_float32_t;
 */
 typedef npy_float64 __pyx_t_5numpy_float64_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":761
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":761
  * ctypedef double complex complex128_t
  * 
  * ctypedef npy_longlong   longlong_t             # <<<<<<<<<<<<<<
@@ -1674,7 +1674,7 @@ typedef npy_float64 __pyx_t_5numpy_float64_t;
 */
 typedef npy_longlong __pyx_t_5numpy_longlong_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":762
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":762
  * 
  * ctypedef npy_longlong   longlong_t
  * ctypedef npy_ulonglong  ulonglong_t             # <<<<<<<<<<<<<<
@@ -1683,7 +1683,7 @@ typedef npy_longlong __pyx_t_5numpy_longlong_t;
 */
 typedef npy_ulonglong __pyx_t_5numpy_ulonglong_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":764
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":764
  * ctypedef npy_ulonglong  ulonglong_t
  * 
  * ctypedef npy_intp       intp_t             # <<<<<<<<<<<<<<
@@ -1692,7 +1692,7 @@ typedef npy_ulonglong __pyx_t_5numpy_ulonglong_t;
 */
 typedef npy_intp __pyx_t_5numpy_intp_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":765
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":765
  * 
  * ctypedef npy_intp       intp_t
  * ctypedef npy_uintp      uintp_t             # <<<<<<<<<<<<<<
@@ -1701,7 +1701,7 @@ typedef npy_intp __pyx_t_5numpy_intp_t;
 */
 typedef npy_uintp __pyx_t_5numpy_uintp_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":767
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":767
  * ctypedef npy_uintp      uintp_t
  * 
  * ctypedef npy_double     float_t             # <<<<<<<<<<<<<<
@@ -1710,7 +1710,7 @@ typedef npy_uintp __pyx_t_5numpy_uintp_t;
 */
 typedef npy_double __pyx_t_5numpy_float_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":768
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":768
  * 
  * ctypedef npy_double     float_t
  * ctypedef npy_double     double_t             # <<<<<<<<<<<<<<
@@ -1719,7 +1719,7 @@ typedef npy_double __pyx_t_5numpy_float_t;
 */
 typedef npy_double __pyx_t_5numpy_double_t;
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":769
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":769
  * ctypedef npy_double     float_t
  * ctypedef npy_double     double_t
  * ctypedef npy_longdouble longdouble_t             # <<<<<<<<<<<<<<
@@ -1770,7 +1770,7 @@ static CYTHON_INLINE __pyx_t_long_double_complex __pyx_t_long_double_complex_fro
 struct __pyx_obj_16lightning_search_16lightning_search_Index;
 
 /* "lightning_search/lightning_search.pyx":45
- * 
+ *     void load(IndexManager* idx_ptr, uint8_t* _dir)
  * 
  * cdef class Index:             # <<<<<<<<<<<<<<
  *     cdef IndexManager* idx_ptr
@@ -1787,10 +1787,10 @@ struct __pyx_obj_16lightning_search_16lightning_search_Index {
 
 
 struct __pyx_vtabstruct_16lightning_search_16lightning_search_Index {
+  void (*load)(struct __pyx_obj_16lightning_search_16lightning_search_Index *, PyObject *, int __pyx_skip_dispatch);
   void (*index_file)(struct __pyx_obj_16lightning_search_16lightning_search_Index *, PyObject *, PyObject *, int __pyx_skip_dispatch);
   void (*get_num_cols)(struct __pyx_obj_16lightning_search_16lightning_search_Index *);
   PyObject *(*query)(struct __pyx_obj_16lightning_search_16lightning_search_Index *, PyObject *, PyObject *, uint32_t, int __pyx_skip_dispatch);
-  void (*save)(struct __pyx_obj_16lightning_search_16lightning_search_Index *, int __pyx_skip_dispatch);
 };
 static struct __pyx_vtabstruct_16lightning_search_16lightning_search_Index *__pyx_vtabptr_16lightning_search_16lightning_search_Index;
 /* #### Code section: utility_code_proto ### */
@@ -2091,56 +2091,6 @@ static CYTHON_INLINE int __Pyx_object_dict_version_matches(PyObject* obj, PY_UIN
 #define __PYX_PY_DICT_LOOKUP_IF_MODIFIED(VAR, DICT, LOOKUP)  (VAR) = (LOOKUP);
 #endif
 
-/* GetItemInt.proto */
-#define __Pyx_GetItemInt(o, i, type, is_signed, to_py_func, is_list, wraparound, boundscheck, has_gil)\
-    (__Pyx_fits_Py_ssize_t(i, type, is_signed) ?\
-    __Pyx_GetItemInt_Fast(o, (Py_ssize_t)i, is_list, wraparound, boundscheck) :\
-    (is_list ? (PyErr_SetString(PyExc_IndexError, "list index out of range"), (PyObject*)NULL) :\
-               __Pyx_GetItemInt_Generic(o, to_py_func(i))))
-#define __Pyx_GetItemInt_List(o, i, type, is_signed, to_py_func, is_list, wraparound, boundscheck, has_gil)\
-    (__Pyx_fits_Py_ssize_t(i, type, is_signed) ?\
-    __Pyx_GetItemInt_List_Fast(o, (Py_ssize_t)i, wraparound, boundscheck) :\
-    (PyErr_SetString(PyExc_IndexError, "list index out of range"), (PyObject*)NULL))
-static CYTHON_INLINE PyObject *__Pyx_GetItemInt_List_Fast(PyObject *o, Py_ssize_t i,
-                                                              int wraparound, int boundscheck);
-#define __Pyx_GetItemInt_Tuple(o, i, type, is_signed, to_py_func, is_list, wraparound, boundscheck, has_gil)\
-    (__Pyx_fits_Py_ssize_t(i, type, is_signed) ?\
-    __Pyx_GetItemInt_Tuple_Fast(o, (Py_ssize_t)i, wraparound, boundscheck) :\
-    (PyErr_SetString(PyExc_IndexError, "tuple index out of range"), (PyObject*)NULL))
-static CYTHON_INLINE PyObject *__Pyx_GetItemInt_Tuple_Fast(PyObject *o, Py_ssize_t i,
-                                                              int wraparound, int boundscheck);
-static PyObject *__Pyx_GetItemInt_Generic(PyObject *o, PyObject* j);
-static CYTHON_INLINE PyObject *__Pyx_GetItemInt_Fast(PyObject *o, Py_ssize_t i,
-                                                     int is_list, int wraparound, int boundscheck);
-
-/* ListCompAppend.proto */
-#if CYTHON_USE_PYLIST_INTERNALS && CYTHON_ASSUME_SAFE_MACROS
-static CYTHON_INLINE int __Pyx_ListComp_Append(PyObject* list, PyObject* x) {
-    PyListObject* L = (PyListObject*) list;
-    Py_ssize_t len = Py_SIZE(list);
-    if (likely(L->allocated > len)) {
-        Py_INCREF(x);
-        #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030d0000
-        L->ob_item[len] = x;
-        #else
-        PyList_SET_ITEM(list, len, x);
-        #endif
-        __Pyx_SET_SIZE(list, len + 1);
-        return 0;
-    }
-    return PyList_Append(list, x);
-}
-#else
-#define __Pyx_ListComp_Append(L,x) PyList_Append(L,x)
-#endif
-
-/* PyObjectFastCallMethod.proto */
-#if CYTHON_VECTORCALL && PY_VERSION_HEX >= 0x03090000
-#define __Pyx_PyObject_FastCallMethod(name, args, nargsf) PyObject_VectorcallMethod(name, args, nargsf, NULL)
-#else
-static PyObject *__Pyx_PyObject_FastCallMethod(PyObject *name, PyObject *const *args, size_t nargsf);
-#endif
-
 /* RaiseDoubleKeywords.proto */
 static void __Pyx_RaiseDoubleKeywordsError(const char* func_name, PyObject* kw_name);
 
@@ -2210,6 +2160,56 @@ static CYTHON_INLINE PyObject *__Pyx_CallUnboundCMethod2(__Pyx_CachedCFunction *
     ((likely(__Pyx_IS_TYPE(obj, type) | (none_allowed && (obj == Py_None)))) ? 1 :\
         __Pyx__ArgTypeTest(obj, type, name, exact))
 static int __Pyx__ArgTypeTest(PyObject *obj, PyTypeObject *type, const char *name, int exact);
+
+/* GetItemInt.proto */
+#define __Pyx_GetItemInt(o, i, type, is_signed, to_py_func, is_list, wraparound, boundscheck, has_gil)\
+    (__Pyx_fits_Py_ssize_t(i, type, is_signed) ?\
+    __Pyx_GetItemInt_Fast(o, (Py_ssize_t)i, is_list, wraparound, boundscheck) :\
+    (is_list ? (PyErr_SetString(PyExc_IndexError, "list index out of range"), (PyObject*)NULL) :\
+               __Pyx_GetItemInt_Generic(o, to_py_func(i))))
+#define __Pyx_GetItemInt_List(o, i, type, is_signed, to_py_func, is_list, wraparound, boundscheck, has_gil)\
+    (__Pyx_fits_Py_ssize_t(i, type, is_signed) ?\
+    __Pyx_GetItemInt_List_Fast(o, (Py_ssize_t)i, wraparound, boundscheck) :\
+    (PyErr_SetString(PyExc_IndexError, "list index out of range"), (PyObject*)NULL))
+static CYTHON_INLINE PyObject *__Pyx_GetItemInt_List_Fast(PyObject *o, Py_ssize_t i,
+                                                              int wraparound, int boundscheck);
+#define __Pyx_GetItemInt_Tuple(o, i, type, is_signed, to_py_func, is_list, wraparound, boundscheck, has_gil)\
+    (__Pyx_fits_Py_ssize_t(i, type, is_signed) ?\
+    __Pyx_GetItemInt_Tuple_Fast(o, (Py_ssize_t)i, wraparound, boundscheck) :\
+    (PyErr_SetString(PyExc_IndexError, "tuple index out of range"), (PyObject*)NULL))
+static CYTHON_INLINE PyObject *__Pyx_GetItemInt_Tuple_Fast(PyObject *o, Py_ssize_t i,
+                                                              int wraparound, int boundscheck);
+static PyObject *__Pyx_GetItemInt_Generic(PyObject *o, PyObject* j);
+static CYTHON_INLINE PyObject *__Pyx_GetItemInt_Fast(PyObject *o, Py_ssize_t i,
+                                                     int is_list, int wraparound, int boundscheck);
+
+/* ListCompAppend.proto */
+#if CYTHON_USE_PYLIST_INTERNALS && CYTHON_ASSUME_SAFE_MACROS
+static CYTHON_INLINE int __Pyx_ListComp_Append(PyObject* list, PyObject* x) {
+    PyListObject* L = (PyListObject*) list;
+    Py_ssize_t len = Py_SIZE(list);
+    if (likely(L->allocated > len)) {
+        Py_INCREF(x);
+        #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030d0000
+        L->ob_item[len] = x;
+        #else
+        PyList_SET_ITEM(list, len, x);
+        #endif
+        __Pyx_SET_SIZE(list, len + 1);
+        return 0;
+    }
+    return PyList_Append(list, x);
+}
+#else
+#define __Pyx_ListComp_Append(L,x) PyList_Append(L,x)
+#endif
+
+/* PyObjectFastCallMethod.proto */
+#if CYTHON_VECTORCALL && PY_VERSION_HEX >= 0x03090000
+#define __Pyx_PyObject_FastCallMethod(name, args, nargsf) PyObject_VectorcallMethod(name, args, nargsf, NULL)
+#else
+static PyObject *__Pyx_PyObject_FastCallMethod(PyObject *name, PyObject *const *args, size_t nargsf);
+#endif
 
 /* RaiseUnexpectedTypeError.proto */
 static int __Pyx_RaiseUnexpectedTypeError(const char *expected, PyObject *obj);
@@ -2844,10 +2844,10 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_5shape_shape(PyArrayObjec
 static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_7strides_strides(PyArrayObject *__pyx_v_self); /* proto*/
 static CYTHON_INLINE npy_intp __pyx_f_5numpy_7ndarray_4size_size(PyArrayObject *__pyx_v_self); /* proto*/
 static CYTHON_INLINE char *__pyx_f_5numpy_7ndarray_4data_data(PyArrayObject *__pyx_v_self); /* proto*/
+static void __pyx_f_16lightning_search_16lightning_search_5Index_load(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_dir_name, int __pyx_skip_dispatch); /* proto*/
 static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_filename, PyObject *__pyx_v_query_cols, int __pyx_skip_dispatch); /* proto*/
 static void __pyx_f_16lightning_search_16lightning_search_5Index_get_num_cols(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self); /* proto*/
 static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_query_map, PyObject *__pyx_v_boost_factors, uint32_t __pyx_v_k, int __pyx_skip_dispatch); /* proto*/
-static void __pyx_f_16lightning_search_16lightning_search_5Index_save(CYTHON_UNUSED struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, int __pyx_skip_dispatch); /* proto*/
 
 /* Module declarations from "cython" */
 
@@ -2894,7 +2894,6 @@ static PyObject *__pyx_builtin_TypeError;
 static PyObject *__pyx_builtin_ImportError;
 /* #### Code section: string_decls ### */
 static const char __pyx_k_[] = "\000";
-static const char __pyx_k_A[] = "\200A";
 static const char __pyx_k_Q[] = "\200\001\330\004\n\210+\220Q";
 static const char __pyx_k_k[] = "k";
 static const char __pyx_k__2[] = ".";
@@ -2907,9 +2906,9 @@ static const char __pyx_k_pop[] = "pop";
 static const char __pyx_k_List[] = "List";
 static const char __pyx_k_func[] = "__func__";
 static const char __pyx_k_json[] = "json";
+static const char __pyx_k_load[] = "load";
 static const char __pyx_k_main[] = "__main__";
 static const char __pyx_k_name[] = "__name__";
-static const char __pyx_k_save[] = "save";
 static const char __pyx_k_self[] = "self";
 static const char __pyx_k_spec[] = "__spec__";
 static const char __pyx_k_test[] = "__test__";
@@ -2930,6 +2929,7 @@ static const char __pyx_k_Warning[] = "Warning";
 static const char __pyx_k_disable[] = "disable";
 static const char __pyx_k_results[] = "results";
 static const char __pyx_k_add_note[] = "add_note";
+static const char __pyx_k_dir_name[] = "dir_name";
 static const char __pyx_k_filename[] = "filename";
 static const char __pyx_k_getstate[] = "__getstate__";
 static const char __pyx_k_qualname[] = "__qualname__";
@@ -2940,7 +2940,8 @@ static const char __pyx_k_isenabled[] = "isenabled";
 static const char __pyx_k_pyx_state[] = "__pyx_state";
 static const char __pyx_k_query_map[] = "query_map";
 static const char __pyx_k_reduce_ex[] = "__reduce_ex__";
-static const char __pyx_k_Index_save[] = "Index.save";
+static const char __pyx_k_A_E_A_AT_1[] = "\200A\330\010\021\220\031\230\"\230E\240\027\250\001\250\021\330\010\"\240*\250A\330\010\014\210A\210T\220\032\2301";
+static const char __pyx_k_Index_load[] = "Index.load";
 static const char __pyx_k_ValueError[] = "ValueError";
 static const char __pyx_k_index_file[] = "index_file";
 static const char __pyx_k_pyx_vtable[] = "__pyx_vtable__";
@@ -2972,10 +2973,10 @@ static const char __pyx_k_self_idx_ptr_cannot_be_converted[] = "self.idx_ptr can
 static const char __pyx_k_lightning_search_lightning_searc_2[] = "lightning_search/lightning_search.pyx";
 /* #### Code section: decls ### */
 static int __pyx_pf_16lightning_search_16lightning_search_5Index___init__(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self); /* proto */
-static void __pyx_pf_16lightning_search_16lightning_search_5Index_2__del__(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self); /* proto */
-static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_4index_file(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_filename, PyObject *__pyx_v_query_cols); /* proto */
-static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_6query(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_query_map, PyObject *__pyx_v_boost_factors, uint32_t __pyx_v_k); /* proto */
-static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_8save(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self); /* proto */
+static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_2load(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_dir_name); /* proto */
+static void __pyx_pf_16lightning_search_16lightning_search_5Index_4__del__(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self); /* proto */
+static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_6index_file(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_filename, PyObject *__pyx_v_query_cols); /* proto */
+static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_8query(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_query_map, PyObject *__pyx_v_boost_factors, uint32_t __pyx_v_k); /* proto */
 static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_10__reduce_cython__(CYTHON_UNUSED struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self); /* proto */
 static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_12__setstate_cython__(CYTHON_UNUSED struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, CYTHON_UNUSED PyObject *__pyx_v___pyx_state); /* proto */
 static PyObject *__pyx_tp_new_16lightning_search_16lightning_search_Index(PyTypeObject *t, PyObject *a, PyObject *k); /*proto*/
@@ -3038,7 +3039,7 @@ typedef struct {
   __Pyx_CachedCFunction __pyx_umethod_PyDict_Type_get;
   __Pyx_CachedCFunction __pyx_umethod_PyDict_Type_pop;
   PyObject *__pyx_codeobj_tab[5];
-  PyObject *__pyx_string_tab[73];
+  PyObject *__pyx_string_tab[74];
   PyObject *__pyx_float_1_0;
 /* #### Code section: module_state_contents ### */
 /* CommonTypesMetaclass.module_state_decls */
@@ -3083,8 +3084,8 @@ static __pyx_mstatetype * const __pyx_mstate_global = &__pyx_mstate_global_stati
 #define __pyx_n_u_Index___reduce_cython __pyx_string_tab[3]
 #define __pyx_n_u_Index___setstate_cython __pyx_string_tab[4]
 #define __pyx_n_u_Index_index_file __pyx_string_tab[5]
-#define __pyx_n_u_Index_query __pyx_string_tab[6]
-#define __pyx_n_u_Index_save __pyx_string_tab[7]
+#define __pyx_n_u_Index_load __pyx_string_tab[6]
+#define __pyx_n_u_Index_query __pyx_string_tab[7]
 #define __pyx_n_u_List __pyx_string_tab[8]
 #define __pyx_kp_u_Note_that_Cython_is_deliberately __pyx_string_tab[9]
 #define __pyx_kp_u_Query_column __pyx_string_tab[10]
@@ -3098,58 +3099,59 @@ static __pyx_mstatetype * const __pyx_mstate_global = &__pyx_mstate_global_stati
 #define __pyx_n_u_asyncio_coroutines __pyx_string_tab[18]
 #define __pyx_n_u_boost_factors __pyx_string_tab[19]
 #define __pyx_n_u_cline_in_traceback __pyx_string_tab[20]
-#define __pyx_kp_u_disable __pyx_string_tab[21]
-#define __pyx_kp_u_enable __pyx_string_tab[22]
-#define __pyx_n_u_encode __pyx_string_tab[23]
-#define __pyx_n_u_filename __pyx_string_tab[24]
-#define __pyx_n_u_func __pyx_string_tab[25]
-#define __pyx_kp_u_gc __pyx_string_tab[26]
-#define __pyx_n_u_get __pyx_string_tab[27]
-#define __pyx_n_u_getstate __pyx_string_tab[28]
-#define __pyx_n_u_index_file __pyx_string_tab[29]
-#define __pyx_n_u_initializing __pyx_string_tab[30]
-#define __pyx_n_u_is_coroutine __pyx_string_tab[31]
-#define __pyx_kp_u_isenabled __pyx_string_tab[32]
-#define __pyx_n_u_items __pyx_string_tab[33]
-#define __pyx_n_u_json __pyx_string_tab[34]
-#define __pyx_n_u_k __pyx_string_tab[35]
-#define __pyx_n_u_lightning_search_lightning_searc __pyx_string_tab[36]
-#define __pyx_kp_u_lightning_search_lightning_searc_2 __pyx_string_tab[37]
-#define __pyx_n_u_loads __pyx_string_tab[38]
-#define __pyx_n_u_main __pyx_string_tab[39]
-#define __pyx_n_u_module __pyx_string_tab[40]
-#define __pyx_n_u_name __pyx_string_tab[41]
-#define __pyx_kp_u_not_indexed __pyx_string_tab[42]
-#define __pyx_n_u_np __pyx_string_tab[43]
-#define __pyx_n_u_numpy __pyx_string_tab[44]
-#define __pyx_kp_u_numpy__core_multiarray_failed_to __pyx_string_tab[45]
-#define __pyx_kp_u_numpy__core_umath_failed_to_impo __pyx_string_tab[46]
-#define __pyx_n_u_os __pyx_string_tab[47]
-#define __pyx_n_u_perf_counter __pyx_string_tab[48]
-#define __pyx_n_u_pop __pyx_string_tab[49]
-#define __pyx_n_u_pyx_state __pyx_string_tab[50]
-#define __pyx_n_u_pyx_vtable __pyx_string_tab[51]
-#define __pyx_n_u_qualname __pyx_string_tab[52]
-#define __pyx_n_u_query __pyx_string_tab[53]
-#define __pyx_n_u_query_cols __pyx_string_tab[54]
-#define __pyx_n_u_query_map __pyx_string_tab[55]
-#define __pyx_n_u_range __pyx_string_tab[56]
-#define __pyx_n_u_reduce __pyx_string_tab[57]
-#define __pyx_n_u_reduce_cython __pyx_string_tab[58]
-#define __pyx_n_u_reduce_ex __pyx_string_tab[59]
-#define __pyx_n_u_results __pyx_string_tab[60]
-#define __pyx_n_u_save __pyx_string_tab[61]
-#define __pyx_n_u_self __pyx_string_tab[62]
-#define __pyx_kp_u_self_idx_ptr_cannot_be_converted __pyx_string_tab[63]
-#define __pyx_n_u_set_name __pyx_string_tab[64]
-#define __pyx_n_u_setstate __pyx_string_tab[65]
-#define __pyx_n_u_setstate_cython __pyx_string_tab[66]
-#define __pyx_n_u_spec __pyx_string_tab[67]
-#define __pyx_kp_u_stringsource __pyx_string_tab[68]
-#define __pyx_n_u_test __pyx_string_tab[69]
-#define __pyx_n_u_time __pyx_string_tab[70]
-#define __pyx_n_u_typing __pyx_string_tab[71]
-#define __pyx_kp_u_utf_8 __pyx_string_tab[72]
+#define __pyx_n_u_dir_name __pyx_string_tab[21]
+#define __pyx_kp_u_disable __pyx_string_tab[22]
+#define __pyx_kp_u_enable __pyx_string_tab[23]
+#define __pyx_n_u_encode __pyx_string_tab[24]
+#define __pyx_n_u_filename __pyx_string_tab[25]
+#define __pyx_n_u_func __pyx_string_tab[26]
+#define __pyx_kp_u_gc __pyx_string_tab[27]
+#define __pyx_n_u_get __pyx_string_tab[28]
+#define __pyx_n_u_getstate __pyx_string_tab[29]
+#define __pyx_n_u_index_file __pyx_string_tab[30]
+#define __pyx_n_u_initializing __pyx_string_tab[31]
+#define __pyx_n_u_is_coroutine __pyx_string_tab[32]
+#define __pyx_kp_u_isenabled __pyx_string_tab[33]
+#define __pyx_n_u_items __pyx_string_tab[34]
+#define __pyx_n_u_json __pyx_string_tab[35]
+#define __pyx_n_u_k __pyx_string_tab[36]
+#define __pyx_n_u_lightning_search_lightning_searc __pyx_string_tab[37]
+#define __pyx_kp_u_lightning_search_lightning_searc_2 __pyx_string_tab[38]
+#define __pyx_n_u_load __pyx_string_tab[39]
+#define __pyx_n_u_loads __pyx_string_tab[40]
+#define __pyx_n_u_main __pyx_string_tab[41]
+#define __pyx_n_u_module __pyx_string_tab[42]
+#define __pyx_n_u_name __pyx_string_tab[43]
+#define __pyx_kp_u_not_indexed __pyx_string_tab[44]
+#define __pyx_n_u_np __pyx_string_tab[45]
+#define __pyx_n_u_numpy __pyx_string_tab[46]
+#define __pyx_kp_u_numpy__core_multiarray_failed_to __pyx_string_tab[47]
+#define __pyx_kp_u_numpy__core_umath_failed_to_impo __pyx_string_tab[48]
+#define __pyx_n_u_os __pyx_string_tab[49]
+#define __pyx_n_u_perf_counter __pyx_string_tab[50]
+#define __pyx_n_u_pop __pyx_string_tab[51]
+#define __pyx_n_u_pyx_state __pyx_string_tab[52]
+#define __pyx_n_u_pyx_vtable __pyx_string_tab[53]
+#define __pyx_n_u_qualname __pyx_string_tab[54]
+#define __pyx_n_u_query __pyx_string_tab[55]
+#define __pyx_n_u_query_cols __pyx_string_tab[56]
+#define __pyx_n_u_query_map __pyx_string_tab[57]
+#define __pyx_n_u_range __pyx_string_tab[58]
+#define __pyx_n_u_reduce __pyx_string_tab[59]
+#define __pyx_n_u_reduce_cython __pyx_string_tab[60]
+#define __pyx_n_u_reduce_ex __pyx_string_tab[61]
+#define __pyx_n_u_results __pyx_string_tab[62]
+#define __pyx_n_u_self __pyx_string_tab[63]
+#define __pyx_kp_u_self_idx_ptr_cannot_be_converted __pyx_string_tab[64]
+#define __pyx_n_u_set_name __pyx_string_tab[65]
+#define __pyx_n_u_setstate __pyx_string_tab[66]
+#define __pyx_n_u_setstate_cython __pyx_string_tab[67]
+#define __pyx_n_u_spec __pyx_string_tab[68]
+#define __pyx_kp_u_stringsource __pyx_string_tab[69]
+#define __pyx_n_u_test __pyx_string_tab[70]
+#define __pyx_n_u_time __pyx_string_tab[71]
+#define __pyx_n_u_typing __pyx_string_tab[72]
+#define __pyx_kp_u_utf_8 __pyx_string_tab[73]
 /* #### Code section: module_state_clear ### */
 #if CYTHON_USE_MODULE_STATE
 static CYTHON_SMALL_CODE int __pyx_m_clear(PyObject *m) {
@@ -3189,7 +3191,7 @@ static CYTHON_SMALL_CODE int __pyx_m_clear(PyObject *m) {
   Py_CLEAR(clear_module_state->__pyx_ptype_16lightning_search_16lightning_search_Index);
   Py_CLEAR(clear_module_state->__pyx_type_16lightning_search_16lightning_search_Index);
   for (int i=0; i<5; ++i) { Py_CLEAR(clear_module_state->__pyx_codeobj_tab[i]); }
-  for (int i=0; i<73; ++i) { Py_CLEAR(clear_module_state->__pyx_string_tab[i]); }
+  for (int i=0; i<74; ++i) { Py_CLEAR(clear_module_state->__pyx_string_tab[i]); }
   Py_CLEAR(clear_module_state->__pyx_float_1_0);
   return 0;
 }
@@ -3230,14 +3232,14 @@ static CYTHON_SMALL_CODE int __pyx_m_traverse(PyObject *m, visitproc visit, void
   Py_VISIT(traverse_module_state->__pyx_ptype_16lightning_search_16lightning_search_Index);
   Py_VISIT(traverse_module_state->__pyx_type_16lightning_search_16lightning_search_Index);
   for (int i=0; i<5; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_codeobj_tab[i]); }
-  for (int i=0; i<73; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_string_tab[i]); }
+  for (int i=0; i<74; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_string_tab[i]); }
   __Pyx_VISIT_CONST(traverse_module_state->__pyx_float_1_0);
   return 0;
 }
 #endif
 /* #### Code section: module_code ### */
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":242
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":242
  *         cdef int type_num
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3248,7 +3250,7 @@ static CYTHON_SMALL_CODE int __pyx_m_traverse(PyObject *m, visitproc visit, void
 static CYTHON_INLINE npy_intp __pyx_f_5numpy_5dtype_8itemsize_itemsize(PyArray_Descr *__pyx_v_self) {
   npy_intp __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":244
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":244
  *         @property
  *         cdef inline npy_intp itemsize(self) noexcept nogil:
  *             return PyDataType_ELSIZE(self)             # <<<<<<<<<<<<<<
@@ -3258,7 +3260,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_5dtype_8itemsize_itemsize(PyArray_D
   __pyx_r = PyDataType_ELSIZE(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":242
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":242
  *         cdef int type_num
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3271,7 +3273,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_5dtype_8itemsize_itemsize(PyArray_D
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":246
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":246
  *             return PyDataType_ELSIZE(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3282,7 +3284,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_5dtype_8itemsize_itemsize(PyArray_D
 static CYTHON_INLINE npy_intp __pyx_f_5numpy_5dtype_9alignment_alignment(PyArray_Descr *__pyx_v_self) {
   npy_intp __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":248
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":248
  *         @property
  *         cdef inline npy_intp alignment(self) noexcept nogil:
  *             return PyDataType_ALIGNMENT(self)             # <<<<<<<<<<<<<<
@@ -3292,7 +3294,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_5dtype_9alignment_alignment(PyArray
   __pyx_r = PyDataType_ALIGNMENT(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":246
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":246
  *             return PyDataType_ELSIZE(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3305,7 +3307,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_5dtype_9alignment_alignment(PyArray
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":252
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":252
  *         # Use fields/names with care as they may be NULL.  You must check
  *         # for this using PyDataType_HASFIELDS.
  *         @property             # <<<<<<<<<<<<<<
@@ -3319,7 +3321,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_5dtype_6fields_fields(PyArray_Desc
   PyObject *__pyx_t_1;
   __Pyx_RefNannySetupContext("fields", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":254
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":254
  *         @property
  *         cdef inline object fields(self):
  *             return <object>PyDataType_FIELDS(self)             # <<<<<<<<<<<<<<
@@ -3332,7 +3334,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_5dtype_6fields_fields(PyArray_Desc
   __pyx_r = ((PyObject *)__pyx_t_1);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":252
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":252
  *         # Use fields/names with care as they may be NULL.  You must check
  *         # for this using PyDataType_HASFIELDS.
  *         @property             # <<<<<<<<<<<<<<
@@ -3347,7 +3349,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_5dtype_6fields_fields(PyArray_Desc
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":256
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":256
  *             return <object>PyDataType_FIELDS(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3361,7 +3363,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_5dtype_5names_names(PyArray_Descr 
   PyObject *__pyx_t_1;
   __Pyx_RefNannySetupContext("names", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":258
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":258
  *         @property
  *         cdef inline tuple names(self):
  *             return <tuple>PyDataType_NAMES(self)             # <<<<<<<<<<<<<<
@@ -3374,7 +3376,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_5dtype_5names_names(PyArray_Descr 
   __pyx_r = ((PyObject*)__pyx_t_1);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":256
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":256
  *             return <object>PyDataType_FIELDS(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3389,7 +3391,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_5dtype_5names_names(PyArray_Descr 
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":263
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":263
  *         # valid (the pointer can be NULL). Most users should access
  *         # this field via the inline helper method PyDataType_SHAPE.
  *         @property             # <<<<<<<<<<<<<<
@@ -3400,7 +3402,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_5dtype_5names_names(PyArray_Descr 
 static CYTHON_INLINE PyArray_ArrayDescr *__pyx_f_5numpy_5dtype_8subarray_subarray(PyArray_Descr *__pyx_v_self) {
   PyArray_ArrayDescr *__pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":265
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":265
  *         @property
  *         cdef inline PyArray_ArrayDescr* subarray(self) noexcept nogil:
  *             return PyDataType_SUBARRAY(self)             # <<<<<<<<<<<<<<
@@ -3410,7 +3412,7 @@ static CYTHON_INLINE PyArray_ArrayDescr *__pyx_f_5numpy_5dtype_8subarray_subarra
   __pyx_r = PyDataType_SUBARRAY(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":263
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":263
  *         # valid (the pointer can be NULL). Most users should access
  *         # this field via the inline helper method PyDataType_SHAPE.
  *         @property             # <<<<<<<<<<<<<<
@@ -3423,7 +3425,7 @@ static CYTHON_INLINE PyArray_ArrayDescr *__pyx_f_5numpy_5dtype_8subarray_subarra
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":267
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":267
  *             return PyDataType_SUBARRAY(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3434,7 +3436,7 @@ static CYTHON_INLINE PyArray_ArrayDescr *__pyx_f_5numpy_5dtype_8subarray_subarra
 static CYTHON_INLINE npy_uint64 __pyx_f_5numpy_5dtype_5flags_flags(PyArray_Descr *__pyx_v_self) {
   npy_uint64 __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":270
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":270
  *         cdef inline npy_uint64 flags(self) noexcept nogil:
  *             """The data types flags."""
  *             return PyDataType_FLAGS(self)             # <<<<<<<<<<<<<<
@@ -3444,7 +3446,7 @@ static CYTHON_INLINE npy_uint64 __pyx_f_5numpy_5dtype_5flags_flags(PyArray_Descr
   __pyx_r = PyDataType_FLAGS(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":267
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":267
  *             return PyDataType_SUBARRAY(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3457,7 +3459,7 @@ static CYTHON_INLINE npy_uint64 __pyx_f_5numpy_5dtype_5flags_flags(PyArray_Descr
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":279
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":279
  *     ctypedef class numpy.broadcast [object PyArrayMultiIterObject, check_size ignore]:
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3468,7 +3470,7 @@ static CYTHON_INLINE npy_uint64 __pyx_f_5numpy_5dtype_5flags_flags(PyArray_Descr
 static CYTHON_INLINE int __pyx_f_5numpy_9broadcast_7numiter_numiter(PyArrayMultiIterObject *__pyx_v_self) {
   int __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":282
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":282
  *         cdef inline int numiter(self) noexcept nogil:
  *             """The number of arrays that need to be broadcast to the same shape."""
  *             return PyArray_MultiIter_NUMITER(self)             # <<<<<<<<<<<<<<
@@ -3478,7 +3480,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_9broadcast_7numiter_numiter(PyArrayMulti
   __pyx_r = PyArray_MultiIter_NUMITER(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":279
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":279
  *     ctypedef class numpy.broadcast [object PyArrayMultiIterObject, check_size ignore]:
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3491,7 +3493,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_9broadcast_7numiter_numiter(PyArrayMulti
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":284
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":284
  *             return PyArray_MultiIter_NUMITER(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3502,7 +3504,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_9broadcast_7numiter_numiter(PyArrayMulti
 static CYTHON_INLINE npy_intp __pyx_f_5numpy_9broadcast_4size_size(PyArrayMultiIterObject *__pyx_v_self) {
   npy_intp __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":287
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":287
  *         cdef inline npy_intp size(self) noexcept nogil:
  *             """The total broadcasted size."""
  *             return PyArray_MultiIter_SIZE(self)             # <<<<<<<<<<<<<<
@@ -3512,7 +3514,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_9broadcast_4size_size(PyArrayMultiI
   __pyx_r = PyArray_MultiIter_SIZE(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":284
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":284
  *             return PyArray_MultiIter_NUMITER(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3525,7 +3527,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_9broadcast_4size_size(PyArrayMultiI
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":289
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":289
  *             return PyArray_MultiIter_SIZE(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3536,7 +3538,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_9broadcast_4size_size(PyArrayMultiI
 static CYTHON_INLINE npy_intp __pyx_f_5numpy_9broadcast_5index_index(PyArrayMultiIterObject *__pyx_v_self) {
   npy_intp __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":292
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":292
  *         cdef inline npy_intp index(self) noexcept nogil:
  *             """The current (1-d) index into the broadcasted result."""
  *             return PyArray_MultiIter_INDEX(self)             # <<<<<<<<<<<<<<
@@ -3546,7 +3548,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_9broadcast_5index_index(PyArrayMult
   __pyx_r = PyArray_MultiIter_INDEX(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":289
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":289
  *             return PyArray_MultiIter_SIZE(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3559,7 +3561,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_9broadcast_5index_index(PyArrayMult
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":294
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":294
  *             return PyArray_MultiIter_INDEX(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3570,7 +3572,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_9broadcast_5index_index(PyArrayMult
 static CYTHON_INLINE int __pyx_f_5numpy_9broadcast_2nd_nd(PyArrayMultiIterObject *__pyx_v_self) {
   int __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":297
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":297
  *         cdef inline int nd(self) noexcept nogil:
  *             """The number of dimensions in the broadcasted result."""
  *             return PyArray_MultiIter_NDIM(self)             # <<<<<<<<<<<<<<
@@ -3580,7 +3582,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_9broadcast_2nd_nd(PyArrayMultiIterObject
   __pyx_r = PyArray_MultiIter_NDIM(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":294
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":294
  *             return PyArray_MultiIter_INDEX(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3593,7 +3595,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_9broadcast_2nd_nd(PyArrayMultiIterObject
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":299
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":299
  *             return PyArray_MultiIter_NDIM(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3604,7 +3606,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_9broadcast_2nd_nd(PyArrayMultiIterObject
 static CYTHON_INLINE npy_intp *__pyx_f_5numpy_9broadcast_10dimensions_dimensions(PyArrayMultiIterObject *__pyx_v_self) {
   npy_intp *__pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":302
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":302
  *         cdef inline npy_intp* dimensions(self) noexcept nogil:
  *             """The shape of the broadcasted result."""
  *             return PyArray_MultiIter_DIMS(self)             # <<<<<<<<<<<<<<
@@ -3614,7 +3616,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_9broadcast_10dimensions_dimensions
   __pyx_r = PyArray_MultiIter_DIMS(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":299
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":299
  *             return PyArray_MultiIter_NDIM(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3627,7 +3629,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_9broadcast_10dimensions_dimensions
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":304
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":304
  *             return PyArray_MultiIter_DIMS(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3638,7 +3640,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_9broadcast_10dimensions_dimensions
 static CYTHON_INLINE void **__pyx_f_5numpy_9broadcast_5iters_iters(PyArrayMultiIterObject *__pyx_v_self) {
   void **__pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":308
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":308
  *             """An array of iterator objects that holds the iterators for the arrays to be broadcast together.
  *             On return, the iterators are adjusted for broadcasting."""
  *             return PyArray_MultiIter_ITERS(self)             # <<<<<<<<<<<<<<
@@ -3648,7 +3650,7 @@ static CYTHON_INLINE void **__pyx_f_5numpy_9broadcast_5iters_iters(PyArrayMultiI
   __pyx_r = PyArray_MultiIter_ITERS(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":304
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":304
  *             return PyArray_MultiIter_DIMS(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3661,7 +3663,7 @@ static CYTHON_INLINE void **__pyx_f_5numpy_9broadcast_5iters_iters(PyArrayMultiI
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":322
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":322
  *         # Instead, we use properties that map to the corresponding C-API functions.
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3672,7 +3674,7 @@ static CYTHON_INLINE void **__pyx_f_5numpy_9broadcast_5iters_iters(PyArrayMultiI
 static CYTHON_INLINE PyObject *__pyx_f_5numpy_7ndarray_4base_base(PyArrayObject *__pyx_v_self) {
   PyObject *__pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":326
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":326
  *             """Returns a borrowed reference to the object owning the data/memory.
  *             """
  *             return PyArray_BASE(self)             # <<<<<<<<<<<<<<
@@ -3682,7 +3684,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_7ndarray_4base_base(PyArrayObject 
   __pyx_r = PyArray_BASE(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":322
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":322
  *         # Instead, we use properties that map to the corresponding C-API functions.
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3695,7 +3697,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_7ndarray_4base_base(PyArrayObject 
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":328
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":328
  *             return PyArray_BASE(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3709,7 +3711,7 @@ static CYTHON_INLINE PyArray_Descr *__pyx_f_5numpy_7ndarray_5descr_descr(PyArray
   PyArray_Descr *__pyx_t_1;
   __Pyx_RefNannySetupContext("descr", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":332
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":332
  *             """Returns an owned reference to the dtype of the array.
  *             """
  *             return <dtype>PyArray_DESCR(self)             # <<<<<<<<<<<<<<
@@ -3722,7 +3724,7 @@ static CYTHON_INLINE PyArray_Descr *__pyx_f_5numpy_7ndarray_5descr_descr(PyArray
   __pyx_r = ((PyArray_Descr *)__pyx_t_1);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":328
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":328
  *             return PyArray_BASE(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3737,7 +3739,7 @@ static CYTHON_INLINE PyArray_Descr *__pyx_f_5numpy_7ndarray_5descr_descr(PyArray
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":334
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":334
  *             return <dtype>PyArray_DESCR(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3748,7 +3750,7 @@ static CYTHON_INLINE PyArray_Descr *__pyx_f_5numpy_7ndarray_5descr_descr(PyArray
 static CYTHON_INLINE int __pyx_f_5numpy_7ndarray_4ndim_ndim(PyArrayObject *__pyx_v_self) {
   int __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":338
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":338
  *             """Returns the number of dimensions in the array.
  *             """
  *             return PyArray_NDIM(self)             # <<<<<<<<<<<<<<
@@ -3758,7 +3760,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_7ndarray_4ndim_ndim(PyArrayObject *__pyx
   __pyx_r = PyArray_NDIM(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":334
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":334
  *             return <dtype>PyArray_DESCR(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3771,7 +3773,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_7ndarray_4ndim_ndim(PyArrayObject *__pyx
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":340
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":340
  *             return PyArray_NDIM(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3782,7 +3784,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_7ndarray_4ndim_ndim(PyArrayObject *__pyx
 static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_5shape_shape(PyArrayObject *__pyx_v_self) {
   npy_intp *__pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":346
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":346
  *             Can return NULL for 0-dimensional arrays.
  *             """
  *             return PyArray_DIMS(self)             # <<<<<<<<<<<<<<
@@ -3792,7 +3794,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_5shape_shape(PyArrayObjec
   __pyx_r = PyArray_DIMS(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":340
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":340
  *             return PyArray_NDIM(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3805,7 +3807,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_5shape_shape(PyArrayObjec
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":348
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":348
  *             return PyArray_DIMS(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3816,7 +3818,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_5shape_shape(PyArrayObjec
 static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_7strides_strides(PyArrayObject *__pyx_v_self) {
   npy_intp *__pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":353
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":353
  *             The number of elements matches the number of dimensions of the array (ndim).
  *             """
  *             return PyArray_STRIDES(self)             # <<<<<<<<<<<<<<
@@ -3826,7 +3828,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_7strides_strides(PyArrayO
   __pyx_r = PyArray_STRIDES(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":348
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":348
  *             return PyArray_DIMS(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3839,7 +3841,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_7strides_strides(PyArrayO
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":355
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":355
  *             return PyArray_STRIDES(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3850,7 +3852,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_7strides_strides(PyArrayO
 static CYTHON_INLINE npy_intp __pyx_f_5numpy_7ndarray_4size_size(PyArrayObject *__pyx_v_self) {
   npy_intp __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":359
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":359
  *             """Returns the total size (in number of elements) of the array.
  *             """
  *             return PyArray_SIZE(self)             # <<<<<<<<<<<<<<
@@ -3860,7 +3862,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_7ndarray_4size_size(PyArrayObject *
   __pyx_r = PyArray_SIZE(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":355
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":355
  *             return PyArray_STRIDES(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3873,7 +3875,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_7ndarray_4size_size(PyArrayObject *
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":361
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":361
  *             return PyArray_SIZE(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3884,7 +3886,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_7ndarray_4size_size(PyArrayObject *
 static CYTHON_INLINE char *__pyx_f_5numpy_7ndarray_4data_data(PyArrayObject *__pyx_v_self) {
   char *__pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":368
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":368
  *             of `PyArray_DATA()` instead, which returns a 'void*'.
  *             """
  *             return PyArray_BYTES(self)             # <<<<<<<<<<<<<<
@@ -3894,7 +3896,7 @@ static CYTHON_INLINE char *__pyx_f_5numpy_7ndarray_4data_data(PyArrayObject *__p
   __pyx_r = PyArray_BYTES(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":361
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":361
  *             return PyArray_SIZE(self)
  * 
  *         @property             # <<<<<<<<<<<<<<
@@ -3907,7 +3909,7 @@ static CYTHON_INLINE char *__pyx_f_5numpy_7ndarray_4data_data(PyArrayObject *__p
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":776
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":776
  * ctypedef long double complex clongdouble_t
  * 
  * cdef inline object PyArray_MultiIterNew1(a):             # <<<<<<<<<<<<<<
@@ -3924,7 +3926,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew1(PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("PyArray_MultiIterNew1", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":777
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":777
  * 
  * cdef inline object PyArray_MultiIterNew1(a):
  *     return PyArray_MultiIterNew(1, <void*>a)             # <<<<<<<<<<<<<<
@@ -3938,7 +3940,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew1(PyObject *__
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":776
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":776
  * ctypedef long double complex clongdouble_t
  * 
  * cdef inline object PyArray_MultiIterNew1(a):             # <<<<<<<<<<<<<<
@@ -3957,7 +3959,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew1(PyObject *__
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":779
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":779
  *     return PyArray_MultiIterNew(1, <void*>a)
  * 
  * cdef inline object PyArray_MultiIterNew2(a, b):             # <<<<<<<<<<<<<<
@@ -3974,7 +3976,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew2(PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("PyArray_MultiIterNew2", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":780
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":780
  * 
  * cdef inline object PyArray_MultiIterNew2(a, b):
  *     return PyArray_MultiIterNew(2, <void*>a, <void*>b)             # <<<<<<<<<<<<<<
@@ -3988,7 +3990,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew2(PyObject *__
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":779
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":779
  *     return PyArray_MultiIterNew(1, <void*>a)
  * 
  * cdef inline object PyArray_MultiIterNew2(a, b):             # <<<<<<<<<<<<<<
@@ -4007,7 +4009,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew2(PyObject *__
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":782
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":782
  *     return PyArray_MultiIterNew(2, <void*>a, <void*>b)
  * 
  * cdef inline object PyArray_MultiIterNew3(a, b, c):             # <<<<<<<<<<<<<<
@@ -4024,7 +4026,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew3(PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("PyArray_MultiIterNew3", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":783
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":783
  * 
  * cdef inline object PyArray_MultiIterNew3(a, b, c):
  *     return PyArray_MultiIterNew(3, <void*>a, <void*>b, <void*> c)             # <<<<<<<<<<<<<<
@@ -4038,7 +4040,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew3(PyObject *__
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":782
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":782
  *     return PyArray_MultiIterNew(2, <void*>a, <void*>b)
  * 
  * cdef inline object PyArray_MultiIterNew3(a, b, c):             # <<<<<<<<<<<<<<
@@ -4057,7 +4059,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew3(PyObject *__
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":785
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":785
  *     return PyArray_MultiIterNew(3, <void*>a, <void*>b, <void*> c)
  * 
  * cdef inline object PyArray_MultiIterNew4(a, b, c, d):             # <<<<<<<<<<<<<<
@@ -4074,7 +4076,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew4(PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("PyArray_MultiIterNew4", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":786
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":786
  * 
  * cdef inline object PyArray_MultiIterNew4(a, b, c, d):
  *     return PyArray_MultiIterNew(4, <void*>a, <void*>b, <void*>c, <void*> d)             # <<<<<<<<<<<<<<
@@ -4088,7 +4090,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew4(PyObject *__
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":785
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":785
  *     return PyArray_MultiIterNew(3, <void*>a, <void*>b, <void*> c)
  * 
  * cdef inline object PyArray_MultiIterNew4(a, b, c, d):             # <<<<<<<<<<<<<<
@@ -4107,7 +4109,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew4(PyObject *__
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":788
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":788
  *     return PyArray_MultiIterNew(4, <void*>a, <void*>b, <void*>c, <void*> d)
  * 
  * cdef inline object PyArray_MultiIterNew5(a, b, c, d, e):             # <<<<<<<<<<<<<<
@@ -4124,7 +4126,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew5(PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("PyArray_MultiIterNew5", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":789
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":789
  * 
  * cdef inline object PyArray_MultiIterNew5(a, b, c, d, e):
  *     return PyArray_MultiIterNew(5, <void*>a, <void*>b, <void*>c, <void*> d, <void*> e)             # <<<<<<<<<<<<<<
@@ -4138,7 +4140,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew5(PyObject *__
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":788
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":788
  *     return PyArray_MultiIterNew(4, <void*>a, <void*>b, <void*>c, <void*> d)
  * 
  * cdef inline object PyArray_MultiIterNew5(a, b, c, d, e):             # <<<<<<<<<<<<<<
@@ -4157,7 +4159,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew5(PyObject *__
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":791
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":791
  *     return PyArray_MultiIterNew(5, <void*>a, <void*>b, <void*>c, <void*> d, <void*> e)
  * 
  * cdef inline tuple PyDataType_SHAPE(dtype d):             # <<<<<<<<<<<<<<
@@ -4172,7 +4174,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
   PyObject *__pyx_t_2;
   __Pyx_RefNannySetupContext("PyDataType_SHAPE", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":792
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":792
  * 
  * cdef inline tuple PyDataType_SHAPE(dtype d):
  *     if PyDataType_HASSUBARRAY(d):             # <<<<<<<<<<<<<<
@@ -4182,7 +4184,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
   __pyx_t_1 = PyDataType_HASSUBARRAY(__pyx_v_d);
   if (__pyx_t_1) {
 
-    /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":793
+    /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":793
  * cdef inline tuple PyDataType_SHAPE(dtype d):
  *     if PyDataType_HASSUBARRAY(d):
  *         return <tuple>d.subarray.shape             # <<<<<<<<<<<<<<
@@ -4195,7 +4197,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
     __pyx_r = ((PyObject*)__pyx_t_2);
     goto __pyx_L0;
 
-    /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":792
+    /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":792
  * 
  * cdef inline tuple PyDataType_SHAPE(dtype d):
  *     if PyDataType_HASSUBARRAY(d):             # <<<<<<<<<<<<<<
@@ -4204,7 +4206,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
 */
   }
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":795
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":795
  *         return <tuple>d.subarray.shape
  *     else:
  *         return ()             # <<<<<<<<<<<<<<
@@ -4218,7 +4220,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
     goto __pyx_L0;
   }
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":791
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":791
  *     return PyArray_MultiIterNew(5, <void*>a, <void*>b, <void*>c, <void*> d, <void*> e)
  * 
  * cdef inline tuple PyDataType_SHAPE(dtype d):             # <<<<<<<<<<<<<<
@@ -4233,7 +4235,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":994
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":994
  *     int _import_umath() except -1
  * 
  * cdef inline void set_array_base(ndarray arr, object base) except *:             # <<<<<<<<<<<<<<
@@ -4247,7 +4249,7 @@ static CYTHON_INLINE void __pyx_f_5numpy_set_array_base(PyArrayObject *__pyx_v_a
   const char *__pyx_filename = NULL;
   int __pyx_clineno = 0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":995
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":995
  * 
  * cdef inline void set_array_base(ndarray arr, object base) except *:
  *     Py_INCREF(base) # important to do this before stealing the reference below!             # <<<<<<<<<<<<<<
@@ -4256,7 +4258,7 @@ static CYTHON_INLINE void __pyx_f_5numpy_set_array_base(PyArrayObject *__pyx_v_a
 */
   Py_INCREF(__pyx_v_base);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":996
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":996
  * cdef inline void set_array_base(ndarray arr, object base) except *:
  *     Py_INCREF(base) # important to do this before stealing the reference below!
  *     PyArray_SetBaseObject(arr, base)             # <<<<<<<<<<<<<<
@@ -4265,7 +4267,7 @@ static CYTHON_INLINE void __pyx_f_5numpy_set_array_base(PyArrayObject *__pyx_v_a
 */
   __pyx_t_1 = PyArray_SetBaseObject(__pyx_v_arr, __pyx_v_base); if (unlikely(__pyx_t_1 == ((int)-1))) __PYX_ERR(2, 996, __pyx_L1_error)
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":994
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":994
  *     int _import_umath() except -1
  * 
  * cdef inline void set_array_base(ndarray arr, object base) except *:             # <<<<<<<<<<<<<<
@@ -4280,7 +4282,7 @@ static CYTHON_INLINE void __pyx_f_5numpy_set_array_base(PyArrayObject *__pyx_v_a
   __pyx_L0:;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":998
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":998
  *     PyArray_SetBaseObject(arr, base)
  * 
  * cdef inline object get_array_base(ndarray arr):             # <<<<<<<<<<<<<<
@@ -4295,7 +4297,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
   int __pyx_t_1;
   __Pyx_RefNannySetupContext("get_array_base", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":999
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":999
  * 
  * cdef inline object get_array_base(ndarray arr):
  *     base = PyArray_BASE(arr)             # <<<<<<<<<<<<<<
@@ -4304,7 +4306,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
 */
   __pyx_v_base = PyArray_BASE(__pyx_v_arr);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1000
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1000
  * cdef inline object get_array_base(ndarray arr):
  *     base = PyArray_BASE(arr)
  *     if base is NULL:             # <<<<<<<<<<<<<<
@@ -4314,7 +4316,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
   __pyx_t_1 = (__pyx_v_base == NULL);
   if (__pyx_t_1) {
 
-    /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1001
+    /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1001
  *     base = PyArray_BASE(arr)
  *     if base is NULL:
  *         return None             # <<<<<<<<<<<<<<
@@ -4325,7 +4327,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
     __pyx_r = Py_None; __Pyx_INCREF(Py_None);
     goto __pyx_L0;
 
-    /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1000
+    /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1000
  * cdef inline object get_array_base(ndarray arr):
  *     base = PyArray_BASE(arr)
  *     if base is NULL:             # <<<<<<<<<<<<<<
@@ -4334,7 +4336,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
 */
   }
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1002
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1002
  *     if base is NULL:
  *         return None
  *     return <object>base             # <<<<<<<<<<<<<<
@@ -4346,7 +4348,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
   __pyx_r = ((PyObject *)__pyx_v_base);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":998
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":998
  *     PyArray_SetBaseObject(arr, base)
  * 
  * cdef inline object get_array_base(ndarray arr):             # <<<<<<<<<<<<<<
@@ -4361,7 +4363,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1006
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1006
  * # Versions of the import_* functions which are more suitable for
  * # Cython code.
  * cdef inline int import_array() except -1:             # <<<<<<<<<<<<<<
@@ -4388,7 +4390,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("import_array", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1007
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1007
  * # Cython code.
  * cdef inline int import_array() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -4404,7 +4406,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
     __Pyx_XGOTREF(__pyx_t_3);
     /*try:*/ {
 
-      /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1008
+      /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1008
  * cdef inline int import_array() except -1:
  *     try:
  *         __pyx_import_array()             # <<<<<<<<<<<<<<
@@ -4413,7 +4415,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
 */
       __pyx_t_4 = _import_array(); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(2, 1008, __pyx_L3_error)
 
-      /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1007
+      /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1007
  * # Cython code.
  * cdef inline int import_array() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -4427,7 +4429,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
     goto __pyx_L8_try_end;
     __pyx_L3_error:;
 
-    /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1009
+    /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1009
  *     try:
  *         __pyx_import_array()
  *     except Exception:             # <<<<<<<<<<<<<<
@@ -4442,7 +4444,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
       __Pyx_XGOTREF(__pyx_t_6);
       __Pyx_XGOTREF(__pyx_t_7);
 
-      /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1010
+      /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1010
  *         __pyx_import_array()
  *     except Exception:
  *         raise ImportError("numpy._core.multiarray failed to import")             # <<<<<<<<<<<<<<
@@ -4467,7 +4469,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
     }
     goto __pyx_L5_except_error;
 
-    /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1007
+    /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1007
  * # Cython code.
  * cdef inline int import_array() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -4483,7 +4485,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
     __pyx_L8_try_end:;
   }
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1006
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1006
  * # Versions of the import_* functions which are more suitable for
  * # Cython code.
  * cdef inline int import_array() except -1:             # <<<<<<<<<<<<<<
@@ -4508,7 +4510,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1012
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1012
  *         raise ImportError("numpy._core.multiarray failed to import")
  * 
  * cdef inline int import_umath() except -1:             # <<<<<<<<<<<<<<
@@ -4535,7 +4537,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("import_umath", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1013
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1013
  * 
  * cdef inline int import_umath() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -4551,7 +4553,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
     __Pyx_XGOTREF(__pyx_t_3);
     /*try:*/ {
 
-      /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1014
+      /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1014
  * cdef inline int import_umath() except -1:
  *     try:
  *         _import_umath()             # <<<<<<<<<<<<<<
@@ -4560,7 +4562,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
 */
       __pyx_t_4 = _import_umath(); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(2, 1014, __pyx_L3_error)
 
-      /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1013
+      /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1013
  * 
  * cdef inline int import_umath() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -4574,7 +4576,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
     goto __pyx_L8_try_end;
     __pyx_L3_error:;
 
-    /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1015
+    /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1015
  *     try:
  *         _import_umath()
  *     except Exception:             # <<<<<<<<<<<<<<
@@ -4589,7 +4591,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
       __Pyx_XGOTREF(__pyx_t_6);
       __Pyx_XGOTREF(__pyx_t_7);
 
-      /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1016
+      /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1016
  *         _import_umath()
  *     except Exception:
  *         raise ImportError("numpy._core.umath failed to import")             # <<<<<<<<<<<<<<
@@ -4614,7 +4616,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
     }
     goto __pyx_L5_except_error;
 
-    /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1013
+    /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1013
  * 
  * cdef inline int import_umath() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -4630,7 +4632,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
     __pyx_L8_try_end:;
   }
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1012
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1012
  *         raise ImportError("numpy._core.multiarray failed to import")
  * 
  * cdef inline int import_umath() except -1:             # <<<<<<<<<<<<<<
@@ -4655,7 +4657,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1018
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1018
  *         raise ImportError("numpy._core.umath failed to import")
  * 
  * cdef inline int import_ufunc() except -1:             # <<<<<<<<<<<<<<
@@ -4682,7 +4684,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("import_ufunc", 0);
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1019
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1019
  * 
  * cdef inline int import_ufunc() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -4698,7 +4700,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
     __Pyx_XGOTREF(__pyx_t_3);
     /*try:*/ {
 
-      /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1020
+      /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1020
  * cdef inline int import_ufunc() except -1:
  *     try:
  *         _import_umath()             # <<<<<<<<<<<<<<
@@ -4707,7 +4709,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
 */
       __pyx_t_4 = _import_umath(); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(2, 1020, __pyx_L3_error)
 
-      /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1019
+      /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1019
  * 
  * cdef inline int import_ufunc() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -4721,7 +4723,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
     goto __pyx_L8_try_end;
     __pyx_L3_error:;
 
-    /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1021
+    /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1021
  *     try:
  *         _import_umath()
  *     except Exception:             # <<<<<<<<<<<<<<
@@ -4736,7 +4738,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
       __Pyx_XGOTREF(__pyx_t_6);
       __Pyx_XGOTREF(__pyx_t_7);
 
-      /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1022
+      /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1022
  *         _import_umath()
  *     except Exception:
  *         raise ImportError("numpy._core.umath failed to import")             # <<<<<<<<<<<<<<
@@ -4761,7 +4763,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
     }
     goto __pyx_L5_except_error;
 
-    /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1019
+    /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1019
  * 
  * cdef inline int import_ufunc() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -4777,7 +4779,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
     __pyx_L8_try_end:;
   }
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1018
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1018
  *         raise ImportError("numpy._core.umath failed to import")
  * 
  * cdef inline int import_ufunc() except -1:             # <<<<<<<<<<<<<<
@@ -4802,7 +4804,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1025
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1025
  * 
  * 
  * cdef inline bint is_timedelta64_object(object obj) noexcept:             # <<<<<<<<<<<<<<
@@ -4813,7 +4815,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
 static CYTHON_INLINE int __pyx_f_5numpy_is_timedelta64_object(PyObject *__pyx_v_obj) {
   int __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1037
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1037
  *     bool
  *     """
  *     return PyObject_TypeCheck(obj, &PyTimedeltaArrType_Type)             # <<<<<<<<<<<<<<
@@ -4823,7 +4825,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_timedelta64_object(PyObject *__pyx_v_
   __pyx_r = PyObject_TypeCheck(__pyx_v_obj, (&PyTimedeltaArrType_Type));
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1025
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1025
  * 
  * 
  * cdef inline bint is_timedelta64_object(object obj) noexcept:             # <<<<<<<<<<<<<<
@@ -4836,7 +4838,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_timedelta64_object(PyObject *__pyx_v_
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1040
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1040
  * 
  * 
  * cdef inline bint is_datetime64_object(object obj) noexcept:             # <<<<<<<<<<<<<<
@@ -4847,7 +4849,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_timedelta64_object(PyObject *__pyx_v_
 static CYTHON_INLINE int __pyx_f_5numpy_is_datetime64_object(PyObject *__pyx_v_obj) {
   int __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1052
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1052
  *     bool
  *     """
  *     return PyObject_TypeCheck(obj, &PyDatetimeArrType_Type)             # <<<<<<<<<<<<<<
@@ -4857,7 +4859,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_datetime64_object(PyObject *__pyx_v_o
   __pyx_r = PyObject_TypeCheck(__pyx_v_obj, (&PyDatetimeArrType_Type));
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1040
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1040
  * 
  * 
  * cdef inline bint is_datetime64_object(object obj) noexcept:             # <<<<<<<<<<<<<<
@@ -4870,7 +4872,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_datetime64_object(PyObject *__pyx_v_o
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1055
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1055
  * 
  * 
  * cdef inline npy_datetime get_datetime64_value(object obj) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4881,7 +4883,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_datetime64_object(PyObject *__pyx_v_o
 static CYTHON_INLINE npy_datetime __pyx_f_5numpy_get_datetime64_value(PyObject *__pyx_v_obj) {
   npy_datetime __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1062
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1062
  *     also needed.  That can be found using `get_datetime64_unit`.
  *     """
  *     return (<PyDatetimeScalarObject*>obj).obval             # <<<<<<<<<<<<<<
@@ -4891,7 +4893,7 @@ static CYTHON_INLINE npy_datetime __pyx_f_5numpy_get_datetime64_value(PyObject *
   __pyx_r = ((PyDatetimeScalarObject *)__pyx_v_obj)->obval;
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1055
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1055
  * 
  * 
  * cdef inline npy_datetime get_datetime64_value(object obj) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4904,7 +4906,7 @@ static CYTHON_INLINE npy_datetime __pyx_f_5numpy_get_datetime64_value(PyObject *
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1065
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1065
  * 
  * 
  * cdef inline npy_timedelta get_timedelta64_value(object obj) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4915,7 +4917,7 @@ static CYTHON_INLINE npy_datetime __pyx_f_5numpy_get_datetime64_value(PyObject *
 static CYTHON_INLINE npy_timedelta __pyx_f_5numpy_get_timedelta64_value(PyObject *__pyx_v_obj) {
   npy_timedelta __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1069
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1069
  *     returns the int64 value underlying scalar numpy timedelta64 object
  *     """
  *     return (<PyTimedeltaScalarObject*>obj).obval             # <<<<<<<<<<<<<<
@@ -4925,7 +4927,7 @@ static CYTHON_INLINE npy_timedelta __pyx_f_5numpy_get_timedelta64_value(PyObject
   __pyx_r = ((PyTimedeltaScalarObject *)__pyx_v_obj)->obval;
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1065
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1065
  * 
  * 
  * cdef inline npy_timedelta get_timedelta64_value(object obj) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4938,7 +4940,7 @@ static CYTHON_INLINE npy_timedelta __pyx_f_5numpy_get_timedelta64_value(PyObject
   return __pyx_r;
 }
 
-/* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1072
+/* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1072
  * 
  * 
  * cdef inline NPY_DATETIMEUNIT get_datetime64_unit(object obj) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -4949,7 +4951,7 @@ static CYTHON_INLINE npy_timedelta __pyx_f_5numpy_get_timedelta64_value(PyObject
 static CYTHON_INLINE NPY_DATETIMEUNIT __pyx_f_5numpy_get_datetime64_unit(PyObject *__pyx_v_obj) {
   NPY_DATETIMEUNIT __pyx_r;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1076
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1076
  *     returns the unit part of the dtype for a numpy datetime64 object.
  *     """
  *     return <NPY_DATETIMEUNIT>(<PyDatetimeScalarObject*>obj).obmeta.base             # <<<<<<<<<<<<<<
@@ -4959,7 +4961,7 @@ static CYTHON_INLINE NPY_DATETIMEUNIT __pyx_f_5numpy_get_datetime64_unit(PyObjec
   __pyx_r = ((NPY_DATETIMEUNIT)((PyDatetimeScalarObject *)__pyx_v_obj)->obmeta.base);
   goto __pyx_L0;
 
-  /* "../../../../../tmp/.tmpjueEeT/builds-v0/.tmpxnXErG/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1072
+  /* "../../../../../tmp/.tmpOPBYE3/builds-v0/.tmpt9Wmsm/lib/python3.12/site-packages/numpy/__init__.cython-30.pxd":1072
  * 
  * 
  * cdef inline NPY_DATETIMEUNIT get_datetime64_unit(object obj) noexcept nogil:             # <<<<<<<<<<<<<<
@@ -5043,7 +5045,7 @@ static int __pyx_pf_16lightning_search_16lightning_search_5Index___init__(struct
  *         self.query_col_map = {}
  *         self.num_cols = 0             # <<<<<<<<<<<<<<
  * 
- *     def __del__(self):
+ *     cpdef void load(self, str dir_name):
 */
   __pyx_v_self->num_cols = 0;
 
@@ -5070,28 +5072,293 @@ static int __pyx_pf_16lightning_search_16lightning_search_5Index___init__(struct
 /* "lightning_search/lightning_search.pyx":55
  *         self.num_cols = 0
  * 
+ *     cpdef void load(self, str dir_name):             # <<<<<<<<<<<<<<
+ *         dname = (dir_name + '\0').encode('utf-8')
+ *         cdef uint8_t* c_dirname = <uint8_t*>dname
+*/
+
+static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_3load(PyObject *__pyx_v_self, 
+#if CYTHON_METH_FASTCALL
+PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
+#else
+PyObject *__pyx_args, PyObject *__pyx_kwds
+#endif
+); /*proto*/
+static void __pyx_f_16lightning_search_16lightning_search_5Index_load(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_dir_name, int __pyx_skip_dispatch) {
+  PyObject *__pyx_v_dname = NULL;
+  uint8_t *__pyx_v_c_dirname;
+  __Pyx_RefNannyDeclarations
+  PyObject *__pyx_t_1 = NULL;
+  PyObject *__pyx_t_2 = NULL;
+  PyObject *__pyx_t_3 = NULL;
+  PyObject *__pyx_t_4 = NULL;
+  size_t __pyx_t_5;
+  uint8_t *__pyx_t_6;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  __Pyx_RefNannySetupContext("load", 0);
+  /* Check if called by wrapper */
+  if (unlikely(__pyx_skip_dispatch)) ;
+  /* Check if overridden in Python */
+  else if (
+  #if !CYTHON_USE_TYPE_SLOTS
+  unlikely(Py_TYPE(((PyObject *)__pyx_v_self)) != __pyx_mstate_global->__pyx_ptype_16lightning_search_16lightning_search_Index &&
+  __Pyx_PyType_HasFeature(Py_TYPE(((PyObject *)__pyx_v_self)), Py_TPFLAGS_HAVE_GC))
+  #else
+  unlikely(Py_TYPE(((PyObject *)__pyx_v_self))->tp_dictoffset != 0 || __Pyx_PyType_HasFeature(Py_TYPE(((PyObject *)__pyx_v_self)), (Py_TPFLAGS_IS_ABSTRACT | Py_TPFLAGS_HEAPTYPE)))
+  #endif
+  ) {
+    #if CYTHON_USE_DICT_VERSIONS && CYTHON_USE_PYTYPE_LOOKUP && CYTHON_USE_TYPE_SLOTS
+    static PY_UINT64_T __pyx_tp_dict_version = __PYX_DICT_VERSION_INIT, __pyx_obj_dict_version = __PYX_DICT_VERSION_INIT;
+    if (unlikely(!__Pyx_object_dict_version_matches(((PyObject *)__pyx_v_self), __pyx_tp_dict_version, __pyx_obj_dict_version))) {
+      PY_UINT64_T __pyx_typedict_guard = __Pyx_get_tp_dict_version(((PyObject *)__pyx_v_self));
+      #endif
+      __pyx_t_1 = __Pyx_PyObject_GetAttrStr(((PyObject *)__pyx_v_self), __pyx_mstate_global->__pyx_n_u_load); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 55, __pyx_L1_error)
+      __Pyx_GOTREF(__pyx_t_1);
+      if (!__Pyx_IsSameCFunction(__pyx_t_1, (void(*)(void)) __pyx_pw_16lightning_search_16lightning_search_5Index_3load)) {
+        __pyx_t_3 = NULL;
+        __Pyx_INCREF(__pyx_t_1);
+        __pyx_t_4 = __pyx_t_1; 
+        __pyx_t_5 = 1;
+        #if CYTHON_UNPACK_METHODS
+        if (unlikely(PyMethod_Check(__pyx_t_4))) {
+          __pyx_t_3 = PyMethod_GET_SELF(__pyx_t_4);
+          assert(__pyx_t_3);
+          PyObject* __pyx__function = PyMethod_GET_FUNCTION(__pyx_t_4);
+          __Pyx_INCREF(__pyx_t_3);
+          __Pyx_INCREF(__pyx__function);
+          __Pyx_DECREF_SET(__pyx_t_4, __pyx__function);
+          __pyx_t_5 = 0;
+        }
+        #endif
+        {
+          PyObject *__pyx_callargs[2] = {__pyx_t_3, __pyx_v_dir_name};
+          __pyx_t_2 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+__pyx_t_5, (2-__pyx_t_5) | (__pyx_t_5*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
+          __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
+          __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+          if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 55, __pyx_L1_error)
+          __Pyx_GOTREF(__pyx_t_2);
+        }
+        __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
+        __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+        goto __pyx_L0;
+      }
+      #if CYTHON_USE_DICT_VERSIONS && CYTHON_USE_PYTYPE_LOOKUP && CYTHON_USE_TYPE_SLOTS
+      __pyx_tp_dict_version = __Pyx_get_tp_dict_version(((PyObject *)__pyx_v_self));
+      __pyx_obj_dict_version = __Pyx_get_object_dict_version(((PyObject *)__pyx_v_self));
+      if (unlikely(__pyx_typedict_guard != __pyx_tp_dict_version)) {
+        __pyx_tp_dict_version = __pyx_obj_dict_version = __PYX_DICT_VERSION_INIT;
+      }
+      #endif
+      __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+      #if CYTHON_USE_DICT_VERSIONS && CYTHON_USE_PYTYPE_LOOKUP && CYTHON_USE_TYPE_SLOTS
+    }
+    #endif
+  }
+
+  /* "lightning_search/lightning_search.pyx":56
+ * 
+ *     cpdef void load(self, str dir_name):
+ *         dname = (dir_name + '\0').encode('utf-8')             # <<<<<<<<<<<<<<
+ *         cdef uint8_t* c_dirname = <uint8_t*>dname
+ *         load(self.idx_ptr, c_dirname)
+*/
+  __pyx_t_1 = __Pyx_PyUnicode_ConcatSafe(__pyx_v_dir_name, __pyx_mstate_global->__pyx_kp_u_); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 56, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_t_2 = PyUnicode_AsUTF8String(((PyObject*)__pyx_t_1)); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 56, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_2);
+  __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+  __pyx_v_dname = ((PyObject*)__pyx_t_2);
+  __pyx_t_2 = 0;
+
+  /* "lightning_search/lightning_search.pyx":57
+ *     cpdef void load(self, str dir_name):
+ *         dname = (dir_name + '\0').encode('utf-8')
+ *         cdef uint8_t* c_dirname = <uint8_t*>dname             # <<<<<<<<<<<<<<
+ *         load(self.idx_ptr, c_dirname)
+ * 
+*/
+  __pyx_t_6 = __Pyx_PyBytes_AsWritableUString(__pyx_v_dname); if (unlikely((!__pyx_t_6) && PyErr_Occurred())) __PYX_ERR(0, 57, __pyx_L1_error)
+  __pyx_v_c_dirname = ((uint8_t *)__pyx_t_6);
+
+  /* "lightning_search/lightning_search.pyx":58
+ *         dname = (dir_name + '\0').encode('utf-8')
+ *         cdef uint8_t* c_dirname = <uint8_t*>dname
+ *         load(self.idx_ptr, c_dirname)             # <<<<<<<<<<<<<<
+ * 
+ *     def __del__(self):
+*/
+  load(__pyx_v_self->idx_ptr, __pyx_v_c_dirname);
+
+  /* "lightning_search/lightning_search.pyx":55
+ *         self.num_cols = 0
+ * 
+ *     cpdef void load(self, str dir_name):             # <<<<<<<<<<<<<<
+ *         dname = (dir_name + '\0').encode('utf-8')
+ *         cdef uint8_t* c_dirname = <uint8_t*>dname
+*/
+
+  /* function exit code */
+  goto __pyx_L0;
+  __pyx_L1_error:;
+  __Pyx_XDECREF(__pyx_t_1);
+  __Pyx_XDECREF(__pyx_t_2);
+  __Pyx_XDECREF(__pyx_t_3);
+  __Pyx_XDECREF(__pyx_t_4);
+  __Pyx_AddTraceback("lightning_search.lightning_search.Index.load", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __pyx_L0:;
+  __Pyx_XDECREF(__pyx_v_dname);
+  __Pyx_RefNannyFinishContext();
+}
+
+/* Python wrapper */
+static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_3load(PyObject *__pyx_v_self, 
+#if CYTHON_METH_FASTCALL
+PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
+#else
+PyObject *__pyx_args, PyObject *__pyx_kwds
+#endif
+); /*proto*/
+static PyMethodDef __pyx_mdef_16lightning_search_16lightning_search_5Index_3load = {"load", (PyCFunction)(void(*)(void))(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_16lightning_search_16lightning_search_5Index_3load, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_3load(PyObject *__pyx_v_self, 
+#if CYTHON_METH_FASTCALL
+PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
+#else
+PyObject *__pyx_args, PyObject *__pyx_kwds
+#endif
+) {
+  PyObject *__pyx_v_dir_name = 0;
+  #if !CYTHON_METH_FASTCALL
+  CYTHON_UNUSED Py_ssize_t __pyx_nargs;
+  #endif
+  CYTHON_UNUSED PyObject *const *__pyx_kwvalues;
+  PyObject* values[1] = {0};
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  PyObject *__pyx_r = 0;
+  __Pyx_RefNannyDeclarations
+  __Pyx_RefNannySetupContext("load (wrapper)", 0);
+  #if !CYTHON_METH_FASTCALL
+  #if CYTHON_ASSUME_SAFE_SIZE
+  __pyx_nargs = PyTuple_GET_SIZE(__pyx_args);
+  #else
+  __pyx_nargs = PyTuple_Size(__pyx_args); if (unlikely(__pyx_nargs < 0)) return NULL;
+  #endif
+  #endif
+  __pyx_kwvalues = __Pyx_KwValues_FASTCALL(__pyx_args, __pyx_nargs);
+  {
+    PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_dir_name,0};
+    const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 55, __pyx_L3_error)
+    if (__pyx_kwds_len > 0) {
+      switch (__pyx_nargs) {
+        case  1:
+        values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 55, __pyx_L3_error)
+        CYTHON_FALLTHROUGH;
+        case  0: break;
+        default: goto __pyx_L5_argtuple_error;
+      }
+      const Py_ssize_t kwd_pos_args = __pyx_nargs;
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "load", 0) < 0) __PYX_ERR(0, 55, __pyx_L3_error)
+      for (Py_ssize_t i = __pyx_nargs; i < 1; i++) {
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("load", 1, 1, 1, i); __PYX_ERR(0, 55, __pyx_L3_error) }
+      }
+    } else if (unlikely(__pyx_nargs != 1)) {
+      goto __pyx_L5_argtuple_error;
+    } else {
+      values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
+      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 55, __pyx_L3_error)
+    }
+    __pyx_v_dir_name = ((PyObject*)values[0]);
+  }
+  goto __pyx_L6_skip;
+  __pyx_L5_argtuple_error:;
+  __Pyx_RaiseArgtupleInvalid("load", 1, 1, 1, __pyx_nargs); __PYX_ERR(0, 55, __pyx_L3_error)
+  __pyx_L6_skip:;
+  goto __pyx_L4_argument_unpacking_done;
+  __pyx_L3_error:;
+  for (Py_ssize_t __pyx_temp=0; __pyx_temp < (Py_ssize_t)(sizeof(values)/sizeof(values[0])); ++__pyx_temp) {
+    Py_XDECREF(values[__pyx_temp]);
+  }
+  __Pyx_AddTraceback("lightning_search.lightning_search.Index.load", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_RefNannyFinishContext();
+  return NULL;
+  __pyx_L4_argument_unpacking_done:;
+  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_dir_name), (&PyUnicode_Type), 1, "dir_name", 1))) __PYX_ERR(0, 55, __pyx_L1_error)
+  __pyx_r = __pyx_pf_16lightning_search_16lightning_search_5Index_2load(((struct __pyx_obj_16lightning_search_16lightning_search_Index *)__pyx_v_self), __pyx_v_dir_name);
+
+  /* function exit code */
+  goto __pyx_L0;
+  __pyx_L1_error:;
+  __pyx_r = NULL;
+  for (Py_ssize_t __pyx_temp=0; __pyx_temp < (Py_ssize_t)(sizeof(values)/sizeof(values[0])); ++__pyx_temp) {
+    Py_XDECREF(values[__pyx_temp]);
+  }
+  goto __pyx_L7_cleaned_up;
+  __pyx_L0:;
+  for (Py_ssize_t __pyx_temp=0; __pyx_temp < (Py_ssize_t)(sizeof(values)/sizeof(values[0])); ++__pyx_temp) {
+    Py_XDECREF(values[__pyx_temp]);
+  }
+  __pyx_L7_cleaned_up:;
+  __Pyx_RefNannyFinishContext();
+  return __pyx_r;
+}
+
+static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_2load(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_dir_name) {
+  PyObject *__pyx_r = NULL;
+  __Pyx_RefNannyDeclarations
+  PyObject *__pyx_t_1 = NULL;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  __Pyx_RefNannySetupContext("load", 0);
+  __Pyx_XDECREF(__pyx_r);
+  __pyx_f_16lightning_search_16lightning_search_5Index_load(__pyx_v_self, __pyx_v_dir_name, 1); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 55, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_void_to_None(NULL); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 55, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_r = __pyx_t_1;
+  __pyx_t_1 = 0;
+  goto __pyx_L0;
+
+  /* function exit code */
+  __pyx_L1_error:;
+  __Pyx_XDECREF(__pyx_t_1);
+  __Pyx_AddTraceback("lightning_search.lightning_search.Index.load", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __pyx_r = NULL;
+  __pyx_L0:;
+  __Pyx_XGIVEREF(__pyx_r);
+  __Pyx_RefNannyFinishContext();
+  return __pyx_r;
+}
+
+/* "lightning_search/lightning_search.pyx":60
+ *         load(self.idx_ptr, c_dirname)
+ * 
  *     def __del__(self):             # <<<<<<<<<<<<<<
  *         if self.idx_ptr:
  *             destroy_index(self.idx_ptr)
 */
 
 /* Python wrapper */
-static void __pyx_pw_16lightning_search_16lightning_search_5Index_3__del__(PyObject *__pyx_v_self); /*proto*/
-static void __pyx_pw_16lightning_search_16lightning_search_5Index_3__del__(PyObject *__pyx_v_self) {
+static void __pyx_pw_16lightning_search_16lightning_search_5Index_5__del__(PyObject *__pyx_v_self); /*proto*/
+static void __pyx_pw_16lightning_search_16lightning_search_5Index_5__del__(PyObject *__pyx_v_self) {
   CYTHON_UNUSED PyObject *const *__pyx_kwvalues;
   __Pyx_RefNannyDeclarations
   __Pyx_RefNannySetupContext("__del__ (wrapper)", 0);
   __pyx_kwvalues = __Pyx_KwValues_VARARGS(__pyx_args, __pyx_nargs);
-  __pyx_pf_16lightning_search_16lightning_search_5Index_2__del__(((struct __pyx_obj_16lightning_search_16lightning_search_Index *)__pyx_v_self));
+  __pyx_pf_16lightning_search_16lightning_search_5Index_4__del__(((struct __pyx_obj_16lightning_search_16lightning_search_Index *)__pyx_v_self));
 
   /* function exit code */
   __Pyx_RefNannyFinishContext();
 }
 
-static void __pyx_pf_16lightning_search_16lightning_search_5Index_2__del__(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self) {
+static void __pyx_pf_16lightning_search_16lightning_search_5Index_4__del__(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self) {
   int __pyx_t_1;
 
-  /* "lightning_search/lightning_search.pyx":56
+  /* "lightning_search/lightning_search.pyx":61
  * 
  *     def __del__(self):
  *         if self.idx_ptr:             # <<<<<<<<<<<<<<
@@ -5101,7 +5368,7 @@ static void __pyx_pf_16lightning_search_16lightning_search_5Index_2__del__(struc
   __pyx_t_1 = (__pyx_v_self->idx_ptr != 0);
   if (__pyx_t_1) {
 
-    /* "lightning_search/lightning_search.pyx":57
+    /* "lightning_search/lightning_search.pyx":62
  *     def __del__(self):
  *         if self.idx_ptr:
  *             destroy_index(self.idx_ptr)             # <<<<<<<<<<<<<<
@@ -5110,7 +5377,7 @@ static void __pyx_pf_16lightning_search_16lightning_search_5Index_2__del__(struc
 */
     destroy_index(__pyx_v_self->idx_ptr);
 
-    /* "lightning_search/lightning_search.pyx":58
+    /* "lightning_search/lightning_search.pyx":63
  *         if self.idx_ptr:
  *             destroy_index(self.idx_ptr)
  *             self.idx_ptr = NULL             # <<<<<<<<<<<<<<
@@ -5119,7 +5386,7 @@ static void __pyx_pf_16lightning_search_16lightning_search_5Index_2__del__(struc
 */
     __pyx_v_self->idx_ptr = NULL;
 
-    /* "lightning_search/lightning_search.pyx":56
+    /* "lightning_search/lightning_search.pyx":61
  * 
  *     def __del__(self):
  *         if self.idx_ptr:             # <<<<<<<<<<<<<<
@@ -5128,8 +5395,8 @@ static void __pyx_pf_16lightning_search_16lightning_search_5Index_2__del__(struc
 */
   }
 
-  /* "lightning_search/lightning_search.pyx":55
- *         self.num_cols = 0
+  /* "lightning_search/lightning_search.pyx":60
+ *         load(self.idx_ptr, c_dirname)
  * 
  *     def __del__(self):             # <<<<<<<<<<<<<<
  *         if self.idx_ptr:
@@ -5139,7 +5406,7 @@ static void __pyx_pf_16lightning_search_16lightning_search_5Index_2__del__(struc
   /* function exit code */
 }
 
-/* "lightning_search/lightning_search.pyx":60
+/* "lightning_search/lightning_search.pyx":65
  *             self.idx_ptr = NULL
  * 
  *     cpdef void index_file(self, str filename, list query_cols):             # <<<<<<<<<<<<<<
@@ -5147,7 +5414,7 @@ static void __pyx_pf_16lightning_search_16lightning_search_5Index_2__del__(struc
  * 
 */
 
-static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_5index_file(PyObject *__pyx_v_self, 
+static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_7index_file(PyObject *__pyx_v_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
@@ -5195,9 +5462,9 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
     if (unlikely(!__Pyx_object_dict_version_matches(((PyObject *)__pyx_v_self), __pyx_tp_dict_version, __pyx_obj_dict_version))) {
       PY_UINT64_T __pyx_typedict_guard = __Pyx_get_tp_dict_version(((PyObject *)__pyx_v_self));
       #endif
-      __pyx_t_1 = __Pyx_PyObject_GetAttrStr(((PyObject *)__pyx_v_self), __pyx_mstate_global->__pyx_n_u_index_file); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 60, __pyx_L1_error)
+      __pyx_t_1 = __Pyx_PyObject_GetAttrStr(((PyObject *)__pyx_v_self), __pyx_mstate_global->__pyx_n_u_index_file); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 65, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_1);
-      if (!__Pyx_IsSameCFunction(__pyx_t_1, (void(*)(void)) __pyx_pw_16lightning_search_16lightning_search_5Index_5index_file)) {
+      if (!__Pyx_IsSameCFunction(__pyx_t_1, (void(*)(void)) __pyx_pw_16lightning_search_16lightning_search_5Index_7index_file)) {
         __pyx_t_3 = NULL;
         __Pyx_INCREF(__pyx_t_1);
         __pyx_t_4 = __pyx_t_1; 
@@ -5218,7 +5485,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
           __pyx_t_2 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+__pyx_t_5, (3-__pyx_t_5) | (__pyx_t_5*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
           __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
           __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-          if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 60, __pyx_L1_error)
+          if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 65, __pyx_L1_error)
           __Pyx_GOTREF(__pyx_t_2);
         }
         __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
@@ -5238,22 +5505,22 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
     #endif
   }
 
-  /* "lightning_search/lightning_search.pyx":61
+  /* "lightning_search/lightning_search.pyx":66
  * 
  *     cpdef void index_file(self, str filename, list query_cols):
  *         fname = (filename + '\0').encode('utf-8')             # <<<<<<<<<<<<<<
  * 
  *         cdef uint32_t num_query_cols = len(query_cols)
 */
-  __pyx_t_1 = __Pyx_PyUnicode_ConcatSafe(__pyx_v_filename, __pyx_mstate_global->__pyx_kp_u_); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 61, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_PyUnicode_ConcatSafe(__pyx_v_filename, __pyx_mstate_global->__pyx_kp_u_); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 66, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
-  __pyx_t_2 = PyUnicode_AsUTF8String(((PyObject*)__pyx_t_1)); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 61, __pyx_L1_error)
+  __pyx_t_2 = PyUnicode_AsUTF8String(((PyObject*)__pyx_t_1)); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 66, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
   __pyx_v_fname = ((PyObject*)__pyx_t_2);
   __pyx_t_2 = 0;
 
-  /* "lightning_search/lightning_search.pyx":63
+  /* "lightning_search/lightning_search.pyx":68
  *         fname = (filename + '\0').encode('utf-8')
  * 
  *         cdef uint32_t num_query_cols = len(query_cols)             # <<<<<<<<<<<<<<
@@ -5262,22 +5529,22 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
 */
   if (unlikely(__pyx_v_query_cols == Py_None)) {
     PyErr_SetString(PyExc_TypeError, "object of type 'NoneType' has no len()");
-    __PYX_ERR(0, 63, __pyx_L1_error)
+    __PYX_ERR(0, 68, __pyx_L1_error)
   }
-  __pyx_t_6 = __Pyx_PyList_GET_SIZE(__pyx_v_query_cols); if (unlikely(__pyx_t_6 == ((Py_ssize_t)-1))) __PYX_ERR(0, 63, __pyx_L1_error)
+  __pyx_t_6 = __Pyx_PyList_GET_SIZE(__pyx_v_query_cols); if (unlikely(__pyx_t_6 == ((Py_ssize_t)-1))) __PYX_ERR(0, 68, __pyx_L1_error)
   __pyx_v_num_query_cols = __pyx_t_6;
 
-  /* "lightning_search/lightning_search.pyx":64
+  /* "lightning_search/lightning_search.pyx":69
  * 
  *         cdef uint32_t num_query_cols = len(query_cols)
  *         cdef uint8_t* c_filename = <uint8_t*>fname             # <<<<<<<<<<<<<<
  *         cdef uint8_t** c_query_cols = <uint8_t**>malloc(
  *                 num_query_cols * sizeof(uint8_t*)
 */
-  __pyx_t_7 = __Pyx_PyBytes_AsWritableUString(__pyx_v_fname); if (unlikely((!__pyx_t_7) && PyErr_Occurred())) __PYX_ERR(0, 64, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_PyBytes_AsWritableUString(__pyx_v_fname); if (unlikely((!__pyx_t_7) && PyErr_Occurred())) __PYX_ERR(0, 69, __pyx_L1_error)
   __pyx_v_c_filename = ((uint8_t *)__pyx_t_7);
 
-  /* "lightning_search/lightning_search.pyx":65
+  /* "lightning_search/lightning_search.pyx":70
  *         cdef uint32_t num_query_cols = len(query_cols)
  *         cdef uint8_t* c_filename = <uint8_t*>fname
  *         cdef uint8_t** c_query_cols = <uint8_t**>malloc(             # <<<<<<<<<<<<<<
@@ -5286,7 +5553,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
 */
   __pyx_v_c_query_cols = ((uint8_t **)malloc((__pyx_v_num_query_cols * (sizeof(uint8_t *)))));
 
-  /* "lightning_search/lightning_search.pyx":69
+  /* "lightning_search/lightning_search.pyx":74
  *                 )
  * 
  *         self.query_col_map = {query_cols[i]: idx for idx in range(num_query_cols)}             # <<<<<<<<<<<<<<
@@ -5294,7 +5561,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
  * 
 */
   { /* enter inner scope */
-    __pyx_t_2 = PyDict_New(); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 69, __pyx_L1_error)
+    __pyx_t_2 = PyDict_New(); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 74, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_2);
     __pyx_t_8 = __pyx_v_num_query_cols;
     __pyx_t_9 = __pyx_t_8;
@@ -5302,13 +5569,13 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
       __pyx_7genexpr__pyx_v_idx = __pyx_t_10;
       if (unlikely(__pyx_v_query_cols == Py_None)) {
         PyErr_SetString(PyExc_TypeError, "'NoneType' object is not subscriptable");
-        __PYX_ERR(0, 69, __pyx_L1_error)
+        __PYX_ERR(0, 74, __pyx_L1_error)
       }
-      __pyx_t_1 = __Pyx_GetItemInt_List(__pyx_v_query_cols, __pyx_v_i, uint32_t, 0, __Pyx_PyLong_From_uint32_t, 1, 0, 1, 1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 69, __pyx_L1_error)
+      __pyx_t_1 = __Pyx_GetItemInt_List(__pyx_v_query_cols, __pyx_v_i, uint32_t, 0, __Pyx_PyLong_From_uint32_t, 1, 0, 1, 1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 74, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_1);
-      __pyx_t_4 = __Pyx_PyLong_From_uint32_t(__pyx_7genexpr__pyx_v_idx); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 69, __pyx_L1_error)
+      __pyx_t_4 = __Pyx_PyLong_From_uint32_t(__pyx_7genexpr__pyx_v_idx); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 74, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_4);
-      if (unlikely(PyDict_SetItem(__pyx_t_2, (PyObject*)__pyx_t_1, (PyObject*)__pyx_t_4))) __PYX_ERR(0, 69, __pyx_L1_error)
+      if (unlikely(PyDict_SetItem(__pyx_t_2, (PyObject*)__pyx_t_1, (PyObject*)__pyx_t_4))) __PYX_ERR(0, 74, __pyx_L1_error)
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
     }
@@ -5319,7 +5586,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
   __pyx_v_self->query_col_map = ((PyObject*)__pyx_t_2);
   __pyx_t_2 = 0;
 
-  /* "lightning_search/lightning_search.pyx":70
+  /* "lightning_search/lightning_search.pyx":75
  * 
  *         self.query_col_map = {query_cols[i]: idx for idx in range(num_query_cols)}
  *         query_cols = [(query_cols[i] + '\0').encode('utf-8') for i in range(num_query_cols)]             # <<<<<<<<<<<<<<
@@ -5327,7 +5594,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
  *         cdef uint32_t i
 */
   { /* enter inner scope */
-    __pyx_t_2 = PyList_New(0); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 70, __pyx_L1_error)
+    __pyx_t_2 = PyList_New(0); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 75, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_2);
     __pyx_t_8 = __pyx_v_num_query_cols;
     __pyx_t_9 = __pyx_t_8;
@@ -5335,11 +5602,11 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
       __pyx_8genexpr1__pyx_v_i = __pyx_t_10;
       if (unlikely(__pyx_v_query_cols == Py_None)) {
         PyErr_SetString(PyExc_TypeError, "'NoneType' object is not subscriptable");
-        __PYX_ERR(0, 70, __pyx_L1_error)
+        __PYX_ERR(0, 75, __pyx_L1_error)
       }
-      __pyx_t_3 = __Pyx_GetItemInt_List(__pyx_v_query_cols, __pyx_8genexpr1__pyx_v_i, uint32_t, 0, __Pyx_PyLong_From_uint32_t, 1, 0, 1, 1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 70, __pyx_L1_error)
+      __pyx_t_3 = __Pyx_GetItemInt_List(__pyx_v_query_cols, __pyx_8genexpr1__pyx_v_i, uint32_t, 0, __Pyx_PyLong_From_uint32_t, 1, 0, 1, 1); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 75, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
-      __pyx_t_11 = PyNumber_Add(__pyx_t_3, __pyx_mstate_global->__pyx_kp_u_); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 70, __pyx_L1_error)
+      __pyx_t_11 = PyNumber_Add(__pyx_t_3, __pyx_mstate_global->__pyx_kp_u_); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 75, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_11);
       __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
       __pyx_t_1 = __pyx_t_11;
@@ -5350,17 +5617,17 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
         __pyx_t_4 = __Pyx_PyObject_FastCallMethod(__pyx_mstate_global->__pyx_n_u_encode, __pyx_callargs+__pyx_t_5, (2-__pyx_t_5) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
         __Pyx_XDECREF(__pyx_t_1); __pyx_t_1 = 0;
         __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 70, __pyx_L1_error)
+        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 75, __pyx_L1_error)
         __Pyx_GOTREF(__pyx_t_4);
       }
-      if (unlikely(__Pyx_ListComp_Append(__pyx_t_2, (PyObject*)__pyx_t_4))) __PYX_ERR(0, 70, __pyx_L1_error)
+      if (unlikely(__Pyx_ListComp_Append(__pyx_t_2, (PyObject*)__pyx_t_4))) __PYX_ERR(0, 75, __pyx_L1_error)
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
     }
   } /* exit inner scope */
   __Pyx_DECREF_SET(__pyx_v_query_cols, ((PyObject*)__pyx_t_2));
   __pyx_t_2 = 0;
 
-  /* "lightning_search/lightning_search.pyx":73
+  /* "lightning_search/lightning_search.pyx":78
  * 
  *         cdef uint32_t i
  *         for i in range(num_query_cols):             # <<<<<<<<<<<<<<
@@ -5372,21 +5639,21 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
   for (__pyx_t_10 = 0; __pyx_t_10 < __pyx_t_9; __pyx_t_10+=1) {
     __pyx_v_i = __pyx_t_10;
 
-    /* "lightning_search/lightning_search.pyx":74
+    /* "lightning_search/lightning_search.pyx":79
  *         cdef uint32_t i
  *         for i in range(num_query_cols):
  *             c_query_cols[i] = <uint8_t*>query_cols[i]             # <<<<<<<<<<<<<<
  * 
  *         with nogil:
 */
-    __pyx_t_2 = __Pyx_GetItemInt_List(__pyx_v_query_cols, __pyx_v_i, uint32_t, 0, __Pyx_PyLong_From_uint32_t, 1, 0, 1, 1); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 74, __pyx_L1_error)
+    __pyx_t_2 = __Pyx_GetItemInt_List(__pyx_v_query_cols, __pyx_v_i, uint32_t, 0, __Pyx_PyLong_From_uint32_t, 1, 0, 1, 1); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 79, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_2);
-    __pyx_t_7 = __Pyx_PyObject_AsWritableUString(__pyx_t_2); if (unlikely((!__pyx_t_7) && PyErr_Occurred())) __PYX_ERR(0, 74, __pyx_L1_error)
+    __pyx_t_7 = __Pyx_PyObject_AsWritableUString(__pyx_t_2); if (unlikely((!__pyx_t_7) && PyErr_Occurred())) __PYX_ERR(0, 79, __pyx_L1_error)
     (__pyx_v_c_query_cols[__pyx_v_i]) = ((uint8_t *)__pyx_t_7);
     __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
   }
 
-  /* "lightning_search/lightning_search.pyx":76
+  /* "lightning_search/lightning_search.pyx":81
  *             c_query_cols[i] = <uint8_t*>query_cols[i]
  * 
  *         with nogil:             # <<<<<<<<<<<<<<
@@ -5400,7 +5667,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
       __Pyx_FastGIL_Remember();
       /*try:*/ {
 
-        /* "lightning_search/lightning_search.pyx":77
+        /* "lightning_search/lightning_search.pyx":82
  * 
  *         with nogil:
  *             index_file(             # <<<<<<<<<<<<<<
@@ -5410,7 +5677,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
         index_file(__pyx_v_self->idx_ptr, __pyx_v_c_filename, __pyx_v_c_query_cols, __pyx_v_num_query_cols);
       }
 
-      /* "lightning_search/lightning_search.pyx":76
+      /* "lightning_search/lightning_search.pyx":81
  *             c_query_cols[i] = <uint8_t*>query_cols[i]
  * 
  *         with nogil:             # <<<<<<<<<<<<<<
@@ -5427,7 +5694,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
       }
   }
 
-  /* "lightning_search/lightning_search.pyx":84
+  /* "lightning_search/lightning_search.pyx":89
  *                     )
  * 
  *         free(c_query_cols)             # <<<<<<<<<<<<<<
@@ -5436,7 +5703,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
 */
   free(__pyx_v_c_query_cols);
 
-  /* "lightning_search/lightning_search.pyx":60
+  /* "lightning_search/lightning_search.pyx":65
  *             self.idx_ptr = NULL
  * 
  *     cpdef void index_file(self, str filename, list query_cols):             # <<<<<<<<<<<<<<
@@ -5460,15 +5727,15 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_index_file(stru
 }
 
 /* Python wrapper */
-static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_5index_file(PyObject *__pyx_v_self, 
+static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_7index_file(PyObject *__pyx_v_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
 PyObject *__pyx_args, PyObject *__pyx_kwds
 #endif
 ); /*proto*/
-static PyMethodDef __pyx_mdef_16lightning_search_16lightning_search_5Index_5index_file = {"index_file", (PyCFunction)(void(*)(void))(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_16lightning_search_16lightning_search_5Index_5index_file, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_5index_file(PyObject *__pyx_v_self, 
+static PyMethodDef __pyx_mdef_16lightning_search_16lightning_search_5Index_7index_file = {"index_file", (PyCFunction)(void(*)(void))(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_16lightning_search_16lightning_search_5Index_7index_file, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_7index_file(PyObject *__pyx_v_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
@@ -5499,39 +5766,39 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_filename,&__pyx_mstate_global->__pyx_n_u_query_cols,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 60, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 65, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case  2:
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 60, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 65, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 60, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 65, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "index_file", 0) < 0) __PYX_ERR(0, 60, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "index_file", 0) < 0) __PYX_ERR(0, 65, __pyx_L3_error)
       for (Py_ssize_t i = __pyx_nargs; i < 2; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("index_file", 1, 2, 2, i); __PYX_ERR(0, 60, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("index_file", 1, 2, 2, i); __PYX_ERR(0, 65, __pyx_L3_error) }
       }
     } else if (unlikely(__pyx_nargs != 2)) {
       goto __pyx_L5_argtuple_error;
     } else {
       values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 60, __pyx_L3_error)
+      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 65, __pyx_L3_error)
       values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 60, __pyx_L3_error)
+      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 65, __pyx_L3_error)
     }
     __pyx_v_filename = ((PyObject*)values[0]);
     __pyx_v_query_cols = ((PyObject*)values[1]);
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("index_file", 1, 2, 2, __pyx_nargs); __PYX_ERR(0, 60, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("index_file", 1, 2, 2, __pyx_nargs); __PYX_ERR(0, 65, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -5542,9 +5809,9 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_filename), (&PyUnicode_Type), 1, "filename", 1))) __PYX_ERR(0, 60, __pyx_L1_error)
-  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_query_cols), (&PyList_Type), 1, "query_cols", 1))) __PYX_ERR(0, 60, __pyx_L1_error)
-  __pyx_r = __pyx_pf_16lightning_search_16lightning_search_5Index_4index_file(((struct __pyx_obj_16lightning_search_16lightning_search_Index *)__pyx_v_self), __pyx_v_filename, __pyx_v_query_cols);
+  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_filename), (&PyUnicode_Type), 1, "filename", 1))) __PYX_ERR(0, 65, __pyx_L1_error)
+  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_query_cols), (&PyList_Type), 1, "query_cols", 1))) __PYX_ERR(0, 65, __pyx_L1_error)
+  __pyx_r = __pyx_pf_16lightning_search_16lightning_search_5Index_6index_file(((struct __pyx_obj_16lightning_search_16lightning_search_Index *)__pyx_v_self), __pyx_v_filename, __pyx_v_query_cols);
 
   /* function exit code */
   goto __pyx_L0;
@@ -5563,7 +5830,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_4index_file(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_filename, PyObject *__pyx_v_query_cols) {
+static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_6index_file(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_filename, PyObject *__pyx_v_query_cols) {
   PyObject *__pyx_r = NULL;
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
@@ -5572,8 +5839,8 @@ static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_4index_fi
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("index_file", 0);
   __Pyx_XDECREF(__pyx_r);
-  __pyx_f_16lightning_search_16lightning_search_5Index_index_file(__pyx_v_self, __pyx_v_filename, __pyx_v_query_cols, 1); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 60, __pyx_L1_error)
-  __pyx_t_1 = __Pyx_void_to_None(NULL); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 60, __pyx_L1_error)
+  __pyx_f_16lightning_search_16lightning_search_5Index_index_file(__pyx_v_self, __pyx_v_filename, __pyx_v_query_cols, 1); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 65, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_void_to_None(NULL); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 65, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
   __pyx_t_1 = 0;
@@ -5590,7 +5857,7 @@ static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_4index_fi
   return __pyx_r;
 }
 
-/* "lightning_search/lightning_search.pyx":86
+/* "lightning_search/lightning_search.pyx":91
  *         free(c_query_cols)
  * 
  *     cdef void get_num_cols(self):             # <<<<<<<<<<<<<<
@@ -5600,7 +5867,7 @@ static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_4index_fi
 
 static void __pyx_f_16lightning_search_16lightning_search_5Index_get_num_cols(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self) {
 
-  /* "lightning_search/lightning_search.pyx":87
+  /* "lightning_search/lightning_search.pyx":92
  * 
  *     cdef void get_num_cols(self):
  *         self.num_cols = get_num_cols(self.idx_ptr)             # <<<<<<<<<<<<<<
@@ -5609,7 +5876,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_get_num_cols(st
 */
   __pyx_v_self->num_cols = get_num_cols(__pyx_v_self->idx_ptr);
 
-  /* "lightning_search/lightning_search.pyx":86
+  /* "lightning_search/lightning_search.pyx":91
  *         free(c_query_cols)
  * 
  *     cdef void get_num_cols(self):             # <<<<<<<<<<<<<<
@@ -5620,7 +5887,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_get_num_cols(st
   /* function exit code */
 }
 
-/* "lightning_search/lightning_search.pyx":89
+/* "lightning_search/lightning_search.pyx":94
  *         self.num_cols = get_num_cols(self.idx_ptr)
  * 
  *     cpdef list query(             # <<<<<<<<<<<<<<
@@ -5628,7 +5895,7 @@ static void __pyx_f_16lightning_search_16lightning_search_5Index_get_num_cols(st
  *             dict query_map,
 */
 
-static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_7query(PyObject *__pyx_v_self, 
+static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_9query(PyObject *__pyx_v_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
@@ -5689,14 +5956,14 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
     if (unlikely(!__Pyx_object_dict_version_matches(((PyObject *)__pyx_v_self), __pyx_tp_dict_version, __pyx_obj_dict_version))) {
       PY_UINT64_T __pyx_typedict_guard = __Pyx_get_tp_dict_version(((PyObject *)__pyx_v_self));
       #endif
-      __pyx_t_1 = __Pyx_PyObject_GetAttrStr(((PyObject *)__pyx_v_self), __pyx_mstate_global->__pyx_n_u_query); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 89, __pyx_L1_error)
+      __pyx_t_1 = __Pyx_PyObject_GetAttrStr(((PyObject *)__pyx_v_self), __pyx_mstate_global->__pyx_n_u_query); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 94, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_1);
-      if (!__Pyx_IsSameCFunction(__pyx_t_1, (void(*)(void)) __pyx_pw_16lightning_search_16lightning_search_5Index_7query)) {
+      if (!__Pyx_IsSameCFunction(__pyx_t_1, (void(*)(void)) __pyx_pw_16lightning_search_16lightning_search_5Index_9query)) {
         __Pyx_XDECREF(__pyx_r);
         __pyx_t_3 = NULL;
         __Pyx_INCREF(__pyx_t_1);
         __pyx_t_4 = __pyx_t_1; 
-        __pyx_t_5 = __Pyx_PyLong_From_uint32_t(__pyx_v_k); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 89, __pyx_L1_error)
+        __pyx_t_5 = __Pyx_PyLong_From_uint32_t(__pyx_v_k); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 94, __pyx_L1_error)
         __Pyx_GOTREF(__pyx_t_5);
         __pyx_t_6 = 1;
         #if CYTHON_UNPACK_METHODS
@@ -5716,10 +5983,10 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
           __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
           __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
           __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-          if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 89, __pyx_L1_error)
+          if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 94, __pyx_L1_error)
           __Pyx_GOTREF(__pyx_t_2);
         }
-        if (!(likely(PyList_CheckExact(__pyx_t_2))||((__pyx_t_2) == Py_None) || __Pyx_RaiseUnexpectedTypeError("list", __pyx_t_2))) __PYX_ERR(0, 89, __pyx_L1_error)
+        if (!(likely(PyList_CheckExact(__pyx_t_2))||((__pyx_t_2) == Py_None) || __Pyx_RaiseUnexpectedTypeError("list", __pyx_t_2))) __PYX_ERR(0, 94, __pyx_L1_error)
         __pyx_r = ((PyObject*)__pyx_t_2);
         __pyx_t_2 = 0;
         __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
@@ -5738,7 +6005,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
     #endif
   }
 
-  /* "lightning_search/lightning_search.pyx":96
+  /* "lightning_search/lightning_search.pyx":101
  *             ):
  * 
  *         cdef uint32_t num_query_cols = len(query_map)             # <<<<<<<<<<<<<<
@@ -5747,12 +6014,12 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   if (unlikely(__pyx_v_query_map == Py_None)) {
     PyErr_SetString(PyExc_TypeError, "object of type 'NoneType' has no len()");
-    __PYX_ERR(0, 96, __pyx_L1_error)
+    __PYX_ERR(0, 101, __pyx_L1_error)
   }
-  __pyx_t_7 = PyDict_Size(__pyx_v_query_map); if (unlikely(__pyx_t_7 == ((Py_ssize_t)-1))) __PYX_ERR(0, 96, __pyx_L1_error)
+  __pyx_t_7 = PyDict_Size(__pyx_v_query_map); if (unlikely(__pyx_t_7 == ((Py_ssize_t)-1))) __PYX_ERR(0, 101, __pyx_L1_error)
   __pyx_v_num_query_cols = __pyx_t_7;
 
-  /* "lightning_search/lightning_search.pyx":97
+  /* "lightning_search/lightning_search.pyx":102
  * 
  *         cdef uint32_t num_query_cols = len(query_map)
  *         cdef uint32_t* search_col_idxs = <uint32_t*>malloc(             # <<<<<<<<<<<<<<
@@ -5761,7 +6028,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   __pyx_v_search_col_idxs = ((uint32_t *)malloc((__pyx_v_num_query_cols * (sizeof(uint32_t)))));
 
-  /* "lightning_search/lightning_search.pyx":100
+  /* "lightning_search/lightning_search.pyx":105
  *                 num_query_cols * sizeof(uint32_t)
  *                 )
  *         cdef uint8_t** queries = <uint8_t**>malloc(             # <<<<<<<<<<<<<<
@@ -5770,7 +6037,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   __pyx_v_queries = ((uint8_t **)malloc((__pyx_v_num_query_cols * (sizeof(uint8_t *)))));
 
-  /* "lightning_search/lightning_search.pyx":103
+  /* "lightning_search/lightning_search.pyx":108
  *                 num_query_cols * sizeof(uint8_t*)
  *                 )
  *         cdef float* boost_factors_arr = <float*>malloc(             # <<<<<<<<<<<<<<
@@ -5779,7 +6046,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   __pyx_v_boost_factors_arr = ((float *)malloc((__pyx_v_num_query_cols * (sizeof(float)))));
 
-  /* "lightning_search/lightning_search.pyx":107
+  /* "lightning_search/lightning_search.pyx":112
  *                 )
  * 
  *         cdef uint8_t* result_json_str_buf = NULL             # <<<<<<<<<<<<<<
@@ -5788,7 +6055,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   __pyx_v_result_json_str_buf = NULL;
 
-  /* "lightning_search/lightning_search.pyx":108
+  /* "lightning_search/lightning_search.pyx":113
  * 
  *         cdef uint8_t* result_json_str_buf = NULL
  *         cdef uint64_t result_json_str_buf_len = 0             # <<<<<<<<<<<<<<
@@ -5797,7 +6064,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   __pyx_v_result_json_str_buf_len = 0;
 
-  /* "lightning_search/lightning_search.pyx":109
+  /* "lightning_search/lightning_search.pyx":114
  *         cdef uint8_t* result_json_str_buf = NULL
  *         cdef uint64_t result_json_str_buf_len = 0
  *         cdef uint32_t num_matched_records = 0             # <<<<<<<<<<<<<<
@@ -5806,7 +6073,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   __pyx_v_num_matched_records = 0;
 
-  /* "lightning_search/lightning_search.pyx":111
+  /* "lightning_search/lightning_search.pyx":116
  *         cdef uint32_t num_matched_records = 0
  * 
  *         for query_col, query_value in query_map.items():             # <<<<<<<<<<<<<<
@@ -5816,9 +6083,9 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
   __pyx_t_7 = 0;
   if (unlikely(__pyx_v_query_map == Py_None)) {
     PyErr_Format(PyExc_AttributeError, "'NoneType' object has no attribute '%.30s'", "items");
-    __PYX_ERR(0, 111, __pyx_L1_error)
+    __PYX_ERR(0, 116, __pyx_L1_error)
   }
-  __pyx_t_2 = __Pyx_dict_iterator(__pyx_v_query_map, 1, __pyx_mstate_global->__pyx_n_u_items, (&__pyx_t_8), (&__pyx_t_9)); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 111, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_dict_iterator(__pyx_v_query_map, 1, __pyx_mstate_global->__pyx_n_u_items, (&__pyx_t_8), (&__pyx_t_9)); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 116, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_XDECREF(__pyx_t_1);
   __pyx_t_1 = __pyx_t_2;
@@ -5826,7 +6093,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
   while (1) {
     __pyx_t_10 = __Pyx_dict_iter_next(__pyx_t_1, __pyx_t_8, &__pyx_t_7, &__pyx_t_2, &__pyx_t_4, NULL, __pyx_t_9);
     if (unlikely(__pyx_t_10 == 0)) break;
-    if (unlikely(__pyx_t_10 == -1)) __PYX_ERR(0, 111, __pyx_L1_error)
+    if (unlikely(__pyx_t_10 == -1)) __PYX_ERR(0, 116, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_2);
     __Pyx_GOTREF(__pyx_t_4);
     __Pyx_XDECREF_SET(__pyx_v_query_col, __pyx_t_2);
@@ -5834,7 +6101,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
     __Pyx_XDECREF_SET(__pyx_v_query_value, __pyx_t_4);
     __pyx_t_4 = 0;
 
-    /* "lightning_search/lightning_search.pyx":112
+    /* "lightning_search/lightning_search.pyx":117
  * 
  *         for query_col, query_value in query_map.items():
  *             if query_col not in self.query_col_map:             # <<<<<<<<<<<<<<
@@ -5843,12 +6110,12 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
     if (unlikely(__pyx_v_self->query_col_map == Py_None)) {
       PyErr_SetString(PyExc_TypeError, "'NoneType' object is not iterable");
-      __PYX_ERR(0, 112, __pyx_L1_error)
+      __PYX_ERR(0, 117, __pyx_L1_error)
     }
-    __pyx_t_11 = (__Pyx_PyDict_ContainsTF(__pyx_v_query_col, __pyx_v_self->query_col_map, Py_NE)); if (unlikely((__pyx_t_11 < 0))) __PYX_ERR(0, 112, __pyx_L1_error)
+    __pyx_t_11 = (__Pyx_PyDict_ContainsTF(__pyx_v_query_col, __pyx_v_self->query_col_map, Py_NE)); if (unlikely((__pyx_t_11 < 0))) __PYX_ERR(0, 117, __pyx_L1_error)
     if (unlikely(__pyx_t_11)) {
 
-      /* "lightning_search/lightning_search.pyx":113
+      /* "lightning_search/lightning_search.pyx":118
  *         for query_col, query_value in query_map.items():
  *             if query_col not in self.query_col_map:
  *                 raise Warning(f"Query column '{query_col}' not indexed.")             # <<<<<<<<<<<<<<
@@ -5858,13 +6125,13 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
       __pyx_t_2 = NULL;
       __Pyx_INCREF(__pyx_builtin_Warning);
       __pyx_t_5 = __pyx_builtin_Warning; 
-      __pyx_t_3 = __Pyx_PyObject_FormatSimple(__pyx_v_query_col, __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 113, __pyx_L1_error)
+      __pyx_t_3 = __Pyx_PyObject_FormatSimple(__pyx_v_query_col, __pyx_mstate_global->__pyx_empty_unicode); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 118, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_3);
       __pyx_t_12[0] = __pyx_mstate_global->__pyx_kp_u_Query_column;
       __pyx_t_12[1] = __pyx_t_3;
       __pyx_t_12[2] = __pyx_mstate_global->__pyx_kp_u_not_indexed;
       __pyx_t_13 = __Pyx_PyUnicode_Join(__pyx_t_12, 3, 14 * 2 + __Pyx_PyUnicode_GET_LENGTH(__pyx_t_3), 127 | __Pyx_PyUnicode_MAX_CHAR_VALUE(__pyx_t_3));
-      if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 113, __pyx_L1_error)
+      if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 118, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_13);
       __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
       __pyx_t_6 = 1;
@@ -5874,14 +6141,14 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
         __Pyx_XDECREF(__pyx_t_2); __pyx_t_2 = 0;
         __Pyx_DECREF(__pyx_t_13); __pyx_t_13 = 0;
         __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 113, __pyx_L1_error)
+        if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 118, __pyx_L1_error)
         __Pyx_GOTREF(__pyx_t_4);
       }
       __Pyx_Raise(__pyx_t_4, 0, 0, 0);
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-      __PYX_ERR(0, 113, __pyx_L1_error)
+      __PYX_ERR(0, 118, __pyx_L1_error)
 
-      /* "lightning_search/lightning_search.pyx":112
+      /* "lightning_search/lightning_search.pyx":117
  * 
  *         for query_col, query_value in query_map.items():
  *             if query_col not in self.query_col_map:             # <<<<<<<<<<<<<<
@@ -5890,7 +6157,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
     }
 
-    /* "lightning_search/lightning_search.pyx":115
+    /* "lightning_search/lightning_search.pyx":120
  *                 raise Warning(f"Query column '{query_col}' not indexed.")
  * 
  *             idx = self.query_col_map[query_col]             # <<<<<<<<<<<<<<
@@ -5899,32 +6166,32 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
     if (unlikely(__pyx_v_self->query_col_map == Py_None)) {
       PyErr_SetString(PyExc_TypeError, "'NoneType' object is not subscriptable");
-      __PYX_ERR(0, 115, __pyx_L1_error)
+      __PYX_ERR(0, 120, __pyx_L1_error)
     }
-    __pyx_t_4 = __Pyx_PyDict_GetItem(__pyx_v_self->query_col_map, __pyx_v_query_col); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 115, __pyx_L1_error)
+    __pyx_t_4 = __Pyx_PyDict_GetItem(__pyx_v_self->query_col_map, __pyx_v_query_col); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 120, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_4);
     __Pyx_XDECREF_SET(__pyx_v_idx, __pyx_t_4);
     __pyx_t_4 = 0;
 
-    /* "lightning_search/lightning_search.pyx":117
+    /* "lightning_search/lightning_search.pyx":122
  *             idx = self.query_col_map[query_col]
  * 
  *             search_col_idxs[idx] = idx             # <<<<<<<<<<<<<<
  *             q_copy = (query_value + '\0').encode('utf-8')
  *             queries[idx] = <uint8_t*>q_copy
 */
-    __pyx_t_14 = __Pyx_PyLong_As_uint32_t(__pyx_v_idx); if (unlikely((__pyx_t_14 == ((uint32_t)-1)) && PyErr_Occurred())) __PYX_ERR(0, 117, __pyx_L1_error)
-    __pyx_t_15 = __Pyx_PyIndex_AsSsize_t(__pyx_v_idx); if (unlikely((__pyx_t_15 == (Py_ssize_t)-1) && PyErr_Occurred())) __PYX_ERR(0, 117, __pyx_L1_error)
+    __pyx_t_14 = __Pyx_PyLong_As_uint32_t(__pyx_v_idx); if (unlikely((__pyx_t_14 == ((uint32_t)-1)) && PyErr_Occurred())) __PYX_ERR(0, 122, __pyx_L1_error)
+    __pyx_t_15 = __Pyx_PyIndex_AsSsize_t(__pyx_v_idx); if (unlikely((__pyx_t_15 == (Py_ssize_t)-1) && PyErr_Occurred())) __PYX_ERR(0, 122, __pyx_L1_error)
     (__pyx_v_search_col_idxs[__pyx_t_15]) = __pyx_t_14;
 
-    /* "lightning_search/lightning_search.pyx":118
+    /* "lightning_search/lightning_search.pyx":123
  * 
  *             search_col_idxs[idx] = idx
  *             q_copy = (query_value + '\0').encode('utf-8')             # <<<<<<<<<<<<<<
  *             queries[idx] = <uint8_t*>q_copy
  *             boost_factors_arr[idx] = boost_factors.get(query_col, 1.0)
 */
-    __pyx_t_13 = PyNumber_Add(__pyx_v_query_value, __pyx_mstate_global->__pyx_kp_u_); if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 118, __pyx_L1_error)
+    __pyx_t_13 = PyNumber_Add(__pyx_v_query_value, __pyx_mstate_global->__pyx_kp_u_); if (unlikely(!__pyx_t_13)) __PYX_ERR(0, 123, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_13);
     __pyx_t_5 = __pyx_t_13;
     __Pyx_INCREF(__pyx_t_5);
@@ -5934,24 +6201,24 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
       __pyx_t_4 = __Pyx_PyObject_FastCallMethod(__pyx_mstate_global->__pyx_n_u_encode, __pyx_callargs+__pyx_t_6, (2-__pyx_t_6) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
       __Pyx_DECREF(__pyx_t_13); __pyx_t_13 = 0;
-      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 118, __pyx_L1_error)
+      if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 123, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_4);
     }
     __Pyx_XDECREF_SET(__pyx_v_q_copy, __pyx_t_4);
     __pyx_t_4 = 0;
 
-    /* "lightning_search/lightning_search.pyx":119
+    /* "lightning_search/lightning_search.pyx":124
  *             search_col_idxs[idx] = idx
  *             q_copy = (query_value + '\0').encode('utf-8')
  *             queries[idx] = <uint8_t*>q_copy             # <<<<<<<<<<<<<<
  *             boost_factors_arr[idx] = boost_factors.get(query_col, 1.0)
  * 
 */
-    __pyx_t_16 = __Pyx_PyObject_AsWritableUString(__pyx_v_q_copy); if (unlikely((!__pyx_t_16) && PyErr_Occurred())) __PYX_ERR(0, 119, __pyx_L1_error)
-    __pyx_t_15 = __Pyx_PyIndex_AsSsize_t(__pyx_v_idx); if (unlikely((__pyx_t_15 == (Py_ssize_t)-1) && PyErr_Occurred())) __PYX_ERR(0, 119, __pyx_L1_error)
+    __pyx_t_16 = __Pyx_PyObject_AsWritableUString(__pyx_v_q_copy); if (unlikely((!__pyx_t_16) && PyErr_Occurred())) __PYX_ERR(0, 124, __pyx_L1_error)
+    __pyx_t_15 = __Pyx_PyIndex_AsSsize_t(__pyx_v_idx); if (unlikely((__pyx_t_15 == (Py_ssize_t)-1) && PyErr_Occurred())) __PYX_ERR(0, 124, __pyx_L1_error)
     (__pyx_v_queries[__pyx_t_15]) = ((uint8_t *)__pyx_t_16);
 
-    /* "lightning_search/lightning_search.pyx":120
+    /* "lightning_search/lightning_search.pyx":125
  *             q_copy = (query_value + '\0').encode('utf-8')
  *             queries[idx] = <uint8_t*>q_copy
  *             boost_factors_arr[idx] = boost_factors.get(query_col, 1.0)             # <<<<<<<<<<<<<<
@@ -5960,18 +6227,18 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
     if (unlikely(__pyx_v_boost_factors == Py_None)) {
       PyErr_Format(PyExc_AttributeError, "'NoneType' object has no attribute '%.30s'", "get");
-      __PYX_ERR(0, 120, __pyx_L1_error)
+      __PYX_ERR(0, 125, __pyx_L1_error)
     }
-    __pyx_t_4 = __Pyx_PyDict_GetItemDefault(__pyx_v_boost_factors, __pyx_v_query_col, __pyx_mstate_global->__pyx_float_1_0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 120, __pyx_L1_error)
+    __pyx_t_4 = __Pyx_PyDict_GetItemDefault(__pyx_v_boost_factors, __pyx_v_query_col, __pyx_mstate_global->__pyx_float_1_0); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 125, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_4);
-    __pyx_t_17 = __Pyx_PyFloat_AsFloat(__pyx_t_4); if (unlikely((__pyx_t_17 == (float)-1) && PyErr_Occurred())) __PYX_ERR(0, 120, __pyx_L1_error)
+    __pyx_t_17 = __Pyx_PyFloat_AsFloat(__pyx_t_4); if (unlikely((__pyx_t_17 == (float)-1) && PyErr_Occurred())) __PYX_ERR(0, 125, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-    __pyx_t_15 = __Pyx_PyIndex_AsSsize_t(__pyx_v_idx); if (unlikely((__pyx_t_15 == (Py_ssize_t)-1) && PyErr_Occurred())) __PYX_ERR(0, 120, __pyx_L1_error)
+    __pyx_t_15 = __Pyx_PyIndex_AsSsize_t(__pyx_v_idx); if (unlikely((__pyx_t_15 == (Py_ssize_t)-1) && PyErr_Occurred())) __PYX_ERR(0, 125, __pyx_L1_error)
     (__pyx_v_boost_factors_arr[__pyx_t_15]) = __pyx_t_17;
   }
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-  /* "lightning_search/lightning_search.pyx":122
+  /* "lightning_search/lightning_search.pyx":127
  *             boost_factors_arr[idx] = boost_factors.get(query_col, 1.0)
  * 
  *         with nogil:             # <<<<<<<<<<<<<<
@@ -5985,7 +6252,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
       __Pyx_FastGIL_Remember();
       /*try:*/ {
 
-        /* "lightning_search/lightning_search.pyx":123
+        /* "lightning_search/lightning_search.pyx":128
  * 
  *         with nogil:
  *             c_query(             # <<<<<<<<<<<<<<
@@ -5995,7 +6262,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
         c_query(__pyx_v_self->idx_ptr, __pyx_v_search_col_idxs, __pyx_v_queries, __pyx_v_boost_factors_arr, __pyx_v_num_query_cols, __pyx_v_k, (&__pyx_v_num_matched_records), (&__pyx_v_result_json_str_buf), (&__pyx_v_result_json_str_buf_len));
       }
 
-      /* "lightning_search/lightning_search.pyx":122
+      /* "lightning_search/lightning_search.pyx":127
  *             boost_factors_arr[idx] = boost_factors.get(query_col, 1.0)
  * 
  *         with nogil:             # <<<<<<<<<<<<<<
@@ -6012,7 +6279,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
       }
   }
 
-  /* "lightning_search/lightning_search.pyx":136
+  /* "lightning_search/lightning_search.pyx":141
  *             )
  * 
  *         if num_matched_records == 0:             # <<<<<<<<<<<<<<
@@ -6022,7 +6289,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
   __pyx_t_11 = (__pyx_v_num_matched_records == 0);
   if (__pyx_t_11) {
 
-    /* "lightning_search/lightning_search.pyx":137
+    /* "lightning_search/lightning_search.pyx":142
  * 
  *         if num_matched_records == 0:
  *             free(search_col_idxs)             # <<<<<<<<<<<<<<
@@ -6031,7 +6298,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
     free(__pyx_v_search_col_idxs);
 
-    /* "lightning_search/lightning_search.pyx":138
+    /* "lightning_search/lightning_search.pyx":143
  *         if num_matched_records == 0:
  *             free(search_col_idxs)
  *             free(queries)             # <<<<<<<<<<<<<<
@@ -6040,7 +6307,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
     free(__pyx_v_queries);
 
-    /* "lightning_search/lightning_search.pyx":139
+    /* "lightning_search/lightning_search.pyx":144
  *             free(search_col_idxs)
  *             free(queries)
  *             free(boost_factors_arr)             # <<<<<<<<<<<<<<
@@ -6049,7 +6316,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
     free(__pyx_v_boost_factors_arr);
 
-    /* "lightning_search/lightning_search.pyx":140
+    /* "lightning_search/lightning_search.pyx":145
  *             free(queries)
  *             free(boost_factors_arr)
  *             return []             # <<<<<<<<<<<<<<
@@ -6057,13 +6324,13 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
  *         if result_json_str_buf is NULL or result_json_str_buf_len == 0:
 */
     __Pyx_XDECREF(__pyx_r);
-    __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 140, __pyx_L1_error)
+    __pyx_t_1 = PyList_New(0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 145, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_1);
     __pyx_r = ((PyObject*)__pyx_t_1);
     __pyx_t_1 = 0;
     goto __pyx_L0;
 
-    /* "lightning_search/lightning_search.pyx":136
+    /* "lightning_search/lightning_search.pyx":141
  *             )
  * 
  *         if num_matched_records == 0:             # <<<<<<<<<<<<<<
@@ -6072,7 +6339,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   }
 
-  /* "lightning_search/lightning_search.pyx":142
+  /* "lightning_search/lightning_search.pyx":147
  *             return []
  * 
  *         if result_json_str_buf is NULL or result_json_str_buf_len == 0:             # <<<<<<<<<<<<<<
@@ -6090,7 +6357,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
   __pyx_L11_bool_binop_done:;
   if (unlikely(__pyx_t_11)) {
 
-    /* "lightning_search/lightning_search.pyx":143
+    /* "lightning_search/lightning_search.pyx":148
  * 
  *         if result_json_str_buf is NULL or result_json_str_buf_len == 0:
  *             free(search_col_idxs)             # <<<<<<<<<<<<<<
@@ -6099,7 +6366,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
     free(__pyx_v_search_col_idxs);
 
-    /* "lightning_search/lightning_search.pyx":144
+    /* "lightning_search/lightning_search.pyx":149
  *         if result_json_str_buf is NULL or result_json_str_buf_len == 0:
  *             free(search_col_idxs)
  *             free(queries)             # <<<<<<<<<<<<<<
@@ -6108,7 +6375,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
     free(__pyx_v_queries);
 
-    /* "lightning_search/lightning_search.pyx":145
+    /* "lightning_search/lightning_search.pyx":150
  *             free(search_col_idxs)
  *             free(queries)
  *             free(boost_factors_arr)             # <<<<<<<<<<<<<<
@@ -6117,7 +6384,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
     free(__pyx_v_boost_factors_arr);
 
-    /* "lightning_search/lightning_search.pyx":146
+    /* "lightning_search/lightning_search.pyx":151
  *             free(queries)
  *             free(boost_factors_arr)
  *             raise ValueError("Results are empty or malformed.")             # <<<<<<<<<<<<<<
@@ -6133,14 +6400,14 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
       __pyx_t_1 = __Pyx_PyObject_FastCall(__pyx_t_13, __pyx_callargs+__pyx_t_6, (2-__pyx_t_6) | (__pyx_t_6*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
       __Pyx_DECREF(__pyx_t_13); __pyx_t_13 = 0;
-      if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 146, __pyx_L1_error)
+      if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 151, __pyx_L1_error)
       __Pyx_GOTREF(__pyx_t_1);
     }
     __Pyx_Raise(__pyx_t_1, 0, 0, 0);
     __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-    __PYX_ERR(0, 146, __pyx_L1_error)
+    __PYX_ERR(0, 151, __pyx_L1_error)
 
-    /* "lightning_search/lightning_search.pyx":142
+    /* "lightning_search/lightning_search.pyx":147
  *             return []
  * 
  *         if result_json_str_buf is NULL or result_json_str_buf_len == 0:             # <<<<<<<<<<<<<<
@@ -6149,19 +6416,19 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   }
 
-  /* "lightning_search/lightning_search.pyx":148
+  /* "lightning_search/lightning_search.pyx":153
  *             raise ValueError("Results are empty or malformed.")
  * 
  *         cdef str result_json_str = PyUnicode_DecodeUTF8(             # <<<<<<<<<<<<<<
  *             <char*>result_json_str_buf,
  *             result_json_str_buf_len,
 */
-  __pyx_t_1 = PyUnicode_DecodeUTF8(((char *)__pyx_v_result_json_str_buf), __pyx_v_result_json_str_buf_len, NULL); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 148, __pyx_L1_error)
+  __pyx_t_1 = PyUnicode_DecodeUTF8(((char *)__pyx_v_result_json_str_buf), __pyx_v_result_json_str_buf_len, NULL); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 153, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_v_result_json_str = ((PyObject*)__pyx_t_1);
   __pyx_t_1 = 0;
 
-  /* "lightning_search/lightning_search.pyx":154
+  /* "lightning_search/lightning_search.pyx":159
  *         )
  * 
  *         results = json.loads(result_json_str)["results"]             # <<<<<<<<<<<<<<
@@ -6169,9 +6436,9 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
  *         ## TODO: Make members. Avoid repeated allocations.
 */
   __pyx_t_13 = NULL;
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_json); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 154, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_json); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 159, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_loads); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 154, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_4, __pyx_mstate_global->__pyx_n_u_loads); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 159, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_t_6 = 1;
@@ -6191,16 +6458,16 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
     __pyx_t_1 = __Pyx_PyObject_FastCall(__pyx_t_5, __pyx_callargs+__pyx_t_6, (2-__pyx_t_6) | (__pyx_t_6*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
     __Pyx_XDECREF(__pyx_t_13); __pyx_t_13 = 0;
     __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-    if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 154, __pyx_L1_error)
+    if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 159, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_1);
   }
-  __pyx_t_5 = __Pyx_PyObject_Dict_GetItem(__pyx_t_1, __pyx_mstate_global->__pyx_n_u_results); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 154, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_PyObject_Dict_GetItem(__pyx_t_1, __pyx_mstate_global->__pyx_n_u_results); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 159, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
   __pyx_v_results = __pyx_t_5;
   __pyx_t_5 = 0;
 
-  /* "lightning_search/lightning_search.pyx":157
+  /* "lightning_search/lightning_search.pyx":162
  * 
  *         ## TODO: Make members. Avoid repeated allocations.
  *         free(search_col_idxs)             # <<<<<<<<<<<<<<
@@ -6209,7 +6476,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   free(__pyx_v_search_col_idxs);
 
-  /* "lightning_search/lightning_search.pyx":158
+  /* "lightning_search/lightning_search.pyx":163
  *         ## TODO: Make members. Avoid repeated allocations.
  *         free(search_col_idxs)
  *         free(queries)             # <<<<<<<<<<<<<<
@@ -6218,7 +6485,7 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   free(__pyx_v_queries);
 
-  /* "lightning_search/lightning_search.pyx":159
+  /* "lightning_search/lightning_search.pyx":164
  *         free(search_col_idxs)
  *         free(queries)
  *         free(boost_factors_arr)             # <<<<<<<<<<<<<<
@@ -6227,20 +6494,18 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 */
   free(__pyx_v_boost_factors_arr);
 
-  /* "lightning_search/lightning_search.pyx":161
+  /* "lightning_search/lightning_search.pyx":166
  *         free(boost_factors_arr)
  * 
  *         return results             # <<<<<<<<<<<<<<
- * 
- *     cpdef void save(self):
 */
   __Pyx_XDECREF(__pyx_r);
-  if (!(likely(PyList_CheckExact(__pyx_v_results))||((__pyx_v_results) == Py_None) || __Pyx_RaiseUnexpectedTypeError("list", __pyx_v_results))) __PYX_ERR(0, 161, __pyx_L1_error)
+  if (!(likely(PyList_CheckExact(__pyx_v_results))||((__pyx_v_results) == Py_None) || __Pyx_RaiseUnexpectedTypeError("list", __pyx_v_results))) __PYX_ERR(0, 166, __pyx_L1_error)
   __Pyx_INCREF(__pyx_v_results);
   __pyx_r = ((PyObject*)__pyx_v_results);
   goto __pyx_L0;
 
-  /* "lightning_search/lightning_search.pyx":89
+  /* "lightning_search/lightning_search.pyx":94
  *         self.num_cols = get_num_cols(self.idx_ptr)
  * 
  *     cpdef list query(             # <<<<<<<<<<<<<<
@@ -6271,15 +6536,15 @@ static PyObject *__pyx_f_16lightning_search_16lightning_search_5Index_query(stru
 }
 
 /* Python wrapper */
-static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_7query(PyObject *__pyx_v_self, 
+static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_9query(PyObject *__pyx_v_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
 PyObject *__pyx_args, PyObject *__pyx_kwds
 #endif
 ); /*proto*/
-static PyMethodDef __pyx_mdef_16lightning_search_16lightning_search_5Index_7query = {"query", (PyCFunction)(void(*)(void))(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_16lightning_search_16lightning_search_5Index_7query, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_7query(PyObject *__pyx_v_self, 
+static PyMethodDef __pyx_mdef_16lightning_search_16lightning_search_5Index_9query = {"query", (PyCFunction)(void(*)(void))(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_16lightning_search_16lightning_search_5Index_9query, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_9query(PyObject *__pyx_v_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
@@ -6311,46 +6576,46 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_query_map,&__pyx_mstate_global->__pyx_n_u_boost_factors,&__pyx_mstate_global->__pyx_n_u_k,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 89, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 94, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case  3:
         values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 89, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 94, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  2:
         values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 89, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 94, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 89, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 94, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "query", 0) < 0) __PYX_ERR(0, 89, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "query", 0) < 0) __PYX_ERR(0, 94, __pyx_L3_error)
       for (Py_ssize_t i = __pyx_nargs; i < 3; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("query", 1, 3, 3, i); __PYX_ERR(0, 89, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("query", 1, 3, 3, i); __PYX_ERR(0, 94, __pyx_L3_error) }
       }
     } else if (unlikely(__pyx_nargs != 3)) {
       goto __pyx_L5_argtuple_error;
     } else {
       values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 89, __pyx_L3_error)
+      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 94, __pyx_L3_error)
       values[1] = __Pyx_ArgRef_FASTCALL(__pyx_args, 1);
-      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 89, __pyx_L3_error)
+      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[1])) __PYX_ERR(0, 94, __pyx_L3_error)
       values[2] = __Pyx_ArgRef_FASTCALL(__pyx_args, 2);
-      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 89, __pyx_L3_error)
+      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[2])) __PYX_ERR(0, 94, __pyx_L3_error)
     }
     __pyx_v_query_map = ((PyObject*)values[0]);
     __pyx_v_boost_factors = ((PyObject*)values[1]);
-    __pyx_v_k = __Pyx_PyLong_As_uint32_t(values[2]); if (unlikely((__pyx_v_k == ((uint32_t)-1)) && PyErr_Occurred())) __PYX_ERR(0, 93, __pyx_L3_error)
+    __pyx_v_k = __Pyx_PyLong_As_uint32_t(values[2]); if (unlikely((__pyx_v_k == ((uint32_t)-1)) && PyErr_Occurred())) __PYX_ERR(0, 98, __pyx_L3_error)
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("query", 1, 3, 3, __pyx_nargs); __PYX_ERR(0, 89, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("query", 1, 3, 3, __pyx_nargs); __PYX_ERR(0, 94, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -6361,9 +6626,9 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_query_map), (&PyDict_Type), 1, "query_map", 1))) __PYX_ERR(0, 91, __pyx_L1_error)
-  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_boost_factors), (&PyDict_Type), 1, "boost_factors", 1))) __PYX_ERR(0, 92, __pyx_L1_error)
-  __pyx_r = __pyx_pf_16lightning_search_16lightning_search_5Index_6query(((struct __pyx_obj_16lightning_search_16lightning_search_Index *)__pyx_v_self), __pyx_v_query_map, __pyx_v_boost_factors, __pyx_v_k);
+  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_query_map), (&PyDict_Type), 1, "query_map", 1))) __PYX_ERR(0, 96, __pyx_L1_error)
+  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_boost_factors), (&PyDict_Type), 1, "boost_factors", 1))) __PYX_ERR(0, 97, __pyx_L1_error)
+  __pyx_r = __pyx_pf_16lightning_search_16lightning_search_5Index_8query(((struct __pyx_obj_16lightning_search_16lightning_search_Index *)__pyx_v_self), __pyx_v_query_map, __pyx_v_boost_factors, __pyx_v_k);
 
   /* function exit code */
   goto __pyx_L0;
@@ -6382,7 +6647,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_6query(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_query_map, PyObject *__pyx_v_boost_factors, uint32_t __pyx_v_k) {
+static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_8query(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, PyObject *__pyx_v_query_map, PyObject *__pyx_v_boost_factors, uint32_t __pyx_v_k) {
   PyObject *__pyx_r = NULL;
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
@@ -6391,7 +6656,7 @@ static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_6query(st
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("query", 0);
   __Pyx_XDECREF(__pyx_r);
-  __pyx_t_1 = __pyx_f_16lightning_search_16lightning_search_5Index_query(__pyx_v_self, __pyx_v_query_map, __pyx_v_boost_factors, __pyx_v_k, 1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 89, __pyx_L1_error)
+  __pyx_t_1 = __pyx_f_16lightning_search_16lightning_search_5Index_query(__pyx_v_self, __pyx_v_query_map, __pyx_v_boost_factors, __pyx_v_k, 1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 94, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
   __pyx_t_1 = 0;
@@ -6401,184 +6666,6 @@ static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_6query(st
   __pyx_L1_error:;
   __Pyx_XDECREF(__pyx_t_1);
   __Pyx_AddTraceback("lightning_search.lightning_search.Index.query", __pyx_clineno, __pyx_lineno, __pyx_filename);
-  __pyx_r = NULL;
-  __pyx_L0:;
-  __Pyx_XGIVEREF(__pyx_r);
-  __Pyx_RefNannyFinishContext();
-  return __pyx_r;
-}
-
-/* "lightning_search/lightning_search.pyx":163
- *         return results
- * 
- *     cpdef void save(self):             # <<<<<<<<<<<<<<
- *         pass
-*/
-
-static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_9save(PyObject *__pyx_v_self, 
-#if CYTHON_METH_FASTCALL
-PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
-#else
-PyObject *__pyx_args, PyObject *__pyx_kwds
-#endif
-); /*proto*/
-static void __pyx_f_16lightning_search_16lightning_search_5Index_save(CYTHON_UNUSED struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self, int __pyx_skip_dispatch) {
-  __Pyx_RefNannyDeclarations
-  PyObject *__pyx_t_1 = NULL;
-  PyObject *__pyx_t_2 = NULL;
-  PyObject *__pyx_t_3 = NULL;
-  PyObject *__pyx_t_4 = NULL;
-  size_t __pyx_t_5;
-  int __pyx_lineno = 0;
-  const char *__pyx_filename = NULL;
-  int __pyx_clineno = 0;
-  __Pyx_RefNannySetupContext("save", 0);
-  /* Check if called by wrapper */
-  if (unlikely(__pyx_skip_dispatch)) ;
-  /* Check if overridden in Python */
-  else if (
-  #if !CYTHON_USE_TYPE_SLOTS
-  unlikely(Py_TYPE(((PyObject *)__pyx_v_self)) != __pyx_mstate_global->__pyx_ptype_16lightning_search_16lightning_search_Index &&
-  __Pyx_PyType_HasFeature(Py_TYPE(((PyObject *)__pyx_v_self)), Py_TPFLAGS_HAVE_GC))
-  #else
-  unlikely(Py_TYPE(((PyObject *)__pyx_v_self))->tp_dictoffset != 0 || __Pyx_PyType_HasFeature(Py_TYPE(((PyObject *)__pyx_v_self)), (Py_TPFLAGS_IS_ABSTRACT | Py_TPFLAGS_HEAPTYPE)))
-  #endif
-  ) {
-    #if CYTHON_USE_DICT_VERSIONS && CYTHON_USE_PYTYPE_LOOKUP && CYTHON_USE_TYPE_SLOTS
-    static PY_UINT64_T __pyx_tp_dict_version = __PYX_DICT_VERSION_INIT, __pyx_obj_dict_version = __PYX_DICT_VERSION_INIT;
-    if (unlikely(!__Pyx_object_dict_version_matches(((PyObject *)__pyx_v_self), __pyx_tp_dict_version, __pyx_obj_dict_version))) {
-      PY_UINT64_T __pyx_typedict_guard = __Pyx_get_tp_dict_version(((PyObject *)__pyx_v_self));
-      #endif
-      __pyx_t_1 = __Pyx_PyObject_GetAttrStr(((PyObject *)__pyx_v_self), __pyx_mstate_global->__pyx_n_u_save); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 163, __pyx_L1_error)
-      __Pyx_GOTREF(__pyx_t_1);
-      if (!__Pyx_IsSameCFunction(__pyx_t_1, (void(*)(void)) __pyx_pw_16lightning_search_16lightning_search_5Index_9save)) {
-        __pyx_t_3 = NULL;
-        __Pyx_INCREF(__pyx_t_1);
-        __pyx_t_4 = __pyx_t_1; 
-        __pyx_t_5 = 1;
-        #if CYTHON_UNPACK_METHODS
-        if (unlikely(PyMethod_Check(__pyx_t_4))) {
-          __pyx_t_3 = PyMethod_GET_SELF(__pyx_t_4);
-          assert(__pyx_t_3);
-          PyObject* __pyx__function = PyMethod_GET_FUNCTION(__pyx_t_4);
-          __Pyx_INCREF(__pyx_t_3);
-          __Pyx_INCREF(__pyx__function);
-          __Pyx_DECREF_SET(__pyx_t_4, __pyx__function);
-          __pyx_t_5 = 0;
-        }
-        #endif
-        {
-          PyObject *__pyx_callargs[2] = {__pyx_t_3, NULL};
-          __pyx_t_2 = __Pyx_PyObject_FastCall(__pyx_t_4, __pyx_callargs+__pyx_t_5, (1-__pyx_t_5) | (__pyx_t_5*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
-          __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
-          __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-          if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 163, __pyx_L1_error)
-          __Pyx_GOTREF(__pyx_t_2);
-        }
-        __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-        __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-        goto __pyx_L0;
-      }
-      #if CYTHON_USE_DICT_VERSIONS && CYTHON_USE_PYTYPE_LOOKUP && CYTHON_USE_TYPE_SLOTS
-      __pyx_tp_dict_version = __Pyx_get_tp_dict_version(((PyObject *)__pyx_v_self));
-      __pyx_obj_dict_version = __Pyx_get_object_dict_version(((PyObject *)__pyx_v_self));
-      if (unlikely(__pyx_typedict_guard != __pyx_tp_dict_version)) {
-        __pyx_tp_dict_version = __pyx_obj_dict_version = __PYX_DICT_VERSION_INIT;
-      }
-      #endif
-      __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-      #if CYTHON_USE_DICT_VERSIONS && CYTHON_USE_PYTYPE_LOOKUP && CYTHON_USE_TYPE_SLOTS
-    }
-    #endif
-  }
-
-  /* "lightning_search/lightning_search.pyx":164
- * 
- *     cpdef void save(self):
- *         pass             # <<<<<<<<<<<<<<
-*/
-
-  /* function exit code */
-  goto __pyx_L0;
-  __pyx_L1_error:;
-  __Pyx_XDECREF(__pyx_t_1);
-  __Pyx_XDECREF(__pyx_t_2);
-  __Pyx_XDECREF(__pyx_t_3);
-  __Pyx_XDECREF(__pyx_t_4);
-  __Pyx_AddTraceback("lightning_search.lightning_search.Index.save", __pyx_clineno, __pyx_lineno, __pyx_filename);
-  __pyx_L0:;
-  __Pyx_RefNannyFinishContext();
-}
-
-/* "lightning_search/lightning_search.pyx":163
- *         return results
- * 
- *     cpdef void save(self):             # <<<<<<<<<<<<<<
- *         pass
-*/
-
-/* Python wrapper */
-static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_9save(PyObject *__pyx_v_self, 
-#if CYTHON_METH_FASTCALL
-PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
-#else
-PyObject *__pyx_args, PyObject *__pyx_kwds
-#endif
-); /*proto*/
-static PyMethodDef __pyx_mdef_16lightning_search_16lightning_search_5Index_9save = {"save", (PyCFunction)(void(*)(void))(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_16lightning_search_16lightning_search_5Index_9save, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_16lightning_search_16lightning_search_5Index_9save(PyObject *__pyx_v_self, 
-#if CYTHON_METH_FASTCALL
-PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
-#else
-PyObject *__pyx_args, PyObject *__pyx_kwds
-#endif
-) {
-  #if !CYTHON_METH_FASTCALL
-  CYTHON_UNUSED Py_ssize_t __pyx_nargs;
-  #endif
-  CYTHON_UNUSED PyObject *const *__pyx_kwvalues;
-  PyObject *__pyx_r = 0;
-  __Pyx_RefNannyDeclarations
-  __Pyx_RefNannySetupContext("save (wrapper)", 0);
-  #if !CYTHON_METH_FASTCALL
-  #if CYTHON_ASSUME_SAFE_SIZE
-  __pyx_nargs = PyTuple_GET_SIZE(__pyx_args);
-  #else
-  __pyx_nargs = PyTuple_Size(__pyx_args); if (unlikely(__pyx_nargs < 0)) return NULL;
-  #endif
-  #endif
-  __pyx_kwvalues = __Pyx_KwValues_FASTCALL(__pyx_args, __pyx_nargs);
-  if (unlikely(__pyx_nargs > 0)) { __Pyx_RaiseArgtupleInvalid("save", 1, 0, 0, __pyx_nargs); return NULL; }
-  const Py_ssize_t __pyx_kwds_len = unlikely(__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-  if (unlikely(__pyx_kwds_len < 0)) return NULL;
-  if (unlikely(__pyx_kwds_len > 0)) {__Pyx_RejectKeywords("save", __pyx_kwds); return NULL;}
-  __pyx_r = __pyx_pf_16lightning_search_16lightning_search_5Index_8save(((struct __pyx_obj_16lightning_search_16lightning_search_Index *)__pyx_v_self));
-
-  /* function exit code */
-  __Pyx_RefNannyFinishContext();
-  return __pyx_r;
-}
-
-static PyObject *__pyx_pf_16lightning_search_16lightning_search_5Index_8save(struct __pyx_obj_16lightning_search_16lightning_search_Index *__pyx_v_self) {
-  PyObject *__pyx_r = NULL;
-  __Pyx_RefNannyDeclarations
-  PyObject *__pyx_t_1 = NULL;
-  int __pyx_lineno = 0;
-  const char *__pyx_filename = NULL;
-  int __pyx_clineno = 0;
-  __Pyx_RefNannySetupContext("save", 0);
-  __Pyx_XDECREF(__pyx_r);
-  __pyx_f_16lightning_search_16lightning_search_5Index_save(__pyx_v_self, 1); if (unlikely(PyErr_Occurred())) __PYX_ERR(0, 163, __pyx_L1_error)
-  __pyx_t_1 = __Pyx_void_to_None(NULL); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 163, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_1);
-  __pyx_r = __pyx_t_1;
-  __pyx_t_1 = 0;
-  goto __pyx_L0;
-
-  /* function exit code */
-  __pyx_L1_error:;
-  __Pyx_XDECREF(__pyx_t_1);
-  __Pyx_AddTraceback("lightning_search.lightning_search.Index.save", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   __pyx_L0:;
   __Pyx_XGIVEREF(__pyx_r);
@@ -6817,7 +6904,7 @@ static PyObject *__pyx_tp_new_16lightning_search_16lightning_search_Index(PyType
 static void __pyx_tp_finalize_16lightning_search_16lightning_search_Index(PyObject *o) {
   PyObject *etype, *eval, *etb;
   PyErr_Fetch(&etype, &eval, &etb);
-  __pyx_pw_16lightning_search_16lightning_search_5Index_3__del__(o);
+  __pyx_pw_16lightning_search_16lightning_search_5Index_5__del__(o);
   PyErr_Restore(etype, eval, etb);
 }
 #endif
@@ -7024,10 +7111,10 @@ static int __Pyx_modinit_type_init_code(__pyx_mstatetype *__pyx_mstate) {
   __Pyx_RefNannySetupContext("__Pyx_modinit_type_init_code", 0);
   /*--- Type init code ---*/
   __pyx_vtabptr_16lightning_search_16lightning_search_Index = &__pyx_vtable_16lightning_search_16lightning_search_Index;
+  __pyx_vtable_16lightning_search_16lightning_search_Index.load = (void (*)(struct __pyx_obj_16lightning_search_16lightning_search_Index *, PyObject *, int __pyx_skip_dispatch))__pyx_f_16lightning_search_16lightning_search_5Index_load;
   __pyx_vtable_16lightning_search_16lightning_search_Index.index_file = (void (*)(struct __pyx_obj_16lightning_search_16lightning_search_Index *, PyObject *, PyObject *, int __pyx_skip_dispatch))__pyx_f_16lightning_search_16lightning_search_5Index_index_file;
   __pyx_vtable_16lightning_search_16lightning_search_Index.get_num_cols = (void (*)(struct __pyx_obj_16lightning_search_16lightning_search_Index *))__pyx_f_16lightning_search_16lightning_search_5Index_get_num_cols;
   __pyx_vtable_16lightning_search_16lightning_search_Index.query = (PyObject *(*)(struct __pyx_obj_16lightning_search_16lightning_search_Index *, PyObject *, PyObject *, uint32_t, int __pyx_skip_dispatch))__pyx_f_16lightning_search_16lightning_search_5Index_query;
-  __pyx_vtable_16lightning_search_16lightning_search_Index.save = (void (*)(struct __pyx_obj_16lightning_search_16lightning_search_Index *, int __pyx_skip_dispatch))__pyx_f_16lightning_search_16lightning_search_5Index_save;
   #if CYTHON_USE_TYPE_SPECS
   __pyx_mstate->__pyx_ptype_16lightning_search_16lightning_search_Index = (PyTypeObject *) __Pyx_PyType_FromModuleAndSpec(__pyx_m, &__pyx_type_16lightning_search_16lightning_search_Index_spec, NULL); if (unlikely(!__pyx_mstate->__pyx_ptype_16lightning_search_16lightning_search_Index)) __PYX_ERR(0, 45, __pyx_L1_error)
   if (__Pyx_fix_up_extension_type_from_spec(&__pyx_type_16lightning_search_16lightning_search_Index_spec, __pyx_mstate->__pyx_ptype_16lightning_search_16lightning_search_Index) < 0) __PYX_ERR(0, 45, __pyx_L1_error)
@@ -7605,39 +7692,40 @@ __Pyx_RefNannySetupContext("PyInit_lightning_search", 0);
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "lightning_search/lightning_search.pyx":60
+  /* "lightning_search/lightning_search.pyx":55
+ *         self.num_cols = 0
+ * 
+ *     cpdef void load(self, str dir_name):             # <<<<<<<<<<<<<<
+ *         dname = (dir_name + '\0').encode('utf-8')
+ *         cdef uint8_t* c_dirname = <uint8_t*>dname
+*/
+  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_16lightning_search_16lightning_search_5Index_3load, __Pyx_CYFUNCTION_CCLASS, __pyx_mstate_global->__pyx_n_u_Index_load, NULL, __pyx_mstate_global->__pyx_n_u_lightning_search_lightning_searc, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[0])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 55, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_2);
+  if (__Pyx_SetItemOnTypeDict(__pyx_mstate_global->__pyx_ptype_16lightning_search_16lightning_search_Index, __pyx_mstate_global->__pyx_n_u_load, __pyx_t_2) < 0) __PYX_ERR(0, 55, __pyx_L1_error)
+  __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
+
+  /* "lightning_search/lightning_search.pyx":65
  *             self.idx_ptr = NULL
  * 
  *     cpdef void index_file(self, str filename, list query_cols):             # <<<<<<<<<<<<<<
  *         fname = (filename + '\0').encode('utf-8')
  * 
 */
-  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_16lightning_search_16lightning_search_5Index_5index_file, __Pyx_CYFUNCTION_CCLASS, __pyx_mstate_global->__pyx_n_u_Index_index_file, NULL, __pyx_mstate_global->__pyx_n_u_lightning_search_lightning_searc, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[0])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 60, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_16lightning_search_16lightning_search_5Index_7index_file, __Pyx_CYFUNCTION_CCLASS, __pyx_mstate_global->__pyx_n_u_Index_index_file, NULL, __pyx_mstate_global->__pyx_n_u_lightning_search_lightning_searc, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[1])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 65, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  if (__Pyx_SetItemOnTypeDict(__pyx_mstate_global->__pyx_ptype_16lightning_search_16lightning_search_Index, __pyx_mstate_global->__pyx_n_u_index_file, __pyx_t_2) < 0) __PYX_ERR(0, 60, __pyx_L1_error)
+  if (__Pyx_SetItemOnTypeDict(__pyx_mstate_global->__pyx_ptype_16lightning_search_16lightning_search_Index, __pyx_mstate_global->__pyx_n_u_index_file, __pyx_t_2) < 0) __PYX_ERR(0, 65, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "lightning_search/lightning_search.pyx":89
+  /* "lightning_search/lightning_search.pyx":94
  *         self.num_cols = get_num_cols(self.idx_ptr)
  * 
  *     cpdef list query(             # <<<<<<<<<<<<<<
  *             self,
  *             dict query_map,
 */
-  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_16lightning_search_16lightning_search_5Index_7query, __Pyx_CYFUNCTION_CCLASS, __pyx_mstate_global->__pyx_n_u_Index_query, NULL, __pyx_mstate_global->__pyx_n_u_lightning_search_lightning_searc, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[1])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 89, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_16lightning_search_16lightning_search_5Index_9query, __Pyx_CYFUNCTION_CCLASS, __pyx_mstate_global->__pyx_n_u_Index_query, NULL, __pyx_mstate_global->__pyx_n_u_lightning_search_lightning_searc, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[2])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 94, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  if (__Pyx_SetItemOnTypeDict(__pyx_mstate_global->__pyx_ptype_16lightning_search_16lightning_search_Index, __pyx_mstate_global->__pyx_n_u_query, __pyx_t_2) < 0) __PYX_ERR(0, 89, __pyx_L1_error)
-  __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-
-  /* "lightning_search/lightning_search.pyx":163
- *         return results
- * 
- *     cpdef void save(self):             # <<<<<<<<<<<<<<
- *         pass
-*/
-  __pyx_t_2 = __Pyx_CyFunction_New(&__pyx_mdef_16lightning_search_16lightning_search_5Index_9save, __Pyx_CYFUNCTION_CCLASS, __pyx_mstate_global->__pyx_n_u_Index_save, NULL, __pyx_mstate_global->__pyx_n_u_lightning_search_lightning_searc, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[2])); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 163, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_2);
-  if (__Pyx_SetItemOnTypeDict(__pyx_mstate_global->__pyx_ptype_16lightning_search_16lightning_search_Index, __pyx_mstate_global->__pyx_n_u_save, __pyx_t_2) < 0) __PYX_ERR(0, 163, __pyx_L1_error)
+  if (__Pyx_SetItemOnTypeDict(__pyx_mstate_global->__pyx_ptype_16lightning_search_16lightning_search_Index, __pyx_mstate_global->__pyx_n_u_query, __pyx_t_2) < 0) __PYX_ERR(0, 94, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
   /* "(tree fragment)":1
@@ -7736,8 +7824,8 @@ static const __Pyx_StringTabEntry __pyx_string_tab[] = {
   {__pyx_k_Index___reduce_cython, sizeof(__pyx_k_Index___reduce_cython), 0, 1, 1}, /* PyObject cname: __pyx_n_u_Index___reduce_cython */
   {__pyx_k_Index___setstate_cython, sizeof(__pyx_k_Index___setstate_cython), 0, 1, 1}, /* PyObject cname: __pyx_n_u_Index___setstate_cython */
   {__pyx_k_Index_index_file, sizeof(__pyx_k_Index_index_file), 0, 1, 1}, /* PyObject cname: __pyx_n_u_Index_index_file */
+  {__pyx_k_Index_load, sizeof(__pyx_k_Index_load), 0, 1, 1}, /* PyObject cname: __pyx_n_u_Index_load */
   {__pyx_k_Index_query, sizeof(__pyx_k_Index_query), 0, 1, 1}, /* PyObject cname: __pyx_n_u_Index_query */
-  {__pyx_k_Index_save, sizeof(__pyx_k_Index_save), 0, 1, 1}, /* PyObject cname: __pyx_n_u_Index_save */
   {__pyx_k_List, sizeof(__pyx_k_List), 0, 1, 1}, /* PyObject cname: __pyx_n_u_List */
   {__pyx_k_Note_that_Cython_is_deliberately, sizeof(__pyx_k_Note_that_Cython_is_deliberately), 0, 1, 0}, /* PyObject cname: __pyx_kp_u_Note_that_Cython_is_deliberately */
   {__pyx_k_Query_column, sizeof(__pyx_k_Query_column), 0, 1, 0}, /* PyObject cname: __pyx_kp_u_Query_column */
@@ -7751,6 +7839,7 @@ static const __Pyx_StringTabEntry __pyx_string_tab[] = {
   {__pyx_k_asyncio_coroutines, sizeof(__pyx_k_asyncio_coroutines), 0, 1, 1}, /* PyObject cname: __pyx_n_u_asyncio_coroutines */
   {__pyx_k_boost_factors, sizeof(__pyx_k_boost_factors), 0, 1, 1}, /* PyObject cname: __pyx_n_u_boost_factors */
   {__pyx_k_cline_in_traceback, sizeof(__pyx_k_cline_in_traceback), 0, 1, 1}, /* PyObject cname: __pyx_n_u_cline_in_traceback */
+  {__pyx_k_dir_name, sizeof(__pyx_k_dir_name), 0, 1, 1}, /* PyObject cname: __pyx_n_u_dir_name */
   {__pyx_k_disable, sizeof(__pyx_k_disable), 0, 1, 0}, /* PyObject cname: __pyx_kp_u_disable */
   {__pyx_k_enable, sizeof(__pyx_k_enable), 0, 1, 0}, /* PyObject cname: __pyx_kp_u_enable */
   {__pyx_k_encode, sizeof(__pyx_k_encode), 0, 1, 1}, /* PyObject cname: __pyx_n_u_encode */
@@ -7768,6 +7857,7 @@ static const __Pyx_StringTabEntry __pyx_string_tab[] = {
   {__pyx_k_k, sizeof(__pyx_k_k), 0, 1, 1}, /* PyObject cname: __pyx_n_u_k */
   {__pyx_k_lightning_search_lightning_searc, sizeof(__pyx_k_lightning_search_lightning_searc), 0, 1, 1}, /* PyObject cname: __pyx_n_u_lightning_search_lightning_searc */
   {__pyx_k_lightning_search_lightning_searc_2, sizeof(__pyx_k_lightning_search_lightning_searc_2), 0, 1, 0}, /* PyObject cname: __pyx_kp_u_lightning_search_lightning_searc_2 */
+  {__pyx_k_load, sizeof(__pyx_k_load), 0, 1, 1}, /* PyObject cname: __pyx_n_u_load */
   {__pyx_k_loads, sizeof(__pyx_k_loads), 0, 1, 1}, /* PyObject cname: __pyx_n_u_loads */
   {__pyx_k_main, sizeof(__pyx_k_main), 0, 1, 1}, /* PyObject cname: __pyx_n_u_main */
   {__pyx_k_module, sizeof(__pyx_k_module), 0, 1, 1}, /* PyObject cname: __pyx_n_u_module */
@@ -7791,7 +7881,6 @@ static const __Pyx_StringTabEntry __pyx_string_tab[] = {
   {__pyx_k_reduce_cython, sizeof(__pyx_k_reduce_cython), 0, 1, 1}, /* PyObject cname: __pyx_n_u_reduce_cython */
   {__pyx_k_reduce_ex, sizeof(__pyx_k_reduce_ex), 0, 1, 1}, /* PyObject cname: __pyx_n_u_reduce_ex */
   {__pyx_k_results, sizeof(__pyx_k_results), 0, 1, 1}, /* PyObject cname: __pyx_n_u_results */
-  {__pyx_k_save, sizeof(__pyx_k_save), 0, 1, 1}, /* PyObject cname: __pyx_n_u_save */
   {__pyx_k_self, sizeof(__pyx_k_self), 0, 1, 1}, /* PyObject cname: __pyx_n_u_self */
   {__pyx_k_self_idx_ptr_cannot_be_converted, sizeof(__pyx_k_self_idx_ptr_cannot_be_converted), 0, 1, 0}, /* PyObject cname: __pyx_kp_u_self_idx_ptr_cannot_be_converted */
   {__pyx_k_set_name, sizeof(__pyx_k_set_name), 0, 1, 1}, /* PyObject cname: __pyx_n_u_set_name */
@@ -7812,9 +7901,9 @@ static int __Pyx_InitStrings(__Pyx_StringTabEntry const *t, PyObject **target, c
 
 static int __Pyx_InitCachedBuiltins(__pyx_mstatetype *__pyx_mstate) {
   CYTHON_UNUSED_VAR(__pyx_mstate);
-  __pyx_builtin_range = __Pyx_GetBuiltinName(__pyx_mstate->__pyx_n_u_range); if (!__pyx_builtin_range) __PYX_ERR(0, 73, __pyx_L1_error)
-  __pyx_builtin_Warning = __Pyx_GetBuiltinName(__pyx_mstate->__pyx_n_u_Warning); if (!__pyx_builtin_Warning) __PYX_ERR(0, 113, __pyx_L1_error)
-  __pyx_builtin_ValueError = __Pyx_GetBuiltinName(__pyx_mstate->__pyx_n_u_ValueError); if (!__pyx_builtin_ValueError) __PYX_ERR(0, 146, __pyx_L1_error)
+  __pyx_builtin_range = __Pyx_GetBuiltinName(__pyx_mstate->__pyx_n_u_range); if (!__pyx_builtin_range) __PYX_ERR(0, 78, __pyx_L1_error)
+  __pyx_builtin_Warning = __Pyx_GetBuiltinName(__pyx_mstate->__pyx_n_u_Warning); if (!__pyx_builtin_Warning) __PYX_ERR(0, 118, __pyx_L1_error)
+  __pyx_builtin_ValueError = __Pyx_GetBuiltinName(__pyx_mstate->__pyx_n_u_ValueError); if (!__pyx_builtin_ValueError) __PYX_ERR(0, 151, __pyx_L1_error)
   __pyx_builtin_TypeError = __Pyx_GetBuiltinName(__pyx_mstate->__pyx_n_u_TypeError); if (!__pyx_builtin_TypeError) __PYX_ERR(1, 2, __pyx_L1_error)
   __pyx_builtin_ImportError = __Pyx_GetBuiltinName(__pyx_mstate->__pyx_n_u_ImportError); if (!__pyx_builtin_ImportError) __PYX_ERR(2, 1010, __pyx_L1_error)
   return 0;
@@ -7852,7 +7941,7 @@ static int __Pyx_InitConstants(__pyx_mstatetype *__pyx_mstate) {
             unsigned int num_kwonly_args : 1;
             unsigned int nlocals : 3;
             unsigned int flags : 10;
-            unsigned int first_line : 8;
+            unsigned int first_line : 7;
             unsigned int line_table_length : 13;
         } __Pyx_PyCode_New_function_description;
 /* NewCodeObj.proto */
@@ -7870,19 +7959,19 @@ static int __Pyx_CreateCodeObjects(__pyx_mstatetype *__pyx_mstate) {
   PyObject* tuple_dedup_map = PyDict_New();
   if (unlikely(!tuple_dedup_map)) return -1;
   {
-    const __Pyx_PyCode_New_function_description descr = {3, 0, 0, 3, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 60, 167};
+    const __Pyx_PyCode_New_function_description descr = {2, 0, 0, 2, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 55, 35};
+    PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_self, __pyx_mstate->__pyx_n_u_dir_name};
+    __pyx_mstate_global->__pyx_codeobj_tab[0] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_lightning_search_lightning_searc_2, __pyx_mstate->__pyx_n_u_load, __pyx_k_A_E_A_AT_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[0])) goto bad;
+  }
+  {
+    const __Pyx_PyCode_New_function_description descr = {3, 0, 0, 3, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 65, 167};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_self, __pyx_mstate->__pyx_n_u_filename, __pyx_mstate->__pyx_n_u_query_cols};
-    __pyx_mstate_global->__pyx_codeobj_tab[0] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_lightning_search_lightning_searc_2, __pyx_mstate->__pyx_n_u_index_file, __pyx_k_A_E_s_1_Q_k_q_r_Qj_T_WE_Rz_RuG1I, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[0])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[1] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_lightning_search_lightning_searc_2, __pyx_mstate->__pyx_n_u_index_file, __pyx_k_A_E_s_1_Q_k_q_r_Qj_T_WE_Rz_RuG1I, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[1])) goto bad;
   }
   {
-    const __Pyx_PyCode_New_function_description descr = {4, 0, 0, 4, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 89, 374};
+    const __Pyx_PyCode_New_function_description descr = {4, 0, 0, 4, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 94, 374};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_self, __pyx_mstate->__pyx_n_u_query_map, __pyx_mstate->__pyx_n_u_boost_factors, __pyx_mstate->__pyx_n_u_k};
-    __pyx_mstate_global->__pyx_codeobj_tab[1] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_lightning_search_lightning_searc_2, __pyx_mstate->__pyx_n_u_query, __pyx_k_A_s_1_F_r_F_r_a_r_A_0_A_K_ivQ_z, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[1])) goto bad;
-  }
-  {
-    const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 1, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 163, 2};
-    PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_self};
-    __pyx_mstate_global->__pyx_codeobj_tab[2] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_lightning_search_lightning_searc_2, __pyx_mstate->__pyx_n_u_save, __pyx_k_A, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[2])) goto bad;
+    __pyx_mstate_global->__pyx_codeobj_tab[2] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_lightning_search_lightning_searc_2, __pyx_mstate->__pyx_n_u_query, __pyx_k_A_s_1_F_r_F_r_a_r_A_0_A_K_ivQ_z, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[2])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 1, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1, 9};
@@ -8958,112 +9047,6 @@ static CYTHON_INLINE int __Pyx_object_dict_version_matches(PyObject* obj, PY_UIN
 }
 #endif
 
-/* GetItemInt */
-static PyObject *__Pyx_GetItemInt_Generic(PyObject *o, PyObject* j) {
-    PyObject *r;
-    if (unlikely(!j)) return NULL;
-    r = PyObject_GetItem(o, j);
-    Py_DECREF(j);
-    return r;
-}
-static CYTHON_INLINE PyObject *__Pyx_GetItemInt_List_Fast(PyObject *o, Py_ssize_t i,
-                                                              CYTHON_NCP_UNUSED int wraparound,
-                                                              CYTHON_NCP_UNUSED int boundscheck) {
-#if CYTHON_ASSUME_SAFE_MACROS && CYTHON_ASSUME_SAFE_SIZE && !CYTHON_AVOID_BORROWED_REFS && !CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS
-    Py_ssize_t wrapped_i = i;
-    if (wraparound & unlikely(i < 0)) {
-        wrapped_i += PyList_GET_SIZE(o);
-    }
-    if ((!boundscheck) || likely(__Pyx_is_valid_index(wrapped_i, PyList_GET_SIZE(o)))) {
-        PyObject *r = PyList_GET_ITEM(o, wrapped_i);
-        Py_INCREF(r);
-        return r;
-    }
-    return __Pyx_GetItemInt_Generic(o, PyLong_FromSsize_t(i));
-#else
-    return PySequence_GetItem(o, i);
-#endif
-}
-static CYTHON_INLINE PyObject *__Pyx_GetItemInt_Tuple_Fast(PyObject *o, Py_ssize_t i,
-                                                              CYTHON_NCP_UNUSED int wraparound,
-                                                              CYTHON_NCP_UNUSED int boundscheck) {
-#if CYTHON_ASSUME_SAFE_MACROS && CYTHON_ASSUME_SAFE_SIZE && !CYTHON_AVOID_BORROWED_REFS
-    Py_ssize_t wrapped_i = i;
-    if (wraparound & unlikely(i < 0)) {
-        wrapped_i += PyTuple_GET_SIZE(o);
-    }
-    if ((!boundscheck) || likely(__Pyx_is_valid_index(wrapped_i, PyTuple_GET_SIZE(o)))) {
-        PyObject *r = PyTuple_GET_ITEM(o, wrapped_i);
-        Py_INCREF(r);
-        return r;
-    }
-    return __Pyx_GetItemInt_Generic(o, PyLong_FromSsize_t(i));
-#else
-    return PySequence_GetItem(o, i);
-#endif
-}
-static CYTHON_INLINE PyObject *__Pyx_GetItemInt_Fast(PyObject *o, Py_ssize_t i, int is_list,
-                                                     CYTHON_NCP_UNUSED int wraparound,
-                                                     CYTHON_NCP_UNUSED int boundscheck) {
-#if CYTHON_ASSUME_SAFE_MACROS && CYTHON_ASSUME_SAFE_SIZE && !CYTHON_AVOID_BORROWED_REFS && CYTHON_USE_TYPE_SLOTS
-    if (is_list || PyList_CheckExact(o)) {
-        Py_ssize_t n = ((!wraparound) | likely(i >= 0)) ? i : i + PyList_GET_SIZE(o);
-        if ((!boundscheck) || (likely(__Pyx_is_valid_index(n, PyList_GET_SIZE(o))))) {
-            return __Pyx_PyList_GetItemRef(o, n);
-        }
-    }
-    else if (PyTuple_CheckExact(o)) {
-        Py_ssize_t n = ((!wraparound) | likely(i >= 0)) ? i : i + PyTuple_GET_SIZE(o);
-        if ((!boundscheck) || likely(__Pyx_is_valid_index(n, PyTuple_GET_SIZE(o)))) {
-            PyObject *r = PyTuple_GET_ITEM(o, n);
-            Py_INCREF(r);
-            return r;
-        }
-    } else {
-        PyMappingMethods *mm = Py_TYPE(o)->tp_as_mapping;
-        PySequenceMethods *sm = Py_TYPE(o)->tp_as_sequence;
-        if (mm && mm->mp_subscript) {
-            PyObject *r, *key = PyLong_FromSsize_t(i);
-            if (unlikely(!key)) return NULL;
-            r = mm->mp_subscript(o, key);
-            Py_DECREF(key);
-            return r;
-        }
-        if (likely(sm && sm->sq_item)) {
-            if (wraparound && unlikely(i < 0) && likely(sm->sq_length)) {
-                Py_ssize_t l = sm->sq_length(o);
-                if (likely(l >= 0)) {
-                    i += l;
-                } else {
-                    if (!PyErr_ExceptionMatches(PyExc_OverflowError))
-                        return NULL;
-                    PyErr_Clear();
-                }
-            }
-            return sm->sq_item(o, i);
-        }
-    }
-#else
-    if (is_list || !PyMapping_Check(o)) {
-        return PySequence_GetItem(o, i);
-    }
-#endif
-    return __Pyx_GetItemInt_Generic(o, PyLong_FromSsize_t(i));
-}
-
-/* PyObjectFastCallMethod */
-#if !CYTHON_VECTORCALL || PY_VERSION_HEX < 0x03090000
-static PyObject *__Pyx_PyObject_FastCallMethod(PyObject *name, PyObject *const *args, size_t nargsf) {
-    PyObject *result;
-    PyObject *attr = PyObject_GetAttr(args[0], name);
-    if (unlikely(!attr))
-        return NULL;
-    result = __Pyx_PyObject_FastCall(attr, args+1, nargsf - 1);
-    Py_DECREF(attr);
-    return result;
-}
-#endif
-
 /* RaiseDoubleKeywords */
 static void __Pyx_RaiseDoubleKeywordsError(
     const char* func_name,
@@ -9634,6 +9617,112 @@ static int __Pyx__ArgTypeTest(PyObject *obj, PyTypeObject *type, const char *nam
     __Pyx_DECREF_TypeName(obj_type_name);
     return 0;
 }
+
+/* GetItemInt */
+static PyObject *__Pyx_GetItemInt_Generic(PyObject *o, PyObject* j) {
+    PyObject *r;
+    if (unlikely(!j)) return NULL;
+    r = PyObject_GetItem(o, j);
+    Py_DECREF(j);
+    return r;
+}
+static CYTHON_INLINE PyObject *__Pyx_GetItemInt_List_Fast(PyObject *o, Py_ssize_t i,
+                                                              CYTHON_NCP_UNUSED int wraparound,
+                                                              CYTHON_NCP_UNUSED int boundscheck) {
+#if CYTHON_ASSUME_SAFE_MACROS && CYTHON_ASSUME_SAFE_SIZE && !CYTHON_AVOID_BORROWED_REFS && !CYTHON_AVOID_THREAD_UNSAFE_BORROWED_REFS
+    Py_ssize_t wrapped_i = i;
+    if (wraparound & unlikely(i < 0)) {
+        wrapped_i += PyList_GET_SIZE(o);
+    }
+    if ((!boundscheck) || likely(__Pyx_is_valid_index(wrapped_i, PyList_GET_SIZE(o)))) {
+        PyObject *r = PyList_GET_ITEM(o, wrapped_i);
+        Py_INCREF(r);
+        return r;
+    }
+    return __Pyx_GetItemInt_Generic(o, PyLong_FromSsize_t(i));
+#else
+    return PySequence_GetItem(o, i);
+#endif
+}
+static CYTHON_INLINE PyObject *__Pyx_GetItemInt_Tuple_Fast(PyObject *o, Py_ssize_t i,
+                                                              CYTHON_NCP_UNUSED int wraparound,
+                                                              CYTHON_NCP_UNUSED int boundscheck) {
+#if CYTHON_ASSUME_SAFE_MACROS && CYTHON_ASSUME_SAFE_SIZE && !CYTHON_AVOID_BORROWED_REFS
+    Py_ssize_t wrapped_i = i;
+    if (wraparound & unlikely(i < 0)) {
+        wrapped_i += PyTuple_GET_SIZE(o);
+    }
+    if ((!boundscheck) || likely(__Pyx_is_valid_index(wrapped_i, PyTuple_GET_SIZE(o)))) {
+        PyObject *r = PyTuple_GET_ITEM(o, wrapped_i);
+        Py_INCREF(r);
+        return r;
+    }
+    return __Pyx_GetItemInt_Generic(o, PyLong_FromSsize_t(i));
+#else
+    return PySequence_GetItem(o, i);
+#endif
+}
+static CYTHON_INLINE PyObject *__Pyx_GetItemInt_Fast(PyObject *o, Py_ssize_t i, int is_list,
+                                                     CYTHON_NCP_UNUSED int wraparound,
+                                                     CYTHON_NCP_UNUSED int boundscheck) {
+#if CYTHON_ASSUME_SAFE_MACROS && CYTHON_ASSUME_SAFE_SIZE && !CYTHON_AVOID_BORROWED_REFS && CYTHON_USE_TYPE_SLOTS
+    if (is_list || PyList_CheckExact(o)) {
+        Py_ssize_t n = ((!wraparound) | likely(i >= 0)) ? i : i + PyList_GET_SIZE(o);
+        if ((!boundscheck) || (likely(__Pyx_is_valid_index(n, PyList_GET_SIZE(o))))) {
+            return __Pyx_PyList_GetItemRef(o, n);
+        }
+    }
+    else if (PyTuple_CheckExact(o)) {
+        Py_ssize_t n = ((!wraparound) | likely(i >= 0)) ? i : i + PyTuple_GET_SIZE(o);
+        if ((!boundscheck) || likely(__Pyx_is_valid_index(n, PyTuple_GET_SIZE(o)))) {
+            PyObject *r = PyTuple_GET_ITEM(o, n);
+            Py_INCREF(r);
+            return r;
+        }
+    } else {
+        PyMappingMethods *mm = Py_TYPE(o)->tp_as_mapping;
+        PySequenceMethods *sm = Py_TYPE(o)->tp_as_sequence;
+        if (mm && mm->mp_subscript) {
+            PyObject *r, *key = PyLong_FromSsize_t(i);
+            if (unlikely(!key)) return NULL;
+            r = mm->mp_subscript(o, key);
+            Py_DECREF(key);
+            return r;
+        }
+        if (likely(sm && sm->sq_item)) {
+            if (wraparound && unlikely(i < 0) && likely(sm->sq_length)) {
+                Py_ssize_t l = sm->sq_length(o);
+                if (likely(l >= 0)) {
+                    i += l;
+                } else {
+                    if (!PyErr_ExceptionMatches(PyExc_OverflowError))
+                        return NULL;
+                    PyErr_Clear();
+                }
+            }
+            return sm->sq_item(o, i);
+        }
+    }
+#else
+    if (is_list || !PyMapping_Check(o)) {
+        return PySequence_GetItem(o, i);
+    }
+#endif
+    return __Pyx_GetItemInt_Generic(o, PyLong_FromSsize_t(i));
+}
+
+/* PyObjectFastCallMethod */
+#if !CYTHON_VECTORCALL || PY_VERSION_HEX < 0x03090000
+static PyObject *__Pyx_PyObject_FastCallMethod(PyObject *name, PyObject *const *args, size_t nargsf) {
+    PyObject *result;
+    PyObject *attr = PyObject_GetAttr(args[0], name);
+    if (unlikely(!attr))
+        return NULL;
+    result = __Pyx_PyObject_FastCall(attr, args+1, nargsf - 1);
+    Py_DECREF(attr);
+    return result;
+}
+#endif
 
 /* RaiseUnexpectedTypeError */
 static int

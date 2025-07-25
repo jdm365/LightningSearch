@@ -27,3 +27,4 @@ void c_query(
 		uint64_t* result_json_str_buf_len
 		);
 uint32_t get_num_cols(IndexManager* idx_ptr);
+void load(IndexManager* idx_ptr, uint8_t* _dir);
