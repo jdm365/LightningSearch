@@ -215,8 +215,8 @@ pub fn main() !void {
         // const filename = "../data/mb_tiny.csv";
         // const filename = "../data/mb_small.csv";
         // const filename = "../data/mb.csv";
-        const filename = "../data/enwiki.csv";
-        // const filename = "../data/enwiki_small.csv";
+        // const filename = "../data/enwiki.csv";
+        const filename = "../data/enwiki_small.csv";
         // const filename = "../data/mb.parquet";
         // const filename = "../data/hn.csv";
         // const filename = "../data/hn_half.csv";

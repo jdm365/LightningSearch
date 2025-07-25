@@ -24,8 +24,6 @@ pub const MAX_TERM_LENGTH = 256;
 pub const MAX_NUM_TERMS   = 65_536;
 pub const MAX_LINE_LENGTH = 1_048_576;
 
-pub const ENDIANESS = builtin.cpu.arch.endian();
-
 
 const POST_ALIGNMENT = 64;
 
@@ -1229,7 +1227,7 @@ pub const PostingV3 = struct {
         ) !void {
 
         pq.encodeVbyte(
-            buffer.items,
+            buffer.items.ptr,
             current_pos,
             self.full_blocks.items.len,
         );
@@ -1245,22 +1243,22 @@ pub const PostingV3 = struct {
             }
 
             pq.encodeVbyte(
-                buffer.items,
+                buffer.items.ptr,
                 current_pos,
                 @intCast(block.max_doc_id),
             );
             pq.encodeVbyte(
-                buffer.items,
+                buffer.items.ptr,
                 current_pos,
                 @intCast(block.max_tf),
             );
             pq.encodeVbyte(
-                buffer.items,
+                buffer.items.ptr,
                 current_pos,
                 @intCast(block.max_doc_size),
             );
             pq.encodeVbyte(
-                buffer.items,
+                buffer.items.ptr,
                 current_pos,
                 @intCast(block.doc_ids.min_val),
             );
@@ -1269,7 +1267,7 @@ pub const PostingV3 = struct {
             current_pos.* += 1;
 
             pq.encodeVbyte(
-                buffer.items,
+                buffer.items.ptr,
                 current_pos,
                 block.doc_ids.buffer.len,
             );
@@ -1283,7 +1281,7 @@ pub const PostingV3 = struct {
             current_pos.* += 1;
 
             pq.encodeVbyte(
-                buffer.items,
+                buffer.items.ptr,
                 current_pos,
                 block.tfs.buffer.len,
             );
@@ -1306,18 +1304,18 @@ pub const PostingV3 = struct {
         current_pos.* += 1;
 
         pq.encodeVbyte(
-            buffer.items,
+            buffer.items.ptr,
             current_pos,
             @intCast(self.partial_block.max_tf),
         );
         pq.encodeVbyte(
-            buffer.items,
+            buffer.items.ptr,
             current_pos,
             @intCast(self.partial_block.max_doc_size),
         );
 
         pq.encodeVbyte(
-            buffer.items,
+            buffer.items.ptr,
             current_pos,
             self.partial_block.doc_ids.buffer.items.len,
         );
@@ -1330,7 +1328,7 @@ pub const PostingV3 = struct {
         current_pos.* += self.partial_block.doc_ids.buffer.items.len;
 
         pq.encodeVbyte(
-            buffer.items,
+            buffer.items.ptr,
             current_pos,
             self.partial_block.tfs.buffer.items.len,
         );
@@ -1540,7 +1538,7 @@ pub const InvertedIndexV2 = struct {
             buf.items[current_pos..][0..4],
             0,
             @truncate(self.posting_list.postings.items.len),
-            ENDIANESS,
+            comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
 
@@ -1553,7 +1551,7 @@ pub const InvertedIndexV2 = struct {
             buf.items[current_pos..][0..4],
             0,
             @truncate(self.vocab.string_bytes.items.len),
-            ENDIANESS,
+            comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
 
@@ -1574,7 +1572,7 @@ pub const InvertedIndexV2 = struct {
             buf.items[current_pos..][0..4],
             0,
             @truncate(self.vocab.map.count()),
-            ENDIANESS,
+            comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
 
@@ -1589,14 +1587,14 @@ pub const InvertedIndexV2 = struct {
                 buf.items[current_pos..][0..4],
                 0,
                 item.key_ptr.*,
-                ENDIANESS,
+                comptime builtin.cpu.arch.endian(),
             );
             std.mem.writePackedInt(
                 u32,
                 buf.items[current_pos..][4..8],
                 0,
                 item.value_ptr.*,
-                ENDIANESS,
+                comptime builtin.cpu.arch.endian(),
             );
             current_pos += 8;
         }
@@ -1606,7 +1604,7 @@ pub const InvertedIndexV2 = struct {
             buf.items[current_pos..][0..4],
             0,
             @truncate(self.doc_sizes.items.len),
-            ENDIANESS,
+            comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
 
@@ -1636,7 +1634,7 @@ pub const InvertedIndexV2 = struct {
             buf.items[current_pos..][0..4],
             0,
             @as(u32, @bitCast(self.avg_doc_size)),
-            ENDIANESS,
+            comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
 
@@ -1672,7 +1670,7 @@ pub const InvertedIndexV2 = struct {
             u32,
             buf[current_pos..][0..4],
             0,
-            ENDIANESS,
+            comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
 
@@ -1690,7 +1688,7 @@ pub const InvertedIndexV2 = struct {
             u32,
             buf[current_pos..][0..4],
             0,
-            ENDIANESS,
+            comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
 
@@ -1705,22 +1703,22 @@ pub const InvertedIndexV2 = struct {
             u32,
             buf[current_pos..][0..4],
             0,
-            ENDIANESS,
+            comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
 
-        for (0..num_terms_vocab) |idx| {
+        for (0..num_terms_vocab) |_| {
             const key = std.mem.readPackedInt(
                 u32,
                 buf.items[current_pos..][0..4],
                 0,
-                ENDIANESS,
+                comptime builtin.cpu.arch.endian(),
             );
             const value = std.mem.readPackedInt(
                 u32,
                 buf.items[current_pos..][4..8],
                 0,
-                ENDIANESS,
+                comptime builtin.cpu.arch.endian(),
             );
             current_pos += 8;
 
@@ -1732,7 +1730,7 @@ pub const InvertedIndexV2 = struct {
             u32,
             buf.items[current_pos..][0..4],
             0,
-            ENDIANESS,
+            comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
 
@@ -1748,7 +1746,7 @@ pub const InvertedIndexV2 = struct {
             u32,
             buf.items[current_pos..][0..4],
             0,
-            ENDIANESS,
+            comptime builtin.cpu.arch.endian(),
         ));
         current_pos += 4;
     }
@@ -1832,7 +1830,7 @@ pub const BM25Partition = struct {
             defer allocator.free(filename);
 
             partition.II[idx] = try InvertedIndexV2.init(
-                self.allocator, 
+                allocator, 
                 null,
                 filename,
                 );

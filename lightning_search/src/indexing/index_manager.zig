@@ -72,6 +72,8 @@ pub const IndexManager = struct {
 
     const Partitions = struct {
         index_partitions: []BM25Partition,
+
+        // TODO: These are indexing only. Remove them from struct.
         row_offsets: []usize,
         byte_offsets: []usize,
     };
@@ -87,6 +89,7 @@ pub const IndexManager = struct {
         num_row_groups: usize,
     };
 
+    // TODO: Clean up / remove members.
     const FileData = struct {
         input_filename_c: [*:0]const u8,
         tmp_dir: []const u8,
@@ -107,6 +110,7 @@ pub const IndexManager = struct {
         }
     };
 
+    // TODO: Recheck if bit_sizes can be in doc_store.
     const QueryState = struct {
         query_map: SHM,
         bit_sizes: [MAX_NUM_RESULTS][]u32,
@@ -194,6 +198,92 @@ pub const IndexManager = struct {
         return manager;
     }
 
+    pub fn saveMeta(self: *IndexManager) !void {
+        const meta_file = try std.fmt.allocPrint(
+            self.stringArena(),
+            "{s}/meta.bin",
+            .{self.file_data.tmp_dir},
+            );
+        const file = try std.fs.cwd().createFile(meta_file, .{ .read = true });
+        defer {
+            file.close();
+        }
+
+        var buf = try self.gpa().alloc(u8, 8);
+        defer self.gpa().free(buf);
+
+        var current_pos: usize = 0;
+        std.mem.writePackedInt(
+            u32,
+            buf[current_pos..][0..4],
+            0,
+            @truncate(self.partitions.index_partitions.len),
+            comptime builtin.cpu.arch.endian(),
+        );
+        current_pos += 4;
+
+        std.mem.writePackedInt(
+            u32,
+            buf[current_pos..][0..4],
+            0,
+            @truncate(self.partitions.index_partitions[0].II.len),
+            comptime builtin.cpu.arch.endian(),
+        );
+        current_pos += 4;
+
+        _ = try file.write(buf);
+    }
+
+    pub fn load(self: *IndexManager, dir_name: []const u8) !void {
+        self.file_data.tmp_dir = try self.stringArena().alloc(u8, dir_name.len);
+
+        const meta_file = try std.fmt.allocPrint(
+            self.stringArena(),
+            "{s}/meta.bin",
+            .{self.file_data.tmp_dir},
+            );
+        const file = try std.fs.cwd().openFile(meta_file, .{ .read = true });
+
+        const file_size = try file.getEndPos();
+        try file.seekTo(0);
+
+        var buf = try self.gpa().alloc(u8, file_size);
+        defer self.gpa().free(buf);
+
+        _ = try file.readAll(buf);
+
+        var current_pos: usize = 0;
+        const num_partitions = std.mem.readPackedInt(
+            u32,
+            buf[current_pos..][0..4],
+            0,
+            comptime builtin.cpu.arch.endian(),
+        );
+        current_pos += 4;
+
+        const num_search_cols = std.mem.readPackedInt(
+            u32,
+            buf[current_pos..][0..4],
+            0,
+            comptime builtin.cpu.arch.endian(),
+        );
+        current_pos += 4;
+
+
+        self.partitions.index_partitions = try self.gpa().alloc(
+            BM25Partition,
+            num_partitions,
+        );
+        for (0.., self.partitions.index_partitions) |partition_idx, *p| {
+            p.* = BM25Partition.initFromDisk(
+                self.gpa(),
+                self.file_data.tmp_dir,
+                partition_idx,
+                num_search_cols,
+            );
+        }
+    }
+
     pub inline fn gpa(self: *IndexManager) std.mem.Allocator {
         switch (builtin.mode) {
             .ReleaseFast => {
@@ -257,8 +347,12 @@ pub const IndexManager = struct {
         self.file_data.input_filename_c = try self.stringArena().dupeZ(u8, filename);
         self.file_data.file_type = filetype;
 
-        std.fs.cwd().makeDir("ls_data") catch {
-            std.debug.print("Dir ls_data already exists\n", .{});
+        std.fs.cwd().makeDir("ls_data") catch |err| {
+            if (err == error.PathAlreadyExists) {
+                std.debug.print("ls_data already exists. Continuing\n", .{});
+            } else {
+                return err;
+            }
         };
 
         const file_hash = blk: {
@@ -687,12 +781,23 @@ pub const IndexManager = struct {
             try huffman_col_idxs.append(self.gpa(), idx);
         }
 
+        const doc_store_dir = try std.fmt.allocPrint(
+            self.stringArena(),
+            "{s}/doc_store",
+            .{self.file_data.tmp_dir},
+            );
+        std.fs.cwd().makeDir(doc_store_dir) catch |err| {
+            if (err != error.PathAlreadyExists) {
+                return err;
+            }
+        };
+
         current_IP.doc_store = try DocStore.init(
             self.allocators.gpa,
             &literal_byte_idxs,
             &literal_col_idxs,
             &huffman_col_idxs,
-            self.file_data.tmp_dir,
+            doc_store_dir,
             partition_idx,
         );
 
@@ -881,12 +986,23 @@ pub const IndexManager = struct {
             try huffman_col_idxs.append(self.gpa(), idx);
         }
 
+        const doc_store_dir = try std.fmt.allocPrint(
+            self.stringArena(),
+            "{s}/doc_store",
+            .{self.file_data.tmp_dir},
+            );
+        std.fs.cwd().makeDir(doc_store_dir) catch |err| {
+            if (err != error.PathAlreadyExists) {
+                return err;
+            }
+        };
+
         current_IP.doc_store = try DocStore.init(
             self.allocators.gpa,
             &literal_byte_idxs,
             &literal_col_idxs,
             &huffman_col_idxs,
-            self.file_data.tmp_dir,
+            doc_store_dir,
             partition_idx,
         );
 
@@ -1138,11 +1254,22 @@ pub const IndexManager = struct {
                 num_rows += row_group_sizes[i];
             }
 
+            const postings_dir = try std.fmt.allocPrint(
+                self.stringArena(),
+                "{s}/postings",
+                .{self.file_data.tmp_dir},
+                );
+            std.fs.cwd().makeDir(postings_dir) catch |err| {
+                if (err != error.PathAlreadyExists) {
+                    return err;
+                }
+            };
+
             self.partitions.index_partitions[idx] = try BM25Partition.init(
                 self.gpa(), 
                 1, 
                 num_rows,
-                self.file_data.tmp_dir,
+                postings_dir,
                 idx,
                 );
         }
@@ -1167,11 +1294,22 @@ pub const IndexManager = struct {
             const end_row   = self.partitions.row_offsets[idx + 1];
             const num_rows  = end_row - start_row;
 
+            const postings_dir = try std.fmt.allocPrint(
+                self.stringArena(),
+                "{s}/postings",
+                .{self.file_data.tmp_dir},
+                );
+            std.fs.cwd().makeDir(postings_dir) catch |err| {
+                if (err != error.PathAlreadyExists) {
+                    return err;
+                }
+            };
+
             self.partitions.index_partitions[idx] = try BM25Partition.init(
                 self.gpa(), 
                 1, 
                 num_rows,
-                self.file_data.tmp_dir,
+                postings_dir,
                 idx,
                 );
         }
@@ -1209,10 +1347,21 @@ pub const IndexManager = struct {
 
         const num_search_cols = self.file_data.search_col_idxs.items.len;
         
+        const postings_dir = try std.fmt.allocPrint(
+            self.stringArena(),
+            "{s}/postings",
+            .{self.file_data.tmp_dir},
+            );
+        std.fs.cwd().makeDir(postings_dir) catch |err| {
+            if (err != error.PathAlreadyExists) {
+                return err;
+            }
+        };
+
         for (0..num_partitions) |partition_idx| {
             try self.partitions.index_partitions[partition_idx].resizeNumSearchCols(
                 num_search_cols,
-                self.file_data.tmp_dir,
+                postings_dir,
                 partition_idx,
                 );
 
@@ -1262,6 +1411,8 @@ pub const IndexManager = struct {
         const time_end = std.time.milliTimestamp();
         const time_diff = time_end - time_start;
         std.debug.print("Processed {d} documents in {d}ms\n", .{_total_docs_read, time_diff});
+
+        try self.saveMeta();
 
         // Init thread pool.
         try self.query_state.thread_pool.init(
