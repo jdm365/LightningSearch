@@ -279,6 +279,14 @@ pub const IndexManager = struct {
 
         const time_start = std.time.milliTimestamp();
 
+        self.file_data.file_handles      = try self.gpa().alloc(std.fs.File, num_partitions);
+        self.partitions.index_partitions = try self.gpa().alloc(BM25Partition, num_partitions);
+        self.query_state.results_arrays  = try self.gpa().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
+
+        for (0..num_partitions) |idx| {
+            self.query_state.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa(), MAX_NUM_RESULTS);
+        }
+
         var threads = try self.scratchArena().alloc(std.Thread, num_partitions);
         for (0.., self.partitions.index_partitions) |partition_idx, *p| {
 

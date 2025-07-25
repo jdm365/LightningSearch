@@ -1547,15 +1547,15 @@ pub const InvertedIndexV2 = struct {
         return II;
     }
 
-    pub fn deinit(self: *InvertedIndexV2, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *InvertedIndexV2) void {
         self.file_handle.close();
 
         self.posting_list.deinit();
 
-        self.vocab.deinit(allocator);
-
-        self.doc_freqs.deinit(allocator);
-        self.doc_sizes.deinit(allocator);
+        // Using arena now.
+        // self.vocab.deinit(allocator);
+        // self.doc_freqs.deinit(allocator);
+        // self.doc_sizes.deinit(allocator);
     }
 
     pub fn commit(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
@@ -1833,8 +1833,11 @@ pub const BM25Partition = struct {
     }
 
     pub fn deinit(self: *BM25Partition) !void {
+        // TODO: Organize allocations / allocators better.
+
         for (0..self.II.len) |i| {
-            self.II[i].deinit(self.allocator);
+            // self.II[i].deinit(self.allocator);
+            self.II[i].deinit();
         }
         self.allocator.free(self.II);
 
