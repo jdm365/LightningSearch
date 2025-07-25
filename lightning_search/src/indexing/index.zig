@@ -1499,8 +1499,7 @@ pub const InvertedIndexV2 = struct {
         II.vocab = Vocab.init();
 
         if (num_docs) |nd| {
-            try II.doc_sizes.resize(allocator, nd);
-            @memset(II.doc_sizes.items, 0);
+            try II.doc_sizes.ensureTotalCapacity(allocator, nd);
 
             // Guess capacity.
             II.doc_freqs = try std.ArrayListUnmanaged(u32).initCapacity(
@@ -1608,7 +1607,7 @@ pub const InvertedIndexV2 = struct {
         );
         current_pos += 4;
 
-        max_range = current_pos + self.doc_sizes.items.len * @sizeOf(u16);
+        max_range = current_pos + self.doc_sizes.items.len * @sizeOf(u16) + @sizeOf(u32);
         if (max_range > buf.items.len) {
             try buf.resize(
                 allocator, 
@@ -1984,6 +1983,8 @@ pub const BM25Partition = struct {
         col_idx: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
+        try self.II[col_idx].doc_sizes.append(self.allocator, 0);
+
         var buffer_idx = byte_idx.*;
 
         if (
@@ -2081,7 +2082,9 @@ pub const BM25Partition = struct {
         } else {
 
             outer_loop: while (true) {
-                std.debug.assert(self.II[col_idx].doc_sizes.items[doc_id] < MAX_NUM_TERMS);
+                std.debug.assert(
+                    self.II[col_idx].doc_sizes.items[doc_id] < MAX_NUM_TERMS
+                    );
 
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
@@ -2156,6 +2159,8 @@ pub const BM25Partition = struct {
         search_col_idx: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
+        try self.II[search_col_idx].doc_sizes.append(self.allocator, 0);
+
         string_utils.stringToUpper(
             @ptrCast(buffer[0..]), 
             buffer.len,
@@ -2264,6 +2269,7 @@ pub const BM25Partition = struct {
             byte_idx.* += buffer_idx;
             return;
         }
+
         const II_idx = findSorted(
             u32,
             search_col_idxs.items,
@@ -2285,6 +2291,8 @@ pub const BM25Partition = struct {
             byte_idx.* += buffer_idx;
             return;
         };
+
+        try self.II[II_idx].doc_sizes.append(self.allocator, 0);
 
         // Empty check.
         if (
