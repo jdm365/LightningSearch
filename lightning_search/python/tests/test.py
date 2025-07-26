@@ -155,18 +155,17 @@ if __name__ == '__main__':
             "../../ls_data/96a03617fbfc74b054e835a1e001514a",
             )
 
-    ## do_index = True 
-    do_index = False
-
-    if do_index:
-        index = Index()
-        index.index_file(
-                filename=filename,
-                query_cols=[
-                    ## "text"
-                    "title"
-                    ],
-                )
+    """
+    index = Index()
+    index.index_file(
+            filename=filename,
+            query_cols=[
+                ## "text"
+                "title"
+                ],
+            )
+    exit()
+    """
 
     index = Index()
     index.load(index_dir)

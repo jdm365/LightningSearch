@@ -127,6 +127,38 @@ pub const DocStore = struct {
                 huffman_row_offsets_file,
             );
 
+            const h_row_data_mmap_buf = try std.posix.mmap(
+                null,
+                MMAP_MAX_SIZE_HUFFMAN_BUFFER,
+                std.posix.PROT.READ,
+                .{ 
+                    .TYPE = .PRIVATE, 
+                },
+                huffman_row_data_file.handle,
+                0,
+            );
+            try std.posix.madvise(
+                h_row_data_mmap_buf.ptr,
+                MMAP_MAX_SIZE_HUFFMAN_BUFFER,
+                std.posix.MADV.RANDOM,
+            );
+
+            const h_row_offsets_mmap_buf = try std.posix.mmap(
+                null,
+                MMAP_MAX_SIZE_HUFFMAN_ROW_OFFSETS,
+                std.posix.PROT.READ,
+                .{ 
+                    .TYPE = .PRIVATE, 
+                },
+                huffman_row_data_file.handle,
+                0,
+            );
+            try std.posix.madvise(
+                h_row_offsets_mmap_buf.ptr,
+                MMAP_MAX_SIZE_HUFFMAN_ROW_OFFSETS,
+                std.posix.MADV.RANDOM,
+            );
+
             return FileHandles{
                 .huffman_row_data_file = huffman_row_data_file,
                 .huffman_row_offsets_file = huffman_row_offsets_file,

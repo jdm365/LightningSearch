@@ -98,8 +98,6 @@ pub const IndexManager = struct {
         pq_data: ?PQData = null,
         header_bytes: ?usize = null,
 
-        mmap_buffer: []u8,
-
         column_idx_map:  rt.RadixTrie(u32),
         search_col_idxs: std.ArrayListUnmanaged(u32),
         boost_factors:   std.ArrayListUnmanaged(f32),
@@ -150,7 +148,6 @@ pub const IndexManager = struct {
                 .tmp_dir          = undefined,
                 .file_handles     = undefined,
                 .file_type        = undefined,
-                .mmap_buffer      = undefined,
 
                 .column_idx_map  = undefined,
                 .search_col_idxs = std.ArrayListUnmanaged(u32){},
@@ -209,7 +206,12 @@ pub const IndexManager = struct {
             file.close();
         }
 
-        var buf = try self.gpa().alloc(u8, 8);
+        var buf_size: usize = 12;
+        for (self.file_data.column_names.items) |c| {
+            buf_size += pq.getVbyteSize(c.len) + c.len;
+        }
+
+        var buf = try self.gpa().alloc(u8, buf_size);
         defer self.gpa().free(buf);
 
         var current_pos: usize = 0;
@@ -240,13 +242,16 @@ pub const IndexManager = struct {
         );
         current_pos += 4;
 
-        _ = try file.write(buf);
+        for (self.file_data.column_names.items) |c| {
+            pq.encodeVbyte(buf.ptr, &current_pos, c.len);
+            @memcpy(buf[current_pos..][0..c.len], c[0..c.len]);
+            current_pos += c.len;
+        }
+
+        _ = try file.writeAll(buf);
     }
 
-    pub fn load(self: *IndexManager, dir_name: []const u8) !void {
-        self.file_data.tmp_dir = try self.stringArena().alloc(u8, dir_name.len);
-        @memcpy(@constCast(self.file_data.tmp_dir), dir_name);
-
+    pub fn loadMeta(self: *IndexManager) !void {
         const meta_file = try std.fmt.allocPrint(
             self.stringArena(),
             "{s}/meta.bin",
@@ -288,20 +293,53 @@ pub const IndexManager = struct {
         );
         current_pos += 4;
 
-
+        try self.file_data.boost_factors.resize(self.stringArena(), num_search_cols);
+        try self.file_data.search_col_idxs.resize(self.stringArena(), num_search_cols);
         self.partitions.index_partitions = try self.gpa().alloc(
             BM25Partition,
             num_partitions,
         );
 
+        try self.file_data.column_names.resize(self.stringArena(), num_cols);
+        for (0.., self.file_data.column_names.items) |idx, *c| {
+            const str_len = pq.decodeVbyte(buf.ptr, &current_pos);
+            c.* = try self.stringArena().alloc(u8, str_len);
+            @memcpy(@constCast(c.*[0..c.len]), buf[current_pos..][0..c.len]);
+            current_pos += c.len;
+
+            try self.file_data.column_idx_map.insert(c.*, @truncate(idx));
+        }
+    }
+
+    pub fn load(self: *IndexManager, dir_name: []const u8) !void {
+        self.file_data.tmp_dir = try self.stringArena().alloc(u8, dir_name.len);
+        @memcpy(@constCast(self.file_data.tmp_dir), dir_name);
+
+        try self.loadMeta();
+
         const time_start = std.time.milliTimestamp();
 
-        self.file_data.file_handles      = try self.gpa().alloc(std.fs.File, num_partitions);
-        self.partitions.index_partitions = try self.gpa().alloc(BM25Partition, num_partitions);
-        self.query_state.results_arrays  = try self.gpa().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
+        const num_partitions  = self.partitions.index_partitions.len;
+        const num_search_cols = self.file_data.search_col_idxs.items.len;
+        const num_cols        = self.file_data.column_names.items.len;
+
+        self.file_data.file_handles      = try self.gpa().alloc(
+            std.fs.File, 
+            num_partitions,
+            );
+        self.partitions.index_partitions = try self.gpa().alloc(
+            BM25Partition, 
+            num_partitions,
+            );
+        self.query_state.results_arrays  = try self.gpa().alloc(
+            SortedScoreMultiArray(QueryResult), 
+            num_partitions,
+            );
 
         for (0..num_partitions) |idx| {
-            self.query_state.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa(), MAX_NUM_RESULTS);
+            self.query_state.results_arrays[idx] = try SortedScoreMultiArray(
+                QueryResult
+                ).init(self.gpa(), MAX_NUM_RESULTS);
         }
 
         var threads = try self.scratchArena().alloc(std.Thread, num_partitions);
@@ -358,7 +396,6 @@ pub const IndexManager = struct {
         self.gpa().free(self.partitions.index_partitions);
 
         self.gpa().free(self.file_data.file_handles);
-        // std.posix.munmap(self.file_data.mmap_buffer);
 
         // try std.fs.cwd().deleteTree(self.file_data.tmp_dir);
 
@@ -604,20 +641,6 @@ pub const IndexManager = struct {
 
         _ = try file.read(buffer);
 
-        // self.file_data.mmap_buffer = try std.posix.mmap(
-            // null,
-            // file_size,
-            // std.posix.PROT.READ,
-            // .{ .TYPE = .PRIVATE },
-            // file.handle,
-            // 0
-        // );
-        // try std.posix.madvise(
-            // @alignCast(self.file_data.mmap_buffer.ptr),
-            // file_size,
-            // std.posix.MADV.SEQUENTIAL,
-        // );
-
         var term: [MAX_TERM_LENGTH]u8 = undefined;
 
         var byte_idx: usize = 0;
@@ -786,7 +809,6 @@ pub const IndexManager = struct {
         };
         const current_IP = &self.partitions.index_partitions[partition_idx];
 
-        // const mmap_buffer = self.file_data.mmap_buffer[start_byte..end_byte];
         const file = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
         defer file.close();
 
