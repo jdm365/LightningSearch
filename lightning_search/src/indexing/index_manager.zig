@@ -340,11 +340,11 @@ pub const IndexManager = struct {
         for (0..MAX_NUM_RESULTS) |idx| {
             self.query_state.bit_sizes[idx] = try self.gpa().alloc(
                 u32, 
-                self.file_data.column_idx_map.num_keys,
+                num_cols,
                 );
             self.query_state.result_positions[idx] = try self.gpa().alloc(
                 TermPos, 
-                self.file_data.column_idx_map.num_keys,
+                num_cols,
                 );
             self.query_state.result_strings[idx] = std.ArrayListUnmanaged(u8){};
             try self.query_state.result_strings[idx].resize(self.gpa(), 4096);
@@ -2426,6 +2426,7 @@ pub const IndexManager = struct {
 
         // const start_2 = std.time.microTimestamp();
 
+        std.debug.print("BEFORE\n", .{});
         var wg2: std.Thread.WaitGroup = .{};
         for (0..self.query_state.results_arrays[0].count) |idx| {
             const result = self.query_state.results_arrays[0].items[idx];
@@ -2446,6 +2447,7 @@ pub const IndexManager = struct {
         }
 
         wg2.wait();
+        std.debug.print("AFTER\n\n", .{});
 
         // const end_2 = std.time.microTimestamp();
         // const time_taken_us_fetch = end_2 - start_2;

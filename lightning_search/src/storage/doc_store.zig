@@ -154,7 +154,7 @@ pub const DocStore = struct {
                 .{ 
                     .TYPE = .PRIVATE, 
                 },
-                huffman_row_data_file.handle,
+                huffman_row_offsets_file.handle,
                 0,
             );
             try std.posix.madvise(
@@ -170,8 +170,8 @@ pub const DocStore = struct {
                 .huffman_row_data_writer = huffman_row_data_writer,
                 .huffman_row_offsets_writer = huffman_row_offsets_writer,
 
-                .huffman_row_data_mmap_buffer = undefined,
-                .huffman_row_offsets_mmap_buffer = undefined,
+                .huffman_row_data_mmap_buffer = h_row_data_mmap_buf,
+                .huffman_row_offsets_mmap_buffer = h_row_offsets_mmap_buf,
             };
         }
 

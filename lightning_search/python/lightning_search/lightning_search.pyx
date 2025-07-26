@@ -38,7 +38,7 @@ cdef extern from "ffi.h":
 		uint32_t* num_matched_records,
 		uint8_t** result_json_str_buf,
         uint64_t* result_json_str_buf_len
-		) nogil
+		)
     void get_num_cols(
             IndexManager* idx_ptr, 
             uint32_t* num_cols,
@@ -179,19 +179,19 @@ cdef class Index:
             queries[idx] = <uint8_t*>q_copy
             boost_factors_arr[idx] = boost_factors.get(qc_upper, 1.0)
 
-        with nogil:
-            c_query(
-                self.idx_ptr,
-                search_col_idxs,
-                queries,
-                boost_factors_arr,
-                num_query_cols,
-                k,
+        ## with nogil:
+        c_query(
+            self.idx_ptr,
+            search_col_idxs,
+            queries,
+            boost_factors_arr,
+            num_query_cols,
+            k,
 
-                &num_matched_records,
-                &result_json_str_buf,
-                &result_json_str_buf_len,
-            )
+            &num_matched_records,
+            &result_json_str_buf,
+            &result_json_str_buf_len,
+        )
 
         if num_matched_records == 0:
             free(search_col_idxs)
