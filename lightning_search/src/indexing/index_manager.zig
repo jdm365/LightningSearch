@@ -418,6 +418,8 @@ pub const IndexManager = struct {
             if (self.query_state.result_positions[idx].len > 0) {
                 self.gpa().free(self.query_state.result_positions[idx]);
             }
+            self.query_state.result_strings[idx].deinit(self.gpa());
+            self.gpa().free(self.query_state.bit_sizes[idx]);
         }
 
         self.file_data.boost_factors.deinit(self.gpa());

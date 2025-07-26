@@ -1451,13 +1451,13 @@ pub const PostingsList = struct {
               ),
     arena: std.heap.ArenaAllocator,
 
-    pub fn init(child_allocator: std.mem.Allocator) PostingsList {
+    pub fn init() PostingsList {
         return PostingsList{
             .postings = std.ArrayListAlignedUnmanaged(
                   PostingV3,
                   POST_ALIGNMENT,
               ){},
-            .arena = std.heap.ArenaAllocator.init(child_allocator),
+            .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
         };
     }
 
@@ -1509,7 +1509,7 @@ pub const InvertedIndexV2 = struct {
         create_file: bool,
         ) !InvertedIndexV2 {
         var II = InvertedIndexV2{
-            .posting_list = PostingsList.init(allocator),
+            .posting_list = PostingsList.init(),
             .vocab = undefined,
             .doc_sizes = std.ArrayListUnmanaged(u16){},
             .avg_doc_size = 0.0,
@@ -1697,7 +1697,6 @@ pub const InvertedIndexV2 = struct {
 
         var arena = std.heap.ArenaAllocator.init(allocator);
 
-        const time_start = std.time.milliTimestamp();
         try self.posting_list.postings.resize(arena.allocator(), num_postings);
         for (0..num_postings) |idx| {
             self.posting_list.postings.items[idx] = PostingV3.init();
@@ -1707,8 +1706,6 @@ pub const InvertedIndexV2 = struct {
                 &current_pos,
             );
         }
-        const time_taken = std.time.milliTimestamp() - time_start;
-        std.debug.print("Loaded in {d}ms\n", .{time_taken});
 
         // 2. Vocab
         const num_string_bytes_vocab = std.mem.readPackedInt(
@@ -1819,7 +1816,8 @@ pub const BM25Partition = struct {
             defer allocator.free(output_filename);
 
             partition.II[idx] = try InvertedIndexV2.init(
-                allocator, 
+                // allocator, 
+                partition.arena.allocator(), 
                 num_records,
                 output_filename,
                 true,
@@ -1849,7 +1847,6 @@ pub const BM25Partition = struct {
         partition_idx: usize,
         num_search_cols: usize,
         num_cols: usize,
-        // ) !void {
         ) void {
 
         const allocator = gpa.allocator();
@@ -1957,7 +1954,8 @@ pub const BM25Partition = struct {
             );
 
         const gop = try self.II[col_idx].vocab.map.getOrPutContextAdapted(
-            self.allocator,
+            // self.allocator,
+            self.arena.allocator(),
             term[0..term_len],
             self.II[col_idx].vocab.getAdapter(),
             self.II[col_idx].vocab.getCtx(),
@@ -1967,10 +1965,15 @@ pub const BM25Partition = struct {
 
         if (!gop.found_existing) {
             try self.II[col_idx].vocab.string_bytes.appendSlice(
-                self.allocator, 
+                // self.allocator, 
+                self.arena.allocator(),
                 term[0..term_len],
                 );
-            try self.II[col_idx].vocab.string_bytes.append(self.allocator, 0);
+            try self.II[col_idx].vocab.string_bytes.append(
+                // self.allocator, 
+                self.arena.allocator(), 
+                0,
+                );
 
             gop.key_ptr.* = @truncate(
                 self.II[col_idx].vocab.string_bytes.items.len - term_len - 1,

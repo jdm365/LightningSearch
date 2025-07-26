@@ -147,27 +147,26 @@ if __name__ == '__main__':
     filename = os.path.join(
             CURRENT_DIR,
             "../../../data",
-            ## "enwiki.csv",
-            "mb_small.csv",
+            "enwiki.csv",
+            ## "mb_small.csv",
             )
     index_dir = os.path.join(
             CURRENT_DIR,
             "../../ls_data/96a03617fbfc74b054e835a1e001514a",
             )
 
-    """
     index = Index()
     index.index_file(
             filename=filename,
             query_cols=[
-                ## "text"
-                "title"
+                "text"
+                ## "title"
                 ],
             )
-    exit()
     """
     index = Index()
     index.load(index_dir)
+    """
 
     '''
     print(json.dumps(index.query(
@@ -192,8 +191,8 @@ if __name__ == '__main__':
     for i in tqdm(range(N), desc="Preparing test queries"):
         num_words = random.randint(M_min, M_max)
         query_maps.append({
-            ## "text": " ".join(random.sample(NLTK_WORDS, num_words))
-            "title": " ".join(random.sample(NLTK_WORDS, num_words))
+            "text": " ".join(random.sample(NLTK_WORDS, num_words))
+            ## "title": " ".join(random.sample(NLTK_WORDS, num_words))
         })
 
     init = perf_counter()
