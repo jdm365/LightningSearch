@@ -87,6 +87,88 @@ pub const HuffmanCompressor = struct {
         return compressor;
     }
 
+    pub fn write(self: *const HuffmanCompressor, file_handle: std.fs.File) !void {
+        try file_handle.writeAll(
+            std.mem.sliceAsBytes(&self.huffman_nodes)
+        );
+        try file_handle.writeAll(
+            std.mem.sliceAsBytes(&self.codes)
+        );
+        try file_handle.writeAll(&self.code_lengths);
+
+        var node_idx: [2]u8 = undefined;
+        std.mem.writePackedInt(
+            u16,
+            &node_idx,
+            0,
+            self.root_node_idx,
+            comptime builtin.cpu.arch.endian(),
+        );
+        try file_handle.writeAll(&node_idx);
+        try file_handle.writeAll(&self.lookup_table);
+        try file_handle.writeAll(&self.lookup_table_lengths);
+    }
+
+    pub fn initFromDisk(
+        self: *HuffmanCompressor, 
+        file_handle: std.fs.File,
+        allocator: std.mem.Allocator,
+        ) !void {
+        const file_size = try file_handle.getEndPos();
+        _ = try file_handle.seekTo(0);
+
+        var buf = try allocator.alloc(u8, file_size);
+        defer allocator.free(buf);
+
+        const bytes_read = try file_handle.readAll(buf);
+        std.debug.assert(bytes_read > 0);
+
+        var current_pos: usize = 0;
+
+        const huffman_nodes_bytes: usize = comptime 512 * @sizeOf(HuffmanNode);
+        @memcpy(
+            std.mem.sliceAsBytes(&self.huffman_nodes),
+            buf[current_pos..][0..huffman_nodes_bytes],
+        );
+        current_pos += huffman_nodes_bytes;
+
+        const codes_bytes: usize = comptime 256 * @sizeOf(u64);
+        @memcpy(
+            std.mem.sliceAsBytes(&self.codes),
+            buf[current_pos..][0..codes_bytes],
+        );
+        current_pos += codes_bytes;
+
+        const code_lengths_bytes: usize = comptime 256 * @sizeOf(u8);
+        @memcpy(
+            std.mem.sliceAsBytes(&self.code_lengths),
+            buf[current_pos..][0..code_lengths_bytes],
+        );
+        current_pos += code_lengths_bytes;
+
+        self.root_node_idx = @truncate(std.mem.readPackedInt(
+            u16,
+            buf[current_pos..][0..2],
+            0,
+            comptime builtin.cpu.arch.endian(),
+        ));
+        current_pos += @sizeOf(u16);
+
+        const lookup_table_bytes: usize = comptime 4096 * @sizeOf(u8);
+        @memcpy(
+            self.lookup_table[0..lookup_table_bytes],
+            buf[current_pos..][0..lookup_table_bytes],
+        );
+        current_pos += lookup_table_bytes;
+
+        const lookup_table_lengths_bytes: usize = comptime 4096 * @sizeOf(u8);
+        @memcpy(
+            self.lookup_table_lengths[0..lookup_table_lengths_bytes],
+            buf[current_pos..][0..lookup_table_lengths_bytes],
+        );
+        current_pos += lookup_table_lengths_bytes;
+    }
+
     fn buildHuffmanTree(
         self: *HuffmanCompressor,
         allocator: std.mem.Allocator,

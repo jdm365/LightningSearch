@@ -42,6 +42,7 @@ pub const DocStore = struct {
     prev_buf_idx: u64,
 
     const FileHandles = struct {
+        huffman_compressor_file: std.fs.File,
         huffman_row_data_file: std.fs.File,
         huffman_row_offsets_file: std.fs.File,
 
@@ -52,6 +53,16 @@ pub const DocStore = struct {
         huffman_row_offsets_mmap_buffer: []align(4096) u8,
 
         pub fn init(doc_store: *DocStore, partition_idx: usize) !FileHandles {
+            const huffman_compressor_filename = try std.fmt.allocPrint(
+                doc_store.gpa.allocator(), 
+                "{s}/huffman_compressor_{d}.bin", .{doc_store.dir, partition_idx}
+                );
+            defer doc_store.gpa.allocator().free(huffman_compressor_filename);
+
+            const huffman_compressor_file = try std.fs.cwd().createFile(
+                huffman_compressor_filename,
+                .{ .read = true }
+                );
 
             const huffman_row_data_filename = try std.fmt.allocPrint(
                 doc_store.gpa.allocator(), 
@@ -84,6 +95,7 @@ pub const DocStore = struct {
             );
 
             return FileHandles{
+                .huffman_compressor_file = huffman_compressor_file,
                 .huffman_row_data_file = huffman_row_data_file,
                 .huffman_row_offsets_file = huffman_row_offsets_file,
 
@@ -97,6 +109,19 @@ pub const DocStore = struct {
 
         pub fn initFromDisk(doc_store: *DocStore, partition_idx: usize) !FileHandles {
 
+            const huffman_compressor_filename = try std.fmt.allocPrint(
+                doc_store.gpa.allocator(), 
+                "{s}/huffman_compressor_{d}.bin", .{doc_store.dir, partition_idx}
+                );
+            defer doc_store.gpa.allocator().free(huffman_compressor_filename);
+
+            const huffman_compressor_file = try std.fs.cwd().openFile(
+                huffman_compressor_filename,
+                std.fs.File.OpenFlags{
+                    .mode = .read_write,
+                },
+                );
+
             const huffman_row_data_filename = try std.fmt.allocPrint(
                 doc_store.gpa.allocator(), 
                 "{s}/huffman_row_data_{d}.bin", .{doc_store.dir, partition_idx}
@@ -107,7 +132,7 @@ pub const DocStore = struct {
                 huffman_row_data_filename,
                 std.fs.File.OpenFlags{
                     .mode = .read_write,
-                }
+                },
                 );
             const huffman_row_data_writer = try fu.SingleThreadedDoubleBufferedWriter(u8).init(
                 doc_store.gpa.allocator(),
@@ -124,7 +149,7 @@ pub const DocStore = struct {
                 huffman_row_offsets_filename,
                 std.fs.File.OpenFlags{
                     .mode = .read_write,
-                }
+                },
                 );
             const huffman_row_offsets_writer = try fu.SingleThreadedDoubleBufferedWriter(u64).init(
                 doc_store.gpa.allocator(),
@@ -164,6 +189,7 @@ pub const DocStore = struct {
             );
 
             return FileHandles{
+                .huffman_compressor_file = huffman_compressor_file,
                 .huffman_row_data_file = huffman_row_data_file,
                 .huffman_row_offsets_file = huffman_row_offsets_file,
 
@@ -176,6 +202,7 @@ pub const DocStore = struct {
         }
 
         pub fn deinit(self: *FileHandles, allocator: std.mem.Allocator) void {
+            self.huffman_compressor_file.close();
             self.huffman_row_data_file.close();
             self.huffman_row_offsets_file.close();
 
@@ -213,13 +240,14 @@ pub const DocStore = struct {
             .dir = dir,
 
             .file_handles = FileHandles{
-                .huffman_row_data_file = undefined,
+                .huffman_compressor_file  = undefined,
+                .huffman_row_data_file    = undefined,
                 .huffman_row_offsets_file = undefined,
 
-                .huffman_row_data_writer = undefined,
+                .huffman_row_data_writer    = undefined,
                 .huffman_row_offsets_writer = undefined,
 
-                .huffman_row_data_mmap_buffer = undefined,
+                .huffman_row_data_mmap_buffer    = undefined,
                 .huffman_row_offsets_mmap_buffer = undefined,
             },
 
@@ -261,13 +289,14 @@ pub const DocStore = struct {
             .dir = dir,
 
             .file_handles = FileHandles{
-                .huffman_row_data_file = undefined,
+                .huffman_compressor_file  = undefined,
+                .huffman_row_data_file    = undefined,
                 .huffman_row_offsets_file = undefined,
 
-                .huffman_row_data_writer = undefined,
+                .huffman_row_data_writer    = undefined,
                 .huffman_row_offsets_writer = undefined,
 
-                .huffman_row_data_mmap_buffer = undefined,
+                .huffman_row_data_mmap_buffer    = undefined,
                 .huffman_row_offsets_mmap_buffer = undefined,
             },
 
@@ -278,6 +307,11 @@ pub const DocStore = struct {
 
         store.huffman_buffer_pos = try store.file_handles.huffman_row_data_file.getEndPos();
         store.row_idx = try store.file_handles.huffman_row_offsets_file.getEndPos() >> 3;
+
+        try store.huffman_compressor.initFromDisk(
+            store.file_handles.huffman_compressor_file,
+            gpa.allocator(),
+        );
     }
 
     pub fn printMemoryUsage(self: *const DocStore) void {
@@ -335,6 +369,7 @@ pub const DocStore = struct {
     }
     
     pub fn flush(self: *DocStore) !void {
+        try self.huffman_compressor.write(self.file_handles.huffman_compressor_file);
         self.file_handles.huffman_row_data_writer.flush();
         self.file_handles.huffman_row_offsets_writer.flush();
 
