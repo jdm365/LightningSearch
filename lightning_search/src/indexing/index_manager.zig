@@ -93,7 +93,6 @@ pub const IndexManager = struct {
     const FileData = struct {
         input_filename_c: [*:0]const u8,
         tmp_dir: []const u8,
-        file_handles: []std.fs.File,
         file_type: fu.FileType,
         pq_data: ?PQData = null,
         header_bytes: ?usize = null,
@@ -146,7 +145,6 @@ pub const IndexManager = struct {
             .file_data = FileData{
                 .input_filename_c = undefined,
                 .tmp_dir          = undefined,
-                .file_handles     = undefined,
                 .file_type        = undefined,
 
                 .column_idx_map  = undefined,
@@ -323,14 +321,6 @@ pub const IndexManager = struct {
         const num_search_cols = self.file_data.search_col_idxs.items.len;
         const num_cols        = self.file_data.column_names.items.len;
 
-        self.file_data.file_handles      = try self.gpa().alloc(
-            std.fs.File, 
-            num_partitions,
-            );
-        self.partitions.index_partitions = try self.gpa().alloc(
-            BM25Partition, 
-            num_partitions,
-            );
         self.query_state.results_arrays  = try self.gpa().alloc(
             SortedScoreMultiArray(QueryResult), 
             num_partitions,
@@ -389,13 +379,10 @@ pub const IndexManager = struct {
         for (0..self.partitions.index_partitions.len) |idx| {
             self.query_state.results_arrays[idx].deinit();
             try self.partitions.index_partitions[idx].deinit();
-            self.file_data.file_handles[idx].close();
         }
         self.gpa().free(self.partitions.row_offsets);
         self.gpa().free(self.partitions.byte_offsets);
         self.gpa().free(self.partitions.index_partitions);
-
-        self.gpa().free(self.file_data.file_handles);
 
         // try std.fs.cwd().deleteTree(self.file_data.tmp_dir);
 
@@ -406,6 +393,7 @@ pub const IndexManager = struct {
             }
         }
 
+        self.file_data.boost_factors.deinit(self.gpa());
         self.file_data.search_col_idxs.deinit(self.gpa());
         self.file_data.column_idx_map.deinit();
         self.query_state.thread_pool.deinit();
@@ -1262,12 +1250,10 @@ pub const IndexManager = struct {
             );
         // const num_partitions = 1;
 
-        self.file_data.file_handles      = try self.gpa().alloc(std.fs.File, num_partitions);
         self.partitions.index_partitions = try self.gpa().alloc(BM25Partition, num_partitions);
         self.query_state.results_arrays  = try self.gpa().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
 
         for (0..num_partitions) |idx| {
-            self.file_data.file_handles[idx]     = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
             self.query_state.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa(), MAX_NUM_RESULTS);
             const min_row_group = @divFloor(idx * num_rg, num_partitions);
             const max_row_group = @min(
@@ -1285,7 +1271,6 @@ pub const IndexManager = struct {
             var num_rows: usize = 0;
             for (0.., min_row_group..max_row_group) |i, rg_idx| {
                 row_group_sizes[i] = pq.getNumRowGroupsInRowGroup(
-                    // self.file_data.input_filename_c,
                     reader,
                     rg_idx,
                 );
@@ -1320,12 +1305,19 @@ pub const IndexManager = struct {
 
         const num_partitions = self.partitions.row_offsets.len - 1;
 
-        self.file_data.file_handles      = try self.gpa().alloc(std.fs.File, num_partitions);
+        const file_handles = try self.gpa().alloc(std.fs.File, num_partitions);
+        defer {
+            for (file_handles) |*f| {
+                f.close();
+            }
+            self.gpa().free(file_handles);
+        }
+
         self.partitions.index_partitions = try self.gpa().alloc(BM25Partition, num_partitions);
         self.query_state.results_arrays  = try self.gpa().alloc(SortedScoreMultiArray(QueryResult), num_partitions);
 
         for (0..num_partitions) |idx| {
-            self.file_data.file_handles[idx]     = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
+            file_handles[idx] = try std.fs.cwd().openFile(self.file_data.inputFilename(), .{});
             self.query_state.results_arrays[idx] = try SortedScoreMultiArray(QueryResult).init(self.gpa(), MAX_NUM_RESULTS);
 
             const start_row = self.partitions.row_offsets[idx];

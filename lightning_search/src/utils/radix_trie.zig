@@ -153,15 +153,15 @@ pub fn RadixNode(comptime T: type) type {
             const free_size: usize = switch (self.edge_data.num_edges) {
                 0 => return,
                 1 => 1,
-                2 => 3,
-                3...4 => 5,
-                5...7 => 8,
-                8...15 => 16,
-                16...31 => 32, 
-                32...63 => 64,
-                64...127 => 128,
-                128...191 => 192,
-                192...256 => 256,
+                2...3 => 3,
+                4...5 => 5,
+                6...8 => 8,
+                9...16 => 16,
+                17...32 => 32, 
+                33...64 => 64,
+                65...128 => 128,
+                129...192 => 192,
+                193...256 => 256,
                 else => unreachable,
             };
             allocator.free(self.edges[0..free_size]);
@@ -177,7 +177,6 @@ pub fn RadixNode(comptime T: type) type {
             edge: RadixEdge(T),
             ) !void {
             const insert_idx = self.edge_data.num_edges;
-            // const alignment = @alignOf(RadixEdge(T));
 
             var new_capacity: usize = 0;
             switch (insert_idx) {

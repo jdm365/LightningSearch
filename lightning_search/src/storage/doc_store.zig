@@ -105,7 +105,9 @@ pub const DocStore = struct {
 
             const huffman_row_data_file = try std.fs.cwd().openFile(
                 huffman_row_data_filename,
-                .{}
+                std.fs.File.OpenFlags{
+                    .mode = .read_write,
+                }
                 );
             const huffman_row_data_writer = try fu.SingleThreadedDoubleBufferedWriter(u8).init(
                 doc_store.gpa.allocator(),
@@ -120,7 +122,9 @@ pub const DocStore = struct {
 
             const huffman_row_offsets_file = try std.fs.cwd().openFile(
                 huffman_row_offsets_filename,
-                .{}
+                std.fs.File.OpenFlags{
+                    .mode = .read_write,
+                }
                 );
             const huffman_row_offsets_writer = try fu.SingleThreadedDoubleBufferedWriter(u64).init(
                 doc_store.gpa.allocator(),
@@ -271,6 +275,9 @@ pub const DocStore = struct {
         };
         store.huffman_col_bit_sizes = try store.gpa.allocator().alloc(u64, num_cols);
         store.file_handles = try FileHandles.initFromDisk(store, partition_idx);
+
+        store.huffman_buffer_pos = try store.file_handles.huffman_row_data_file.getEndPos();
+        store.row_idx = try store.file_handles.huffman_row_offsets_file.getEndPos() >> 3;
     }
 
     pub fn printMemoryUsage(self: *const DocStore) void {
