@@ -17,8 +17,8 @@ fn bench(filename: []const u8) !void {
     var index_manager = try IndexManager.init(allocator);
 
     defer {
-        // index_manager.deinit(gpa.allocator()) catch {};
-        // _ = gpa.deinit();
+        index_manager.deinit(gpa.allocator()) catch {};
+        _ = gpa.deinit();
     }
 
     var filetype: FileType = undefined;
@@ -129,8 +129,8 @@ fn serveHTML(filename: []const u8) !void {
     var index_manager = try IndexManager.init(allocator);
 
     defer {
-        // index_manager.deinit(gpa.allocator()) catch {};
-        // _ = gpa.deinit();
+        index_manager.deinit(gpa.allocator()) catch {};
+        _ = gpa.deinit();
     }
 
     var filetype: FileType = undefined;
