@@ -208,6 +208,9 @@ pub const IndexManager = struct {
         for (self.file_data.column_names.items) |c| {
             buf_size += pq.getVbyteSize(c.len) + c.len;
         }
+        for (self.file_data.search_col_idxs.items) |c_idx| {
+            buf_size += pq.getVbyteSize(c_idx);
+        }
 
         var buf = try self.gpa().alloc(u8, buf_size);
         defer self.gpa().free(buf);
@@ -230,6 +233,10 @@ pub const IndexManager = struct {
             comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
+
+        for (self.file_data.search_col_idxs.items) |c_idx| {
+            pq.encodeVbyte(buf.ptr, &current_pos, c_idx);
+        }
 
         std.mem.writePackedInt(
             u32,
@@ -283,6 +290,11 @@ pub const IndexManager = struct {
         );
         current_pos += 4;
 
+        try self.file_data.search_col_idxs.resize(self.stringArena(), num_search_cols);
+        for (self.file_data.search_col_idxs.items) |*c_idx| {
+            c_idx.* = @truncate(pq.decodeVbyte(buf.ptr, &current_pos));
+        }
+
         const num_cols = std.mem.readPackedInt(
             u32,
             buf[current_pos..][0..4],
@@ -292,7 +304,6 @@ pub const IndexManager = struct {
         current_pos += 4;
 
         try self.file_data.boost_factors.resize(self.stringArena(), num_search_cols);
-        try self.file_data.search_col_idxs.resize(self.stringArena(), num_search_cols);
         self.partitions.index_partitions = try self.gpa().alloc(
             BM25Partition,
             num_partitions,
@@ -326,17 +337,35 @@ pub const IndexManager = struct {
             num_partitions,
             );
 
+        for (0..MAX_NUM_RESULTS) |idx| {
+            self.query_state.bit_sizes[idx] = try self.gpa().alloc(
+                u32, 
+                self.file_data.column_idx_map.num_keys,
+                );
+            self.query_state.result_positions[idx] = try self.gpa().alloc(
+                TermPos, 
+                self.file_data.column_idx_map.num_keys,
+                );
+            self.query_state.result_strings[idx] = std.ArrayListUnmanaged(u8){};
+            try self.query_state.result_strings[idx].resize(self.gpa(), 4096);
+        }
+
         for (0..num_partitions) |idx| {
             self.query_state.results_arrays[idx] = try SortedScoreMultiArray(
                 QueryResult
                 ).init(self.gpa(), MAX_NUM_RESULTS);
         }
 
-        var threads = try self.scratchArena().alloc(std.Thread, num_partitions);
+        try self.query_state.thread_pool.init(
+            .{
+                .allocator = self.gpa(),
+                .n_jobs = num_partitions,
+            },
+        );
+        var wg: std.Thread.WaitGroup = .{};
         for (0.., self.partitions.index_partitions) |partition_idx, *p| {
-
-            threads[partition_idx] = try std.Thread.spawn(
-                .{},
+            self.query_state.thread_pool.spawnWg(
+                &wg,
                 BM25Partition.initFromDisk,
                 .{
                     p,
@@ -348,10 +377,8 @@ pub const IndexManager = struct {
                 },
             );
         }
+        wg.wait();
 
-        for (threads) |thread| {
-            thread.join();
-        }
         const time_taken = std.time.milliTimestamp() - time_start;
         std.debug.print("Loaded in {d}ms\n", .{time_taken});
     }
@@ -1524,7 +1551,7 @@ pub const IndexManager = struct {
                             );
                         if (token) |_token| {
                             const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
-                                               @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
+                                               @as(f32, @floatFromInt(II.getDF(_token)));
                             const idf: f32 = (
                                 1.0 + std.math.log2(inner_term)
                                 );
@@ -1548,7 +1575,7 @@ pub const IndexManager = struct {
                                 // .{
                                     // term_buffer[0..term_len],
                                     // _token,
-                                    // II.doc_freqs.items[_token],
+                                    // II.getDF(_token),
                                 // },
                             // );
 
@@ -1583,7 +1610,7 @@ pub const IndexManager = struct {
 
                             if (token) |_token| {
                                 const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
-                                                   @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
+                                                   @as(f32, @floatFromInt(II.getDF(_token)));
                                 const idf: f32 = (
                                     1.0 + std.math.log2(inner_term)
                                     );
@@ -1605,7 +1632,7 @@ pub const IndexManager = struct {
                                     // .{
                                         // term_buffer[0..term_len],
                                         // _token,
-                                        // II.doc_freqs.items[_token],
+                                        // II.getDF(_token),
                                     // },
                                 // );
 
@@ -1639,7 +1666,7 @@ pub const IndexManager = struct {
 
                 if (token) |_token| {
                     const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
-                                       @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
+                                       @as(f32, @floatFromInt(II.getDF(_token)));
                     const idf: f32 = (
                         1.0 + std.math.log2(inner_term)
                         );
@@ -1661,7 +1688,7 @@ pub const IndexManager = struct {
                         // .{
                             // term_buffer[0..term_len],
                             // _token,
-                            // II.doc_freqs.items[_token],
+                            // II.getDF(_token),
                         // },
                     // );
 
@@ -2064,7 +2091,7 @@ pub const IndexManager = struct {
                             // );
                         // if (token) |_token| {
                             // const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
-                                               // @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
+                                               // @as(f32, @floatFromInt(II.getDF(_token)));
                             // const boost_weighted_idf: f32 = (
                                 // 1.0 + std.math.log2(inner_term)
                                 // ) * boost_factors.items[II_idx];
@@ -2080,8 +2107,8 @@ pub const IndexManager = struct {
                                 // _token,
                                 // @truncate(II_idx),
                                 // @intFromFloat(boost_weighted_idf),
-                                // // if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
-                                // // if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
+                                // // if (II.getDF(_token) == 1) II.postings.doc_id_ptrs[_token] else null,
+                                // // if (II.getDF(_token) == 1) II.postings.term_pos_ptrs[_token] else null,
                             // );
 // 
                             // term_pos += 1;
@@ -2115,7 +2142,7 @@ pub const IndexManager = struct {
 // 
                             // if (token) |_token| {
                                 // const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
-                                                   // @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
+                                                   // @as(f32, @floatFromInt(II.getDF(_token)));
                                 // const boost_weighted_idf: f32 = (
                                     // 1.0 + std.math.log2(inner_term)
                                     // ) * boost_factors.items[II_idx];
@@ -2130,8 +2157,8 @@ pub const IndexManager = struct {
                                     // _token,
                                     // @truncate(II_idx),
                                     // @intFromFloat(boost_weighted_idf),
-                                    // // if (II.doc_freqs.items.len == 1) II.postings.doc_id_ptrs[_token] else null,
-                                    // // if (II.doc_freqs.items.len == 1) II.postings.term_pos_ptrs[_token] else null,
+                                    // // if (II.getDF(_token) else null,
+                                    // // if (II.getDF(_token) else null,
                                 // );
 // 
                                 // term_pos += 1;
@@ -2164,7 +2191,7 @@ pub const IndexManager = struct {
 // 
                 // if (token) |_token| {
                     // const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
-                                       // @as(f32, @floatFromInt(II.doc_freqs.items[_token]));
+                                       // @as(f32, @floatFromInt(II.getDF(_token)));
                     // const boost_weighted_idf: f32 = (
                         // 1.0 + std.math.log2(inner_term)
                         // ) * boost_factors.items[II_idx];
@@ -2178,7 +2205,7 @@ pub const IndexManager = struct {
                         // _token,
                         // @truncate(II_idx),
                         // @intFromFloat(boost_weighted_idf),
-                        // // if (II.doc_freqs.items.len == 1) II.doc_freqs.items[_token] else null,
+                        // // if (II.getDF(_token) == 1) II.getDF(_token) else null,
                     // );
 // 
                     // term_pos += 1;

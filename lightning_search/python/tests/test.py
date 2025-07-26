@@ -164,15 +164,11 @@ if __name__ == '__main__':
                 "title"
                 ],
             )
-    exit()
-    """
+    ## exit()
 
+    """
     index = Index()
     index.load(index_dir)
-    print("LOADED PROPERLY")
-    """
-    """
-    exit()
 
     '''
     print(json.dumps(index.query(

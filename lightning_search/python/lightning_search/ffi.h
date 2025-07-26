@@ -26,5 +26,19 @@ void c_query(
 		uint8_t** result_json_str_buf,
 		uint64_t* result_json_str_buf_len
 		);
-uint32_t get_num_cols(IndexManager* idx_ptr);
+void get_num_cols(
+		IndexManager const* idx_ptr, 
+		uint32_t* num_cols,
+		uint32_t* num_search_cols
+		);
+void get_columns(
+		IndexManager const* idx_ptr,
+		uint32_t num_cols,
+		uint8_t*** column_names, 
+		uint64_t** column_name_lengths
+		);
+uint32_t get_search_col_idxs(
+		IndexManager const* idx_ptr, 
+		uint32_t** search_col_idxs
+		);
 void load(IndexManager* idx_ptr, uint8_t* _dir);

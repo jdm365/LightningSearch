@@ -39,16 +39,32 @@ cdef extern from "ffi.h":
 		uint8_t** result_json_str_buf,
         uint64_t* result_json_str_buf_len
 		) nogil
-    uint32_t get_num_cols(IndexManager* idx_ptr)
+    void get_num_cols(
+            IndexManager* idx_ptr, 
+            uint32_t* num_cols,
+            uint32_t* num_search_cols
+            )
+    void get_columns(
+            IndexManager* idx_ptr,
+            uint32_t num_cols,
+            uint8_t*** column_names, 
+            uint64_t** column_name_lengths
+            )
+    uint32_t get_search_col_idxs(
+            IndexManager* idx_ptr, 
+            uint32_t** search_col_idxs
+            )
     void load(IndexManager* idx_ptr, uint8_t* _dir)
 
 cdef class Index:
     cdef IndexManager* idx_ptr 
+    cdef list columns 
     cdef dict query_col_map
     cdef uint32_t num_cols
 
     def __init__(self):
         self.idx_ptr = create_index()
+        self.columns = []
         self.query_col_map = {}
         self.num_cols = 0
 
@@ -56,6 +72,7 @@ cdef class Index:
         dname = (dir_name + '\0').encode('utf-8')
         cdef uint8_t* c_dirname = <uint8_t*>dname
         load(self.idx_ptr, c_dirname)
+        self.get_cols()
 
     def __del__(self):
         if self.idx_ptr:
@@ -71,7 +88,6 @@ cdef class Index:
                 num_query_cols * sizeof(uint8_t*)
                 )
 
-        self.query_col_map = {query_cols[i]: idx for idx in range(num_query_cols)}
         query_cols = [(query_cols[i] + '\0').encode('utf-8') for i in range(num_query_cols)]
 
         cdef uint32_t i
@@ -87,9 +103,45 @@ cdef class Index:
                     )
 
         free(c_query_cols)
+        self.get_cols()
 
-    cdef void get_num_cols(self):
-        self.num_cols = get_num_cols(self.idx_ptr)
+
+    cdef void get_cols(self):
+        cdef uint32_t num_search_cols
+        get_num_cols(self.idx_ptr, &self.num_cols, &num_search_cols)
+
+        cdef uint8_t** column_names = <uint8_t**>malloc(
+                self.num_cols * sizeof(uint8_t*)
+                )
+        cdef uint64_t* column_name_lengths = <uint64_t*>malloc(
+                self.num_cols * sizeof(uint64_t)
+                )
+        get_columns(
+                self.idx_ptr,
+                self.num_cols,
+                &column_names,
+                &column_name_lengths
+                )
+
+        cdef uint32_t* search_col_idxs
+        get_search_col_idxs(self.idx_ptr, &search_col_idxs)
+
+        cdef uint64_t sc_idx = 0
+        self.columns = []
+        for i in range(self.num_cols):
+            col_name = PyUnicode_DecodeUTF8(
+                <char*>column_names[i],
+                column_name_lengths[i],
+                NULL
+            ).upper()
+            self.columns.append(col_name)
+
+            if i == search_col_idxs[sc_idx]:
+                self.query_col_map[col_name] = sc_idx
+                sc_idx += 1
+
+        free(column_names)
+        free(column_name_lengths)
 
     cpdef list query(
             self, 
@@ -114,15 +166,18 @@ cdef class Index:
         cdef uint32_t num_matched_records = 0
 
         for query_col, query_value in query_map.items():
-            if query_col not in self.query_col_map:
-                raise Warning(f"Query column '{query_col}' not indexed.")
+            qc_upper = query_col.upper()
 
-            idx = self.query_col_map[query_col]
+            if qc_upper not in self.query_col_map:
+                print(self.query_col_map)
+                raise Warning(f"Query column '{qc_upper}' not indexed.")
+
+            idx = self.query_col_map[qc_upper]
 
             search_col_idxs[idx] = idx
             q_copy = (query_value + '\0').encode('utf-8')
             queries[idx] = <uint8_t*>q_copy
-            boost_factors_arr[idx] = boost_factors.get(query_col, 1.0)
+            boost_factors_arr[idx] = boost_factors.get(qc_upper, 1.0)
 
         with nogil:
             c_query(

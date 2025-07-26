@@ -1496,7 +1496,6 @@ pub const PostingsList = struct {
 pub const InvertedIndexV2 = struct {
     posting_list: PostingsList,
     vocab: Vocab,
-    doc_freqs: std.ArrayListUnmanaged(u32),
     doc_sizes: std.ArrayListUnmanaged(u16),
 
     avg_doc_size: f32,
@@ -1512,7 +1511,6 @@ pub const InvertedIndexV2 = struct {
         var II = InvertedIndexV2{
             .posting_list = PostingsList.init(allocator),
             .vocab = undefined,
-            .doc_freqs = std.ArrayListUnmanaged(u32){},
             .doc_sizes = std.ArrayListUnmanaged(u16){},
             .avg_doc_size = 0.0,
             .file_handle = undefined,
@@ -1533,12 +1531,6 @@ pub const InvertedIndexV2 = struct {
         if (num_docs) |nd| {
             try II.doc_sizes.ensureTotalCapacity(allocator, nd);
 
-            // Guess capacity.
-            II.doc_freqs = try std.ArrayListUnmanaged(u32).initCapacity(
-                allocator, 
-                @as(usize, @intFromFloat(@as(f32, @floatFromInt(nd)) * 0.1))
-                );
-
             // Guess capacity
             try II.vocab.string_bytes.ensureTotalCapacity(allocator, @intCast(nd));
             try II.vocab.map.ensureTotalCapacityContext(allocator, @intCast(nd / 25), II.vocab.getCtx());
@@ -1554,8 +1546,13 @@ pub const InvertedIndexV2 = struct {
 
         // Using arena now.
         // self.vocab.deinit(allocator);
-        // self.doc_freqs.deinit(allocator);
         // self.doc_sizes.deinit(allocator);
+    }
+
+    pub inline fn getDF(self: *InvertedIndexV2, term_id: u32) u32 {
+        const posting = self.posting_list.postings.items[term_id];
+        return @as(u32, @truncate(posting.full_blocks.items.len * BLOCK_SIZE)) + 
+               @as(u32, @intCast(posting.partial_block.num_docs));
     }
 
     pub fn commit(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
@@ -1852,11 +1849,15 @@ pub const BM25Partition = struct {
         partition_idx: usize,
         num_search_cols: usize,
         num_cols: usize,
-        ) !void {
+        // ) !void {
+        ) void {
 
         const allocator = gpa.allocator();
         partition.* = BM25Partition{
-            .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
+            .II = allocator.alloc(InvertedIndexV2, num_search_cols) catch |err| {
+                std.debug.print("{any}\n", .{err});
+                @panic("Failed to allocate memory for II's");
+            },
             .allocator = allocator,
             .arena = std.heap.ArenaAllocator.init(allocator),
 
@@ -1867,34 +1868,50 @@ pub const BM25Partition = struct {
         };
         @memset(partition.scratch_arr[0..BLOCK_SIZE], 0);
 
-        const doc_store_dir = try std.fmt.allocPrint(
+        const doc_store_dir = std.fmt.allocPrint(
             allocator,
             "{s}/doc_store",
             .{dir},
-            );
+            ) catch |err| {
+            std.debug.print("{any}\n", .{err});
+            @panic("Failed to allocate memory for doc_store_dir");
+        };
         defer allocator.free(doc_store_dir);
-        try partition.doc_store.initFromDisk(
+
+        partition.doc_store.initFromDisk(
             gpa,
             doc_store_dir, 
             partition_idx,
             num_cols,
-            );
+            ) catch |err| {
+            std.debug.print("{any}\n", .{err});
+            @panic("Failed to initialize doc_store from disk");
+        };
 
         for (0..num_search_cols) |idx| {
-            const filename = try std.fmt.allocPrint(
+            const filename = std.fmt.allocPrint(
                 allocator,
                 "{s}/postings/posting_{d}_{d}.bin",
                 .{dir, idx, partition_idx},
-                );
+                ) catch |err| {
+                std.debug.print("{any}\n", .{err});
+                @panic("Failed to allocate memory for filename");
+            };
             defer allocator.free(filename);
 
-            partition.II[idx] = try InvertedIndexV2.init(
+            partition.II[idx] = InvertedIndexV2.init(
                 partition.arena.allocator(), 
                 null,
                 filename,
                 false,
-                );
-            try partition.II[idx].load(partition.arena.allocator());
+                ) catch |err| {
+                std.debug.print("{any}\n", .{err});
+                @panic("Failed to initialize InvertedIndexV2 from disk");
+            };
+            partition.II[idx].load(partition.arena.allocator()) catch |err| {
+                std.debug.print("{any}\n", .{err});
+                @panic("Failed to load InvertedIndexV2 from disk");
+            };
         }
     }
 
@@ -1933,15 +1950,11 @@ pub const BM25Partition = struct {
         doc_id: u32,
         _: u16,
         col_idx: usize,
-        // terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         _: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
         std.debug.assert(
             self.II[col_idx].vocab.map.count() < (1 << 32),
             );
-        // std.debug.assert(
-            // terms_seen.count < MAX_NUM_TERMS
-            // );
 
         const gop = try self.II[col_idx].vocab.map.getOrPutContextAdapted(
             self.allocator,
@@ -1964,7 +1977,6 @@ pub const BM25Partition = struct {
                 );
             gop.value_ptr.* = self.II[col_idx].vocab.map.count() - 1;
 
-            try self.II[col_idx].doc_freqs.append(self.allocator, 1);
             try self.II[col_idx].posting_list.append(
                 doc_id,
                 self.II[col_idx].doc_sizes.items[doc_id],
@@ -1972,10 +1984,8 @@ pub const BM25Partition = struct {
             );
 
         } else {
-
             const val = gop.value_ptr.*;
-
-            self.II[col_idx].doc_freqs.items[val] += try self.II[col_idx].posting_list.add(
+            _ = try self.II[col_idx].posting_list.add(
                 val,
                 doc_id,
                 self.II[col_idx].doc_sizes.items[doc_id],

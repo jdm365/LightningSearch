@@ -165,14 +165,35 @@ pub export fn c_query(
     result_json_str_buf_size.* = idx_ptr.query_state.json_output_buffer.items.len;
 }
 
-pub export fn get_num_cols(idx_ptr: *IndexManager) u32 {
-    return @truncate(idx_ptr.file_data.column_idx_map.num_keys);
+pub export fn get_num_cols(
+    idx_ptr: *const IndexManager,
+    num_cols: *u32,
+    num_search_cols: *u32,
+) void {
+    num_cols.* = @truncate(idx_ptr.file_data.column_names.items.len);
+    num_search_cols.* = @truncate(idx_ptr.file_data.search_col_idxs.items.len);
 }
 
-pub export fn load(
-    idx_ptr: *IndexManager, 
-    _dir: [*:0]const u8
+pub export fn get_columns(
+    idx_ptr: *const IndexManager,
+    num_columns: u32,
+    column_names: *[*][*]const u8,
+    column_name_lengths: *[*]u64,
     ) void {
+    for (0..num_columns) |idx| {
+        column_names.*[idx] = idx_ptr.file_data.column_names.items[idx].ptr;
+        column_name_lengths.*[idx] = idx_ptr.file_data.column_names.items[idx].len;
+    }
+}
+
+pub export fn get_search_col_idxs(
+    idx_ptr: *const IndexManager,
+    search_col_idxs: *[*]u32,
+    ) void {
+    search_col_idxs.* = idx_ptr.file_data.search_col_idxs.items.ptr;
+}
+
+pub export fn load(idx_ptr: *IndexManager, _dir: [*:0]const u8) void {
     idx_ptr.load(std.mem.span(_dir)) catch |err| {
         std.debug.print("Failed to load index from {s}: {any}\n", .{std.mem.span(_dir), err});
         @panic("Failed to load index.");
