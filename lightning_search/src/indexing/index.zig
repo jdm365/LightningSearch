@@ -1847,12 +1847,14 @@ pub const BM25Partition = struct {
 
     pub fn initFromDisk(
         partition: *BM25Partition,
-        allocator: std.mem.Allocator,
+        gpa: *std.heap.DebugAllocator(.{ .thread_safe = true }),
         dir: []const u8, 
         partition_idx: usize,
         num_search_cols: usize,
+        num_cols: usize,
         ) !void {
 
+        const allocator = gpa.allocator();
         partition.* = BM25Partition{
             .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
             .allocator = allocator,
@@ -1864,6 +1866,19 @@ pub const BM25Partition = struct {
             .scratch_arr = undefined,
         };
         @memset(partition.scratch_arr[0..BLOCK_SIZE], 0);
+
+        const doc_store_dir = try std.fmt.allocPrint(
+            allocator,
+            "{s}/doc_store",
+            .{dir},
+            );
+        defer allocator.free(doc_store_dir);
+        try partition.doc_store.initFromDisk(
+            gpa,
+            doc_store_dir, 
+            partition_idx,
+            num_cols,
+            );
 
         for (0..num_search_cols) |idx| {
             const filename = try std.fmt.allocPrint(

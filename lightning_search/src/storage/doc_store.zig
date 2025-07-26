@@ -26,13 +26,6 @@ pub const DocStore = struct {
     dir: []const u8,
 
     huffman_compressor: HuffmanCompressor,
-    literal_byte_sizes: std.ArrayListUnmanaged(usize),
-    literal_byte_size_sum: usize,
-    literal_col_idxs: std.ArrayListUnmanaged(usize),
-    huffman_col_idxs: std.ArrayListUnmanaged(usize),
-
-    literal_rows: std.ArrayListUnmanaged([]u8),
-
     huffman_col_bit_sizes: []u64,
 
     huffman_buffer_pos: u64,
@@ -51,7 +44,6 @@ pub const DocStore = struct {
     const FileHandles = struct {
         huffman_row_data_file: std.fs.File,
         huffman_row_offsets_file: std.fs.File,
-        literal_rows_file: std.fs.File,
 
         huffman_row_data_writer: fu.SingleThreadedDoubleBufferedWriter(u8),
         huffman_row_offsets_writer: fu.SingleThreadedDoubleBufferedWriter(u64),
@@ -91,20 +83,53 @@ pub const DocStore = struct {
                 huffman_row_offsets_file,
             );
 
-            const literal_rows_filename = try std.fmt.allocPrint(
+            return FileHandles{
+                .huffman_row_data_file = huffman_row_data_file,
+                .huffman_row_offsets_file = huffman_row_offsets_file,
+
+                .huffman_row_data_writer = huffman_row_data_writer,
+                .huffman_row_offsets_writer = huffman_row_offsets_writer,
+
+                .huffman_row_data_mmap_buffer = undefined,
+                .huffman_row_offsets_mmap_buffer = undefined,
+            };
+        }
+
+        pub fn initFromDisk(doc_store: *DocStore, partition_idx: usize) !FileHandles {
+
+            const huffman_row_data_filename = try std.fmt.allocPrint(
                 doc_store.gpa.allocator(), 
-                "{s}/literal_rows_{d}.bin", .{doc_store.dir, partition_idx}
+                "{s}/huffman_row_data_{d}.bin", .{doc_store.dir, partition_idx}
                 );
-            const literal_rows_file = try std.fs.cwd().createFile(
-                literal_rows_filename,
-                .{ .read = true }
+            defer doc_store.gpa.allocator().free(huffman_row_data_filename);
+
+            const huffman_row_data_file = try std.fs.cwd().openFile(
+                huffman_row_data_filename,
+                .{}
                 );
-            defer doc_store.gpa.allocator().free(literal_rows_filename);
+            const huffman_row_data_writer = try fu.SingleThreadedDoubleBufferedWriter(u8).init(
+                doc_store.gpa.allocator(),
+                huffman_row_data_file,
+            );
+
+            const huffman_row_offsets_filename = try std.fmt.allocPrint(
+                doc_store.gpa.allocator(), 
+                "{s}/huffman_row_offsets_{d}.bin", .{doc_store.dir, partition_idx}
+                );
+            defer doc_store.gpa.allocator().free(huffman_row_offsets_filename);
+
+            const huffman_row_offsets_file = try std.fs.cwd().openFile(
+                huffman_row_offsets_filename,
+                .{}
+                );
+            const huffman_row_offsets_writer = try fu.SingleThreadedDoubleBufferedWriter(u64).init(
+                doc_store.gpa.allocator(),
+                huffman_row_offsets_file,
+            );
 
             return FileHandles{
                 .huffman_row_data_file = huffman_row_data_file,
                 .huffman_row_offsets_file = huffman_row_offsets_file,
-                .literal_rows_file = literal_rows_file,
 
                 .huffman_row_data_writer = huffman_row_data_writer,
                 .huffman_row_offsets_writer = huffman_row_offsets_writer,
@@ -117,7 +142,6 @@ pub const DocStore = struct {
         pub fn deinit(self: *FileHandles, allocator: std.mem.Allocator) void {
             self.huffman_row_data_file.close();
             self.huffman_row_offsets_file.close();
-            self.literal_rows_file.close();
 
             self.huffman_row_offsets_writer.deinit(allocator);
             self.huffman_row_data_writer.deinit(allocator);
@@ -130,29 +154,15 @@ pub const DocStore = struct {
 
     pub fn init(
         gpa: *std.heap.DebugAllocator(.{ .thread_safe = true }),
-        literal_byte_sizes: *const std.ArrayListUnmanaged(usize),
-        literal_col_idxs: *const std.ArrayListUnmanaged(usize),
-        huffman_col_idxs: *const std.ArrayListUnmanaged(usize),
         dir: []const u8,
         partition_idx: usize,
+        num_cols: usize,
     ) !DocStore {
-        var sum: usize = 0;
-        for (literal_byte_sizes.items) |byte_size| {
-            sum += byte_size;
-        }
-
         var store = DocStore {
             .huffman_compressor = HuffmanCompressor.init(),
-            .literal_byte_sizes = std.ArrayListUnmanaged(usize){},
-            .literal_byte_size_sum = sum,
-            .literal_col_idxs = std.ArrayListUnmanaged(usize){},
-            .huffman_col_idxs = std.ArrayListUnmanaged(usize){},
-
-            .literal_rows = std.ArrayListUnmanaged([]u8){},
-
             .huffman_col_bit_sizes = try gpa.allocator().alloc(
                 u64, 
-                huffman_col_idxs.items.len,
+                num_cols,
                 ),
 
             .huffman_prev_buffer_offset = 0,
@@ -169,7 +179,6 @@ pub const DocStore = struct {
             .file_handles = FileHandles{
                 .huffman_row_data_file = undefined,
                 .huffman_row_offsets_file = undefined,
-                .literal_rows_file = undefined,
 
                 .huffman_row_data_writer = undefined,
                 .huffman_row_offsets_writer = undefined,
@@ -180,10 +189,6 @@ pub const DocStore = struct {
 
             .prev_buf_idx = 0,
         };
-        store.literal_byte_sizes = try literal_byte_sizes.clone(store.gpa.allocator());
-        store.literal_col_idxs   = try literal_col_idxs.clone(store.gpa.allocator());
-        store.huffman_col_idxs   = try huffman_col_idxs.clone(store.gpa.allocator());
-
         store.file_handles = try FileHandles.init(&store, partition_idx);
 
         return store;
@@ -194,32 +199,55 @@ pub const DocStore = struct {
 
         self.arena.deinit();
         self.file_handles.deinit(self.gpa.allocator());
-        self.literal_rows.deinit(self.gpa.allocator());
-        self.literal_byte_sizes.deinit(self.gpa.allocator());
-        self.literal_col_idxs.deinit(self.gpa.allocator());
-        self.huffman_col_idxs.deinit(self.gpa.allocator());
         self.gpa.allocator().free(self.huffman_col_bit_sizes);
     }
 
+    pub fn initFromDisk(
+        store: *DocStore,
+        gpa: *std.heap.DebugAllocator(.{ .thread_safe = true }),
+        dir: []const u8, 
+        partition_idx: usize,
+        num_cols: usize,
+        ) !void {
+        store.* = DocStore {
+            .huffman_compressor = HuffmanCompressor.init(),
+            .huffman_col_bit_sizes = undefined,
+
+            .huffman_prev_buffer_offset = 0,
+            .huffman_buffer_pos = 0,
+
+            .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+            .gpa = gpa,
+
+            .row_idx = 0,
+            .zeroed_range = 0,
+
+            .dir = dir,
+
+            .file_handles = FileHandles{
+                .huffman_row_data_file = undefined,
+                .huffman_row_offsets_file = undefined,
+
+                .huffman_row_data_writer = undefined,
+                .huffman_row_offsets_writer = undefined,
+
+                .huffman_row_data_mmap_buffer = undefined,
+                .huffman_row_offsets_mmap_buffer = undefined,
+            },
+
+            .prev_buf_idx = 0,
+        };
+        store.huffman_col_bit_sizes = try store.gpa.allocator().alloc(u64, num_cols);
+        store.file_handles = try FileHandles.initFromDisk(store, partition_idx);
+    }
+
     pub fn printMemoryUsage(self: *const DocStore) void {
-        var total_bytes: usize = 0;
-        const huffman_data_size: usize = self.huffman_buffer_pos + (8 * self.row_idx);
-        var literal_rows_sum: usize = 0;
+        const total_bytes: usize = self.huffman_buffer_pos + (8 * self.row_idx);
 
-        for (self.literal_rows.items) |row| {
-            literal_rows_sum += row.len;
-        }
-        total_bytes += huffman_data_size + total_bytes;
-
-        if (huffman_data_size >= (1 << 20)) {
-            std.debug.print("HUFFMAN DATA SIZE:  {d}MB\n", .{@divFloor(huffman_data_size, 1 << 20)});
-            std.debug.print("LITERAL ROWS SIZE:  {d}MB\n", .{@divFloor(literal_rows_sum, 1 << 20)});
-            std.debug.print("-------------------------\n", .{});
-            std.debug.print("TOTAL SIZE:         {d}MB\n", .{@divFloor(total_bytes, 1 << 20)});
+        if (total_bytes >= (1 << 20)) {
+            std.debug.print("TOTAL SIZE: {d}MB\n", .{@divFloor(total_bytes, 1 << 20)});
         } else {
-            std.debug.print("LITERAL ROWS SIZE:  {d}kB\n", .{@divFloor(literal_rows_sum, 1 << 10)});
-            std.debug.print("-------------------------\n", .{});
-            std.debug.print("TOTAL SIZE:         {d}kB\n", .{@divFloor(total_bytes, 1 << 10)});
+            std.debug.print("TOTAL SIZE: {d}kB\n", .{@divFloor(total_bytes, 1 << 10)});
         }
 
     }
@@ -230,33 +258,12 @@ pub const DocStore = struct {
         byte_positions: []TermPos,
         row_data: []u8,
     ) !void {
-        if (self.literal_byte_size_sum > 0) {
-            var literal_row = try self.gpa.allocator().alloc(
-                u8, 
-                self.literal_byte_size_sum,
-                );
-
-            var literal_row_offset: usize = 0;
-            for (self.literal_col_idxs.items) |col_idx| {
-                const start_pos = byte_positions[col_idx].start_pos;
-                const field_len = byte_positions[col_idx].field_len;
-
-                @memcpy(
-                    literal_row[literal_row_offset..][0..field_len], 
-                    row_data[start_pos..(start_pos + field_len)],
-                    );
-                literal_row_offset += field_len;
-            }
-            const val = try self.literal_rows.addOne(self.gpa.allocator());
-            val.* = literal_row[0..literal_row_offset];
-        }
-
         // | -- data -- |<offset>| -- bit sizes -- |.| -- data -- | ...
-        var row_data_buf = try self.file_handles.huffman_row_data_writer.getBuffer(self.huffman_buffer_pos);
+        var row_data_buf    = try self.file_handles.huffman_row_data_writer.getBuffer(self.huffman_buffer_pos);
         var row_offsets_buf = try self.file_handles.huffman_row_offsets_writer.getBuffer(self.row_idx);
 
         var row_bit_size: usize = 0;
-        for (self.huffman_col_idxs.items) |col_idx| {
+        for (0..self.huffman_col_bit_sizes.len) |col_idx| {
             const start_pos = byte_positions[col_idx].start_pos;
             const field_len = byte_positions[col_idx].field_len;
 
@@ -341,9 +348,6 @@ pub const DocStore = struct {
 
         bit_sizes: []u32,
     ) !void {
-        // Assume all huffman for now.
-        std.debug.assert(self.literal_col_idxs.items.len == 0);
-
         const RO_u64_mmap_buf: [*]const u64 = @ptrCast(
             self.file_handles.huffman_row_offsets_mmap_buffer.ptr
             );
@@ -352,7 +356,7 @@ pub const DocStore = struct {
 
         var bits_total: usize = 0;
         const data_buf = self.file_handles.huffman_row_data_mmap_buffer;
-        for (0..self.huffman_col_idxs.items.len) |col_idx| {
+        for (0..self.huffman_col_bit_sizes.len) |col_idx| {
             bit_sizes[col_idx] = @truncate(pq.decodeVbyte(
                 data_buf.ptr,
                 &current_byte_idx,

@@ -231,6 +231,15 @@ pub const IndexManager = struct {
         );
         current_pos += 4;
 
+        std.mem.writePackedInt(
+            u32,
+            buf[current_pos..][0..4],
+            0,
+            @truncate(self.file_data.column_names.items.len),
+            comptime builtin.cpu.arch.endian(),
+        );
+        current_pos += 4;
+
         _ = try file.write(buf);
     }
 
@@ -271,6 +280,14 @@ pub const IndexManager = struct {
         );
         current_pos += 4;
 
+        const num_cols = std.mem.readPackedInt(
+            u32,
+            buf[current_pos..][0..4],
+            0,
+            comptime builtin.cpu.arch.endian(),
+        );
+        current_pos += 4;
+
 
         self.partitions.index_partitions = try self.gpa().alloc(
             BM25Partition,
@@ -295,10 +312,11 @@ pub const IndexManager = struct {
                 BM25Partition.initFromDisk,
                 .{
                     p,
-                    self.gpa(),
+                    self.allocators.gpa,
                     self.file_data.tmp_dir,
                     partition_idx,
                     @as(usize, @intCast(num_search_cols)),
+                    @as(usize, @intCast(num_cols)),
                 },
             );
         }
@@ -795,18 +813,6 @@ pub const IndexManager = struct {
             fu.FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
         }
 
-        // TODO: Implement type inference to allow literal types.
-        var literal_byte_idxs = std.ArrayListUnmanaged(usize){};
-        var literal_col_idxs  = std.ArrayListUnmanaged(usize){};
-        var huffman_col_idxs  = std.ArrayListUnmanaged(usize){};
-        defer literal_byte_idxs.deinit(self.gpa());
-        defer literal_col_idxs.deinit(self.gpa());
-        defer huffman_col_idxs.deinit(self.gpa());
-
-        for (0..self.file_data.column_idx_map.num_keys) |idx| {
-            try huffman_col_idxs.append(self.gpa(), idx);
-        }
-
         const doc_store_dir = try std.fmt.allocPrint(
             self.stringArena(),
             "{s}/doc_store",
@@ -820,11 +826,9 @@ pub const IndexManager = struct {
 
         current_IP.doc_store = try DocStore.init(
             self.allocators.gpa,
-            &literal_byte_idxs,
-            &literal_col_idxs,
-            &huffman_col_idxs,
             doc_store_dir,
             partition_idx,
+            self.file_data.column_names.items.len,
         );
 
         try current_IP.doc_store.huffman_compressor.buildHuffmanTreeGivenFreqs(
@@ -1000,18 +1004,6 @@ pub const IndexManager = struct {
             freq_table[buffer[idx]] += 1;
         }
 
-        // TODO: Implement type inference to allow literal types.
-        var literal_byte_idxs = std.ArrayListUnmanaged(usize){};
-        var literal_col_idxs  = std.ArrayListUnmanaged(usize){};
-        var huffman_col_idxs  = std.ArrayListUnmanaged(usize){};
-        defer literal_byte_idxs.deinit(self.gpa());
-        defer literal_col_idxs.deinit(self.gpa());
-        defer huffman_col_idxs.deinit(self.gpa());
-
-        for (0..self.file_data.column_idx_map.num_keys) |idx| {
-            try huffman_col_idxs.append(self.gpa(), idx);
-        }
-
         const doc_store_dir = try std.fmt.allocPrint(
             self.stringArena(),
             "{s}/doc_store",
@@ -1025,11 +1017,9 @@ pub const IndexManager = struct {
 
         current_IP.doc_store = try DocStore.init(
             self.allocators.gpa,
-            &literal_byte_idxs,
-            &literal_col_idxs,
-            &huffman_col_idxs,
             doc_store_dir,
             partition_idx,
+            self.file_data.column_names.items.len,
         );
 
         try current_IP.doc_store.huffman_compressor.buildHuffmanTreeGivenFreqs(
