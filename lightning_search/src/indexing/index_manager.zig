@@ -44,6 +44,7 @@ const unsetBit              = misc.unsetBit;
 
 const AtomicCounter = std.atomic.Value(u64);
 
+pub const MAX_QUERY_TERMS: usize = 64;
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 
 // const MAX_NUM_THREADS: usize = 1;
@@ -1730,8 +1731,8 @@ pub const IndexManager = struct {
     pub inline fn removeIterator(
         remove_mask: *u16,
         iterators: *std.ArrayListUnmanaged(PostingsIteratorV2),
-        doc_ids: *[16]u32,
-        scores: *[16]f32,
+        doc_ids: *[MAX_QUERY_TERMS]u32,
+        scores: *[MAX_QUERY_TERMS]f32,
     ) void {
         while (remove_mask.* != 0) {
             const remove_idx: usize = (comptime @bitSizeOf(@TypeOf(remove_mask.*)) - 1) - @clz(remove_mask.*);
@@ -1810,13 +1811,12 @@ pub const IndexManager = struct {
 
         var total_docs_scored: usize = 0;
 
-        const max_terms: usize = 16;
-
         var remove_mask: u16 = 0;
 
-        var doc_ids = [_]u32{0} ** max_terms;
-        var scores  = [_]f32{0.0} ** max_terms;
-        std.debug.assert(iterators.items.len <= max_terms);
+        var doc_ids = [_]u32{0} ** MAX_QUERY_TERMS;
+        var scores  = [_]f32{0.0} ** MAX_QUERY_TERMS;
+        std.debug.assert(iterators.items.len <= MAX_QUERY_TERMS);
+
 
         // TODO: Keep array of live iterators instead of using mask.
 

@@ -1,8 +1,11 @@
 ## Data
 data/
 *.csv
+*.tsv
 *.zip
 *.json
+*.jsonl
+*.ndjson
 *.parquet
 .*/
 !.gitignore

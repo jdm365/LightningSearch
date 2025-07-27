@@ -165,7 +165,7 @@ cdef class Index:
         cdef uint64_t result_json_str_buf_len = 0
         cdef uint32_t num_matched_records = 0
 
-        for query_col, query_value in query_map.items():
+        for i, (query_col, query_value) in enumerate(query_map.items()):
             qc_upper = query_col.upper()
 
             if qc_upper not in self.query_col_map:
@@ -174,10 +174,10 @@ cdef class Index:
 
             idx = self.query_col_map[qc_upper]
 
-            search_col_idxs[idx] = idx
+            search_col_idxs[i] = idx
             q_copy = (query_value + '\0').encode('utf-8')
-            queries[idx] = <uint8_t*>q_copy
-            boost_factors_arr[idx] = boost_factors.get(qc_upper, 1.0)
+            queries[i] = <uint8_t*>q_copy
+            boost_factors_arr[i] = boost_factors.get(qc_upper, 1.0)
 
         ## with nogil:
         c_query(
