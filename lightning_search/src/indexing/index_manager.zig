@@ -1749,7 +1749,7 @@ pub const IndexManager = struct {
     }
 
     pub inline fn removeIterator(
-        remove_mask: *u16,
+        remove_mask: *u64,
         iterators: *std.ArrayListUnmanaged(PostingsIteratorV2),
         doc_ids: *[MAX_QUERY_TERMS]u32,
         scores: *[MAX_QUERY_TERMS]f32,
@@ -1757,7 +1757,7 @@ pub const IndexManager = struct {
         while (remove_mask.* != 0) {
             const remove_idx: usize = (comptime @bitSizeOf(@TypeOf(remove_mask.*)) - 1) - @clz(remove_mask.*);
             _ = iterators.swapRemove(remove_idx);
-            unsetBit(u16, remove_mask, remove_idx);
+            unsetBit(u64, remove_mask, remove_idx);
 
             std.mem.swap(u32, &doc_ids[remove_idx], &doc_ids[iterators.items.len]);
             std.mem.swap(f32, &scores[remove_idx], &scores[iterators.items.len]);
@@ -1831,7 +1831,7 @@ pub const IndexManager = struct {
 
         var total_docs_scored: usize = 0;
 
-        var remove_mask: u16 = 0;
+        var remove_mask: u64 = 0;
 
         var doc_ids = [_]u32{0} ** MAX_QUERY_TERMS;
         var scores  = [_]f32{0.0} ** MAX_QUERY_TERMS;
@@ -1903,8 +1903,15 @@ pub const IndexManager = struct {
                         doc_ids[idx] = res.doc_id;
                         scores[idx]  = iterator.current_block_max_score;
 
+                        if (iterator.consumed) {
+                            @branchHint(.unlikely);
+                            setBit(u64, &remove_mask, idx);
+                            doc_ids[idx] = comptime std.math.maxInt(u32);
+                            scores[idx]  = 0.0;
+                        }
+
                     } else {
-                        setBit(u16, &remove_mask, idx);
+                        setBit(u64, &remove_mask, idx);
                         doc_ids[idx] = comptime std.math.maxInt(u32);
                         scores[idx]  = 0.0;
                     }
@@ -1941,7 +1948,7 @@ pub const IndexManager = struct {
                     doc_ids[idx] = comptime std.math.maxInt(u32);
                     scores[idx]  = 0.0;
 
-                    setBit(u16, &remove_mask, idx);
+                    setBit(u64, &remove_mask, idx);
                     continue;
                 }
                 doc_ids[idx] = c_doc_id.?;
@@ -1969,8 +1976,15 @@ pub const IndexManager = struct {
 
                     doc_ids[idx] = res.doc_id;
                     scores[idx]  = it.current_block_max_score;
+
+                    if (it.consumed) {
+                        @branchHint(.unlikely);
+                        setBit(u64, &remove_mask, idx);
+                        doc_ids[idx] = comptime std.math.maxInt(u32);
+                        scores[idx]  = 0.0;
+                    }
                 } else {
-                    setBit(u16, &remove_mask, idx);
+                    setBit(u64, &remove_mask, idx);
                     doc_ids[idx] = comptime std.math.maxInt(u32);
                     scores[idx]  = 0.0;
                 }

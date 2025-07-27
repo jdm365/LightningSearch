@@ -2058,7 +2058,8 @@ pub const BM25Partition = struct {
         col_idx: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
-        try self.II[col_idx].doc_sizes.append(self.allocator, 0);
+        // try self.II[col_idx].doc_sizes.append(self.allocator, 0);
+        try self.II[col_idx].doc_sizes.append(self.arena.allocator(), 0);
 
         var buffer_idx = byte_idx.*;
 
@@ -2234,7 +2235,8 @@ pub const BM25Partition = struct {
         search_col_idx: usize,
         terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
-        try self.II[search_col_idx].doc_sizes.append(self.allocator, 0);
+        // try self.II[search_col_idx].doc_sizes.append(self.allocator, 0);
+        try self.II[search_col_idx].doc_sizes.append(self.arena.allocator(), 0);
 
         string_utils.stringToUpper(
             @ptrCast(buffer[0..]), 
@@ -2367,7 +2369,8 @@ pub const BM25Partition = struct {
             return;
         };
 
-        try self.II[II_idx].doc_sizes.append(self.allocator, 0);
+        // try self.II[II_idx].doc_sizes.append(self.allocator, 0);
+        try self.II[II_idx].doc_sizes.append(self.arena.allocator(), 0);
 
         // Empty check.
         if (
