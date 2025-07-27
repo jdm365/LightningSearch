@@ -104,7 +104,8 @@ fn bench(filename: []const u8) !void {
 
     const start_time = std.time.microTimestamp();
     for (0..num_queries) |_| {
-        try index_manager.query(10);
+        // try index_manager.query(10);
+        try index_manager.queryNoFetch(10);
 
         // std.debug.print(
             // "Query result: {s}\n",

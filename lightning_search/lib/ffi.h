@@ -26,6 +26,18 @@ void c_query(
 		uint8_t** result_json_str_buf,
 		uint64_t* result_json_str_buf_len
 		);
+void c_query_no_fetch(
+		IndexManager* idx_ptr,
+		uint32_t* search_col_idxs,
+		uint8_t** queries,
+		float* boost_factors,
+		uint32_t num_query_cols,
+		uint32_t k,
+
+		uint32_t* num_matched_records,
+		uint32_t** result_doc_id_buf,
+		float** scores_buf 
+		);
 void get_num_cols(
 		IndexManager const* idx_ptr, 
 		uint32_t* num_cols,

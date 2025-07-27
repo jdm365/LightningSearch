@@ -165,6 +165,51 @@ pub export fn c_query(
     result_json_str_buf_size.* = idx_ptr.query_state.json_output_buffer.items.len;
 }
 
+pub export fn c_query_no_fetch(
+    idx_ptr: *IndexManager, 
+    search_col_idxs: [*]u32,
+    queries: [*][*:0]const u8,
+    boost_factors: [*]f32,
+    num_query_cols: u32,
+    k: u32,
+
+    num_matched_records: *u32,
+    result_doc_id_buf: *[*]u32,
+    scores_buf: *[*]f32,
+    ) void {
+    for (0..num_query_cols) |idx| {
+        idx_ptr.addQueryFieldIdx(
+            search_col_idxs[idx],
+            std.mem.span(queries[idx]),
+            boost_factors[idx],
+            ) catch |err| {
+            std.debug.print("Error: {any}\n", .{err});
+            @panic("Failed to add query field index.");
+        };
+    }
+
+    idx_ptr.queryNoFetch(k) catch |err| {
+        std.debug.print("Error: {any}\n", .{err});
+        @panic("Failed to execute query.");
+    };
+    num_matched_records.* = @truncate(idx_ptr.query_state.results_arrays[0].count);
+
+    if (num_matched_records.* == 0) {
+        return;
+    }
+
+    // Assume result_doc_id_buf and score_buf have k * @sizeOf(u32) capacity.
+    for (0..idx_ptr.query_state.results_arrays[0].count) |idx| {
+
+        const item   = idx_ptr.query_state.results_arrays[0].items[idx];
+        const offset = idx_ptr.partitions.row_offsets[item.partition_idx];
+        const score  = idx_ptr.query_state.results_arrays[0].scores[idx];
+
+        result_doc_id_buf.*[idx] = item.doc_id + @as(u32, @truncate(offset));
+        scores_buf.*[idx]        = score;
+    }
+}
+
 pub export fn get_num_cols(
     idx_ptr: *const IndexManager,
     num_cols: *u32,

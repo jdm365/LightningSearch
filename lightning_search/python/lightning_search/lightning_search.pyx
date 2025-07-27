@@ -39,6 +39,18 @@ cdef extern from "ffi.h":
 		uint8_t** result_json_str_buf,
         uint64_t* result_json_str_buf_len
 		)
+    void c_query_no_fetch(
+		IndexManager* idx_ptr,
+		uint32_t* search_col_idxs,
+		uint8_t** queries,
+		float* boost_factors,
+		uint32_t num_query_cols,
+		uint32_t k,
+
+		uint32_t* num_matched_records,
+		uint32_t** result_doc_id_buf,
+		float** scores_buf 
+		)
     void get_num_cols(
             IndexManager* idx_ptr, 
             uint32_t* num_cols,
@@ -179,7 +191,6 @@ cdef class Index:
             queries[i] = <uint8_t*>q_copy
             boost_factors_arr[i] = boost_factors.get(qc_upper, 1.0)
 
-        ## with nogil:
         c_query(
             self.idx_ptr,
             search_col_idxs,
@@ -219,3 +230,73 @@ cdef class Index:
         free(boost_factors_arr)
 
         return results 
+
+    cpdef tuple query_ids(
+            self, 
+            dict query_map,
+            dict boost_factors,
+            uint32_t k,
+            ):
+
+        cdef uint32_t num_query_cols = len(query_map)
+        cdef uint32_t* search_col_idxs = <uint32_t*>malloc(
+                num_query_cols * sizeof(uint32_t)
+                )
+        cdef uint8_t** queries = <uint8_t**>malloc(
+                num_query_cols * sizeof(uint8_t*)
+                )
+        cdef float* boost_factors_arr = <float*>malloc(
+                num_query_cols * sizeof(float)
+                )
+
+        cdef np.ndarray doc_ids_buf = np.zeros(k, dtype=np.uint32)
+        cdef np.ndarray scores_buf  = np.zeros(k, dtype=np.float32)
+
+        cdef uint32_t* doc_ids_ptr = <uint32_t*>doc_ids_buf.data
+        cdef float* scores_ptr     = <float*>scores_buf.data
+
+        cdef uint32_t num_matched_records = 0
+
+        for i, (query_col, query_value) in enumerate(query_map.items()):
+            qc_upper = query_col.upper()
+
+            if qc_upper not in self.query_col_map:
+                print(self.query_col_map)
+                raise Warning(f"Query column '{qc_upper}' not indexed.")
+
+            idx = self.query_col_map[qc_upper]
+
+            search_col_idxs[i] = idx
+            q_copy = (query_value + '\0').encode('utf-8')
+            queries[i] = <uint8_t*>q_copy
+            boost_factors_arr[i] = boost_factors.get(qc_upper, 1.0)
+
+        c_query_no_fetch(
+            self.idx_ptr,
+            search_col_idxs,
+            queries,
+            boost_factors_arr,
+            num_query_cols,
+            k,
+
+            &num_matched_records,
+            &doc_ids_ptr,
+            &scores_ptr,
+        )
+
+        if num_matched_records == 0:
+            free(search_col_idxs)
+            free(queries)
+            free(boost_factors_arr)
+            return np.ndarray([]), np.ndarray([])
+
+        if num_matched_records != k:
+            doc_ids_buf.ndarray.resize(num_matched_records)
+            scores_buf.ndarray.resize(num_matched_records)
+
+        ## TODO: Make members. Avoid repeated allocations.
+        free(search_col_idxs)
+        free(queries)
+        free(boost_factors_arr)
+
+        return doc_ids_buf, scores_buf

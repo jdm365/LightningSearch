@@ -205,6 +205,10 @@ pub const IndexManager = struct {
             file.close();
         }
 
+        const num_partitions  = self.partitions.index_partitions.len;
+        const num_search_cols = self.file_data.search_col_idxs.items.len;
+        const num_cols        = self.file_data.column_names.items.len;
+
         var buf_size: usize = 12;
         for (self.file_data.column_names.items) |c| {
             buf_size += pq.getVbyteSize(c.len) + c.len;
@@ -212,6 +216,9 @@ pub const IndexManager = struct {
         for (self.file_data.search_col_idxs.items) |c_idx| {
             buf_size += pq.getVbyteSize(c_idx);
         }
+
+        const row_offsets_size = @sizeOf(u32) * (num_partitions + 1);
+        buf_size += row_offsets_size;
 
         var buf = try self.gpa().alloc(u8, buf_size);
         defer self.gpa().free(buf);
@@ -221,7 +228,7 @@ pub const IndexManager = struct {
             u32,
             buf[current_pos..][0..4],
             0,
-            @truncate(self.partitions.index_partitions.len),
+            @truncate(num_partitions),
             comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
@@ -230,7 +237,7 @@ pub const IndexManager = struct {
             u32,
             buf[current_pos..][0..4],
             0,
-            @truncate(self.partitions.index_partitions[0].II.len),
+            @truncate(num_search_cols),
             comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
@@ -243,7 +250,7 @@ pub const IndexManager = struct {
             u32,
             buf[current_pos..][0..4],
             0,
-            @truncate(self.file_data.column_names.items.len),
+            @truncate(num_cols),
             comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
@@ -253,6 +260,11 @@ pub const IndexManager = struct {
             @memcpy(buf[current_pos..][0..c.len], c[0..c.len]);
             current_pos += c.len;
         }
+
+        @memcpy(
+            buf[current_pos..][0..row_offsets_size],
+            std.mem.sliceAsBytes(self.partitions.row_offsets)[0..row_offsets_size],
+        );
 
         _ = try file.writeAll(buf);
     }
@@ -319,6 +331,14 @@ pub const IndexManager = struct {
 
             try self.file_data.column_idx_map.insert(c.*, @truncate(idx));
         }
+
+        const row_offsets_size = @sizeOf(u32) * (num_partitions + 1);
+        self.partitions.row_offsets = try self.gpa().alloc(usize, num_partitions + 1);
+        @memcpy(
+            std.mem.sliceAsBytes(self.partitions.row_offsets)[0..row_offsets_size],
+            buf[current_pos..][0..row_offsets_size],
+            );
+        current_pos += row_offsets_size;
     }
 
     pub fn load(self: *IndexManager, dir_name: []const u8) !void {
@@ -2455,6 +2475,43 @@ pub const IndexManager = struct {
             // "Fetch took {d} us\n", 
             // .{time_taken_us_fetch},
         // );
+    }
+
+    pub fn queryNoFetch(self: *IndexManager, k: usize) !void {
+        if (k > MAX_NUM_RESULTS) {
+            std.debug.print("k must be less than or equal to {d}\n", .{MAX_NUM_RESULTS});
+            return error.InvalidArgument;
+        }
+
+        // Init num_partitions threads.
+        const num_partitions = self.partitions.index_partitions.len;
+
+        var wg: std.Thread.WaitGroup = .{};
+
+        for (0..num_partitions) |partition_idx| {
+            self.query_state.results_arrays[partition_idx].clear();
+            self.query_state.results_arrays[partition_idx].resize(k);
+            self.query_state.thread_pool.spawnWg(
+                &wg,
+                // queryPartitionDAATIntersection,
+                queryPartitionDAATUnion,
+                .{
+                    self,
+                    partition_idx,
+                    &self.query_state.results_arrays[partition_idx],
+                },
+            );
+        }
+
+        wg.wait();
+
+        if (self.partitions.index_partitions.len > 1) {
+            for (self.query_state.results_arrays[1..]) |*tr| {
+                for (0.., tr.items[0..tr.count]) |idx, r| {
+                    self.query_state.results_arrays[0].insert(r, tr.scores[idx]);
+                }
+            }
+        }
     }
 };
 
