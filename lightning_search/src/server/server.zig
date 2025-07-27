@@ -111,8 +111,6 @@ pub const QueryHandlerZap = struct {
     index_manager: *IndexManager,
     boost_factors: std.ArrayList(f32),
 
-    json_objects: std.ArrayListUnmanaged(std.json.Value),
-    output_buffer: std.ArrayListUnmanaged(u8),
     column_names: std.ArrayListUnmanaged([]const u8),
 
     zap_router: zap.Router,
@@ -131,9 +129,7 @@ pub const QueryHandlerZap = struct {
         const handler = QueryHandlerZap{
             .index_manager = index_manager,
             .boost_factors = boost_factors,
-            .json_objects  = std.ArrayListUnmanaged(std.json.Value){},
-            .output_buffer = std.ArrayListUnmanaged(u8){},
-            .column_names   = std.ArrayListUnmanaged([]const u8){},
+            .column_names  = std.ArrayListUnmanaged([]const u8){},
 
             .zap_router   = undefined,
             .zap_listener = undefined,
@@ -146,9 +142,8 @@ pub const QueryHandlerZap = struct {
     }
 
     pub fn deinit(self: *QueryHandlerZap) void {
-        for (self.json_objects.items) |*json| {
-            json.object.deinit();
-        }
+        self.zap_router.deinit();
+        self.column_names.deinit(self.index_manager.stringArena());
     }
 
     pub fn initRouter(self: *QueryHandlerZap) !void {
@@ -295,8 +290,8 @@ pub const QueryHandlerZap = struct {
 
         try r.setHeader("Access-Control-Allow-Origin", "*");
 
-        self.output_buffer.clearRetainingCapacity();
-        self.json_objects.clearRetainingCapacity();
+        self.index_manager.query_state.json_output_buffer.clearRetainingCapacity();
+        self.index_manager.query_state.json_objects.clearRetainingCapacity();
 
         const start = std.time.microTimestamp();
 
@@ -304,14 +299,15 @@ pub const QueryHandlerZap = struct {
             parseKeys(
                 query,
                 self.index_manager.query_state.query_map,
-                self.index_manager.stringArena(),
+                // self.index_manager.stringArena(),
+                self.index_manager.scratchArena(),
             );
 
             // Do search.
             try self.index_manager.query(K);
 
             for (0..self.index_manager.query_state.results_arrays[0].count) |idx| {
-                try self.json_objects.append(
+                try self.index_manager.query_state.json_objects.append(
                     self.index_manager.stringArena(),
                     try csvLineToJsonScore(
                         self.index_manager.stringArena(),
@@ -334,7 +330,7 @@ pub const QueryHandlerZap = struct {
             try response.object.put(
                 "results",
                 std.json.Value{ 
-                    .array = self.json_objects.toManaged(
+                    .array = self.index_manager.query_state.json_objects.toManaged(
                         self.index_manager.stringArena()
                         ) 
                 },
@@ -347,14 +343,16 @@ pub const QueryHandlerZap = struct {
             try std.json.stringify(
                 response,
                 .{},
-                self.output_buffer.writer(self.index_manager.stringArena()),
+                self.index_manager.query_state.json_output_buffer.writer(
+                    self.index_manager.stringArena()
+                    ),
             );
 
             std.debug.print(
                 "{s}\n", 
-                .{self.output_buffer.items[self.output_buffer.items.len - 1 ..]},
+                .{self.index_manager.query_state.json_output_buffer.items[self.index_manager.query_state.json_output_buffer.items.len - 1 ..]},
             );
-            r.sendJson(self.output_buffer.items) catch |err| {
+            r.sendJson(self.index_manager.query_state.json_output_buffer.items) catch |err| {
                 std.debug.print("ERROR SENDING JSON - {any}\n", .{err});
             };
         }
@@ -368,7 +366,7 @@ pub const QueryHandlerZap = struct {
             std.debug.print("Error setting header: {any}\n", .{err});
         };
 
-        self.output_buffer.clearRetainingCapacity();
+        self.index_manager.query_state.json_output_buffer.clearRetainingCapacity();
 
         var response = std.json.Value{
             .object = std.StringArrayHashMap(std.json.Value).init(
@@ -391,13 +389,9 @@ pub const QueryHandlerZap = struct {
             self.index_manager.file_data.column_idx_map.num_keys,
             ) catch return;
 
-        var it = self.index_manager.file_data.column_idx_map.iterator() catch {
-            std.debug.print("ERROR GETTING COLUMNS\n", .{});
-            return;
-        };
-        while (it.next() catch @panic("Column iterator failed")) |val| {
-            json_cols.items[val.value] = std.json.Value{
-                .string = val.key,
+        for (0.., self.index_manager.file_data.column_names.items) |idx, val| {
+            json_cols.items[idx] = std.json.Value{
+                .string = val,
             };
         }
 
@@ -424,10 +418,10 @@ pub const QueryHandlerZap = struct {
         std.json.stringify(
             response,
             .{},
-            self.output_buffer.writer(self.index_manager.stringArena()),
+            self.index_manager.query_state.json_output_buffer.writer(self.index_manager.stringArena()),
         ) catch unreachable;
 
-        r.sendJson(self.output_buffer.items) catch return;
+        r.sendJson(self.index_manager.query_state.json_output_buffer.items) catch return;
     }
 
     pub fn getSearchColumns(
@@ -438,7 +432,7 @@ pub const QueryHandlerZap = struct {
             std.debug.print("Error setting header: {any}\n", .{err});
         };
 
-        self.output_buffer.clearRetainingCapacity();
+        self.index_manager.query_state.json_output_buffer.clearRetainingCapacity();
 
         var response = std.json.Value{
             .object = std.StringArrayHashMap(std.json.Value).init(
@@ -475,11 +469,11 @@ pub const QueryHandlerZap = struct {
         std.json.stringify(
             response,
             .{},
-            // self.output_buffer.writer(self.index_manager.scratchArena()),
-            self.output_buffer.writer(self.index_manager.stringArena()),
+            // self.index_manager.query_state.json_output_buffer.writer(self.index_manager.scratchArena()),
+            self.index_manager.query_state.json_output_buffer.writer(self.index_manager.stringArena()),
         ) catch unreachable;
 
-        r.sendJson(self.output_buffer.items) catch unreachable;
+        r.sendJson(self.index_manager.query_state.json_output_buffer.items) catch unreachable;
     }
 
     pub fn healthcheck(_: *QueryHandlerZap, r: zap.Request) !void {
@@ -537,105 +531,6 @@ pub const QueryHandlerZap = struct {
             count += 1;
             idx   += 1;
         }
-    }
-};
-
-
-
-pub const QueryHandlerLocal = struct {
-    index_manager: *IndexManager,
-    boost_factors: std.ArrayList(f32),
-    search_cols: std.ArrayList([]u8),
-    allocator: std.mem.Allocator,
-
-    pub fn init(
-        index_manager: *IndexManager,
-        allocator: std.mem.Allocator,
-    ) !QueryHandlerLocal {
-        return QueryHandlerLocal{
-            .index_manager = index_manager,
-            .boost_factors = std.ArrayList(f32).init(allocator),
-            .search_cols = undefined,
-            .allocator = allocator,
-        };
-    }
-
-    pub fn deinit(self: *QueryHandlerLocal) void {
-        self.index_manager.deinit();
-        self.boost_factors.deinit();
-        self.search_cols.deinit();
-    }
-
-    pub export fn readHeader(
-        self: *QueryHandlerLocal,
-        filename: [*:0]const u8,
-    ) void {
-        if (std.mem.endsWith(u8, std.mem.span(filename), ".csv")) {
-            self.index_manager.readHeader(
-                std.mem.span(filename),
-                FileType.CSV,
-                ) catch {
-                @panic("Failed to read CSV header.\n");
-            };
-        } else if (std.mem.endsWith(u8, std.mem.span(filename), ".json")) {
-            self.index_manager.readHeader(
-                std.mem.span(filename),
-                FileType.JSON,
-                ) catch {
-                @panic("Failed to read CSV header.\n");
-            };
-        }
-    }
-
-    inline fn parseQueryString(
-        self: *QueryHandlerLocal,
-        query_string: []const u8,
-        ) !void {
-        // Format key=value
-        var scratch_buffer: [4096]u8 = undefined;
-        var count: usize = 0;
-        var idx: usize = 0;
-
-        while (idx < query_string.len) {
-            if (query_string[idx] == '=') {
-                idx += 1;
-
-                const result = self.index_manager.query_state.query_map.getPtr(
-                    scratch_buffer[0..count]
-                    );
-
-                count = 0;
-                while ((idx < query_string.len) and (query_string[idx] != '&')) {
-                    scratch_buffer[count] = std.ascii.toUpper(query_string[idx]);
-                    count += 1;
-                    idx   += 1;
-                }
-                if (result != null) {
-                    const value_copy = try self.allocator.dupe(
-                        u8, 
-                        scratch_buffer[0..count],
-                        );
-                    result.?.* = value_copy;
-                }
-                count = 0;
-                idx += 1;
-                continue;
-            }
-            scratch_buffer[count] = std.ascii.toUpper(query_string[idx]);
-            count += 1;
-            idx   += 1;
-        }
-    }
-
-    pub fn search(
-        self: *QueryHandlerLocal,
-        query_string: [*:0]const u8,
-        ) !void {
-        try self.parseQueryString(std.mem.span(query_string));
-        try self.index_manager.query(
-            K,
-            );
-        std.debug.print("Finished query\n", .{});
     }
 };
 

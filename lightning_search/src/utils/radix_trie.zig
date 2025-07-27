@@ -407,52 +407,45 @@ pub fn RadixTrie(comptime T: type) type {
                     if (self.trie.nodes.items.len == 0) return null;
                     const root = &self.trie.nodes.items[0];
                     const empty = try self.state.allocator.dupe(u8, "");
-                    try self.state.stack.append(.{ 
-                        .node = root, 
+                    try self.state.stack.append(.{
+                        .node = root,
                         .edge_idx = 0,
                         .prefix = empty,
                     });
-
-                    if ((root.edge_data.freq_char_bitmask & 1) == 1) {
-                        return Entry{
-                            .key = empty,
-                            .value = root.value,
-                        };
-                    }
                 }
 
                 while (self.state.stack.items.len > 0) {
-                    const current = &self.state.stack.items[self.state.stack.items.len - 1];
-                    
-                    if (current.edge_idx >= current.node.edge_data.num_edges) {
-                        self.state.allocator.free(current.prefix);
-                        _ = self.state.stack.pop();
-                        continue;
+                    const idx = self.state.stack.items.len - 1;
+                    var frame = &self.state.stack.items[idx];
+
+                    if (frame.edge_idx == 0) {
+                        frame.edge_idx = 1;
+                        if ((frame.node.edge_data.freq_char_bitmask & 1) == 1) {
+                            const key = try self.state.allocator.dupe(u8, frame.prefix);
+                            return Entry{ .key = key, .value = frame.node.value };
+                        }
                     }
 
-                    const edge = current.node.edges[current.edge_idx];
-                    current.edge_idx += 1;
-                    
-                    const child = &self.trie.nodes.items[edge.child_idx];
-                    const new_prefix = try std.mem.concat(
-                        self.state.allocator,
-                        u8,
-                        &[_][]const u8{current.prefix, edge.str[0..edge.len]},
-                    );
-                    
-                    try self.state.stack.append(.{
-                        .node = child,
-                        .edge_idx = 0,
-                        .prefix = new_prefix,
-                    });
-
-                    if ((child.edge_data.freq_char_bitmask & 1) == 1) {
-                        return Entry{
-                            .key = try self.state.allocator.dupe(u8, new_prefix),
-                            .value = child.value,
-                        };
+                    if (frame.edge_idx <= frame.node.edge_data.num_edges) {
+                        const edge = frame.node.edges[frame.edge_idx - 1];
+                        frame.edge_idx += 1;
+                        const child = &self.trie.nodes.items[edge.child_idx];
+                        const new_prefix = try std.mem.concat(
+                            self.state.allocator,
+                            u8,
+                            &[_][]const u8{ frame.prefix, edge.str[0..edge.len] },
+                        );
+                        try self.state.stack.append(.{
+                            .node = child,
+                            .edge_idx = 0,
+                            .prefix = new_prefix,
+                        });
+                    } else {
+                        self.state.allocator.free(frame.prefix);
+                        _ = self.state.stack.pop();
                     }
                 }
+
                 return null;
             }
 

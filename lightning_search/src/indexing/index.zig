@@ -631,9 +631,11 @@ const Vocab = struct {
         };
     }
 
-    pub fn deinit(self: *Vocab, allocator: std.mem.Allocator) void {
-        self.string_bytes.deinit(allocator);
-        self.map.deinit(allocator);
+    // pub fn deinit(self: *Vocab, allocator: std.mem.Allocator) void {
+    pub fn deinit(_: *Vocab, _: std.mem.Allocator) void {
+        // Using arena now.
+        // self.string_bytes.deinit(allocator);
+        // self.map.deinit(allocator);
     }
 
     pub inline fn getCtx(self: *Vocab) IndexContext {
