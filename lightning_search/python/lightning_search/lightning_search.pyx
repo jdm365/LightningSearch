@@ -10,6 +10,7 @@ cimport numpy as np
 import numpy as np
 import json
 import os
+from random import randint
 from typing import List
 np.import_array()
 
@@ -116,6 +117,19 @@ cdef class Index:
 
         free(c_query_cols)
         self.get_cols()
+
+    def index_from_polars(self, df: pl.DataFrame, query_cols: list):
+        """
+        Arrow reading is a WIP. For now just dump to disk first.
+        """
+        hash_str = hash(randint()).hex()
+        dst_path = f"/tmp/index_{hash_str}.csv"
+        df.write_csv(dst_path)
+
+        self.index_file(dst_path, query_cols)
+
+        if os.path.exists(dst_path):
+            os.remove(dst_path)
 
 
     cdef void get_cols(self):

@@ -6,4 +6,6 @@
         /_____/_/\__, /_/ /_/\__/_/ /_/_/_/ /_/\__, /   /____/\___/\__,_/_/   \___/_/ /_/ 
                 /____/                        /____/                                      
 ```
-Search Engine library focused on fast bulk indexing.
+(IN DEVELOPMENT - Base features are availbable but things may be broken or innefficient compared to the goal 1.0 state.)
+
+Full Text Search Engine library with first class python bindings.
