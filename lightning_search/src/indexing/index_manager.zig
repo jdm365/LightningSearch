@@ -751,7 +751,11 @@ pub const IndexManager = struct {
             self.file_data.column_idx_map.num_keys,
             );
         var iterator = try self.file_data.column_idx_map.iterator();
+        defer iterator.deinit();
+
         while (try iterator.next()) |item| {
+            defer iterator.state.allocator.free(item.key);
+
             const col_name = item.key;
             const cloned_col = try self.stringArena().dupe(u8, col_name);
             const idx = item.value;
