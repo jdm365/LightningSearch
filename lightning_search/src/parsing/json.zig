@@ -6,7 +6,7 @@ const MAX_TERM_LENGTH = @import("../indexing/index.zig").MAX_TERM_LENGTH;
 const TermPos         = @import("../server/server.zig").TermPos;
 
 
-pub inline fn nextPoint(buffer: []const u8, byte_idx: *usize) void {
+pub inline fn skipSepChars(buffer: []const u8, byte_idx: *usize) void {
     while (
         (buffer[byte_idx.*] == ' ') 
             or 
@@ -15,7 +15,7 @@ pub inline fn nextPoint(buffer: []const u8, byte_idx: *usize) void {
     }
 }
 
-pub inline fn iterValueJSON(buffer: []const u8, byte_idx: *usize) !void {
+pub inline fn iterValueJSON(buffer: []const u8, byte_idx: *usize) void {
     while (true) {
         switch (buffer[byte_idx.*]) {
             '\\' => byte_idx.* += 2,
@@ -25,6 +25,8 @@ pub inline fn iterValueJSON(buffer: []const u8, byte_idx: *usize) !void {
                     (buffer[byte_idx.*] != '}')
                        and 
                     (buffer[byte_idx.*] != ',')
+                       and 
+                    (buffer[byte_idx.*] != ' ')
                 ) {
                     byte_idx.* += 1;
                 }
@@ -36,15 +38,7 @@ pub inline fn iterValueJSON(buffer: []const u8, byte_idx: *usize) !void {
                     buffer[byte_idx.*..],
                     '"',
                 );
-                byte_idx.* += skip_idx + 1;
-
-                while (
-                    (buffer[byte_idx.*] != '}')
-                       and 
-                    (buffer[byte_idx.*] != ',')
-                ) {
-                    byte_idx.* += 1;
-                }
+                byte_idx.* += skip_idx;
                 return;
             },
             else => byte_idx.* += 1, 
@@ -54,7 +48,7 @@ pub inline fn iterValueJSON(buffer: []const u8, byte_idx: *usize) !void {
 
 pub inline fn _iterFieldJSON(buffer: []const u8, byte_idx: *usize) !void {
     // Iter to start of value.
-    nextPoint(buffer, byte_idx);
+    skipSepChars(buffer, byte_idx);
 
     // Iterate to next field in compliance with json standard.
     // Assume at quote of start of key.
@@ -77,7 +71,7 @@ pub inline fn _iterFieldJSON(buffer: []const u8, byte_idx: *usize) !void {
     }
         
     // Iter to start of value.
-    nextPoint(buffer, byte_idx);
+    skipSepChars(buffer, byte_idx);
 
     // Iter over value.
     // TODO: handle nested fields.
@@ -94,7 +88,7 @@ pub inline fn _iterFieldJSON(buffer: []const u8, byte_idx: *usize) !void {
                 if (skip_idx == string_utils.VEC_SIZE) continue;
                 byte_idx.* += 1;
 
-                nextPoint(buffer, byte_idx);
+                skipSepChars(buffer, byte_idx);
 
                 switch (buffer[byte_idx.*]) {
                     ',' => {
@@ -159,21 +153,12 @@ pub inline fn _iterFieldJSON(buffer: []const u8, byte_idx: *usize) !void {
     }
 }
 
-pub inline fn matchKVPair(
+pub inline fn matchKey(
     buffer: []const u8, 
     byte_idx: *usize,
     reference_dict: *const RadixTrie(u32),
     uppercase_key: bool,
     ) !u32 {
-    // Start from key. If key matches reference_dict, iter to value
-    // and return dict value (idx). If doesn't match dict, iter to next key
-    // and return std.math.maxInt(u32). If end of line, iter to next line's
-    // '{' and return error.EOL;
-
-    // Assert starting at key quote.
-    std.debug.assert(buffer[byte_idx.*] == '"');
-    byte_idx.* += 1;
-
     const key_len = string_utils.simdFindCharIdxEscaped(
         buffer[byte_idx.*..], 
         '"',
@@ -190,28 +175,77 @@ pub inline fn matchKVPair(
         false => buffer[byte_idx.*..byte_idx.* + key_len],
     };
 
-    const match_val = reference_dict.find(key) catch {
-        // Key not found. Iter to next key.
-        byte_idx.* += key_len + 2;
-        nextPoint(buffer, byte_idx);
-
-        try iterValueJSON(buffer, byte_idx);
-        if (buffer[byte_idx.*] == '}') {
-            byte_idx.* += 1;
-            while (buffer[byte_idx.*] != '{') byte_idx.* += 1;
-            return error.EOL;
-        }
-        byte_idx.* += 1;
-        byte_idx.* += string_utils.simdFindCharIdxEscaped(
-            buffer[byte_idx.*..], 
-            '"',
-            false,
-        );
-        return std.math.maxInt(u32);
-    };
-    byte_idx.* += key_len + 2;
-    nextPoint(buffer, byte_idx);
+    const match_val = try reference_dict.find(key);
     return match_val;
+}
+
+pub inline fn nextKeyValuePoints(
+    buffer: []const u8,
+    byte_idx: *usize,
+
+    start_idx_key: *u64,
+    end_idx_key:   *u64,
+
+    start_idx_value: *u64,
+    end_idx_value:   *u64,
+) void {
+    std.debug.assert(buffer[byte_idx.*] == '"');
+    byte_idx.* += 1;
+    start_idx_key.* = byte_idx.*;
+
+    const key_len = string_utils.simdFindCharIdxEscaped(
+        buffer[byte_idx.*..], 
+        '"',
+        false,
+    );
+    byte_idx.* += key_len;
+    end_idx_key.* = byte_idx.*;
+
+    byte_idx.* += 2;
+
+    skipSepChars(buffer, byte_idx);
+
+    start_idx_value.* = byte_idx.*;
+    iterValueJSON(buffer, byte_idx);
+    end_idx_value.* = byte_idx.*;
+
+    // Goto next key or '}'
+    byte_idx.* += @intFromBool(buffer[byte_idx.*] == '"');
+    byte_idx.* += @intFromBool(buffer[byte_idx.*] == ',');
+    skipSepChars(buffer, byte_idx);
+}
+
+pub inline fn nextKeyFromValue(
+    buffer: []const u8, 
+    byte_idx: *usize,
+    ) !void {
+        iterValueJSON(buffer, byte_idx);
+
+        // Check if EOL.
+        switch (buffer[byte_idx.*]) {
+            '}' => {
+                byte_idx.* += 1;
+
+                // Iter to start of next doc and return.
+                while (buffer[byte_idx.*] != '{') byte_idx.* += 1;
+                return error.EOL;
+            },
+            ',' => {
+                // Iter over comma.
+                byte_idx.* += 1;
+
+                // Iter to quote start of next key.
+                byte_idx.* += string_utils.simdFindCharIdxEscaped(
+                    buffer[byte_idx.*..], 
+                    '"',
+                    false,
+                );
+            },
+            else => {
+                std.debug.print("Found unexpected charachter: {c}\n", .{buffer[byte_idx.*]});
+                @panic("JSON decoding error");
+            }
+        }
 }
 
 pub inline fn iterLineJSON(buffer: []const u8, byte_idx: *usize) !void {
@@ -314,7 +348,7 @@ pub inline fn iterLineJSONGetUniqueKeys(
                 key_idx = 0;
                 byte_idx.* += 2;
 
-                try iterValueJSON(buffer, byte_idx);
+                iterValueJSON(buffer, byte_idx);
 
                 byte_idx.* += 1;
                 if (buffer[byte_idx.* - 1] == '}') {
@@ -343,56 +377,6 @@ pub inline fn iterLineJSONGetUniqueKeys(
     }
 
     return error.InvalidJson;
-}
-
-pub inline fn parseRecordJSON(
-    buffer: []const u8,
-    result_positions: []TermPos,
-    reference_dict: *const RadixTrie(u32),
-) !void {
-    std.debug.assert(buffer[0] == '{');
-
-    // Parse JSON record in compliance with RFC 8259.
-    var byte_idx: usize = 0;
-
-    while (buffer[byte_idx] != '"') byte_idx += 1;
-
-    @memset(result_positions, TermPos{.start_pos = 0, .field_len = 0});
-    while (true) {
-        const matched_col_idx = matchKVPair(
-            buffer, 
-            &byte_idx,
-            reference_dict,
-            true,
-            ) catch {
-            // EOL. Not indexed key.
-            return;
-        };
-
-        if (matched_col_idx == std.math.maxInt(u32)) continue;
-
-        const start_pos = byte_idx;
-        try iterValueJSON(buffer, &byte_idx);
-
-        result_positions[matched_col_idx] = TermPos{
-            .start_pos = @as(u32, @intCast(start_pos)) + 
-                         @intFromBool(buffer[start_pos] == '"'),
-            .field_len = @as(u32, @intCast(byte_idx - start_pos)) - 
-                         2 * @as(u32, @intFromBool(buffer[start_pos] == '"')),
-        };
-
-        if (buffer[byte_idx] == '}') {
-            byte_idx += 1;
-            while (buffer[byte_idx] != '{') byte_idx += 1;
-            return;
-        }
-        byte_idx += 1;
-        byte_idx += string_utils.simdFindCharIdxEscaped(
-            buffer[byte_idx..], 
-            '"',
-            false,
-        );
-    }
 }
 
 

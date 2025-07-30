@@ -1,16 +1,10 @@
 const std = @import("std");
 
-pub inline fn findSorted(
-    comptime T: type,
-    sorted_arr: []T,
-    key: T,
-) !usize {
-    var val: T = sorted_arr[0];
-    var idx: usize = 0;
-    while (val <= key) {
+pub inline fn findSorted(comptime T: type, sorted_arr: []T, key: T) !usize {
+    for (0..sorted_arr.len) |idx| {
+        const val = sorted_arr[idx];
         if (val == key) return idx;
-        idx += 1;
-        val = sorted_arr[idx];
+        if (val > key) return error.KeyNotFound;
     }
 
     return error.KeyNotFound;

@@ -132,6 +132,138 @@ pub const SingleThreadedDoubleBufferedReader = struct {
     }
 };
 
+// pub const DoubleBufferedReader = struct {
+    // file: std.fs.File,
+    // buffers: []u8,
+    // overflow_buffer: []u8,
+    // single_buffer_size: usize,
+    // current_buffer: usize,
+    // thread: ?std.Thread = null,
+    // end_token: u8,
+    // uppercase: bool,
+// 
+    // semaphore: std.Thread.Semaphore,
+// 
+    // active_read: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+   //  
+    // pub fn init(
+        // allocator: std.mem.Allocator, 
+        // file: std.fs.File,
+        // comptime end_token: u8,
+        // uppercase: bool,
+        // ) !DoubleBufferedReader {
+// 
+        // const buffer_size = 1 << 24;
+        // const overflow_size = 1 << 18;
+        // const buffers = try allocator.alloc(u8, 2 * buffer_size);
+        // const overflow_buffer = try allocator.alloc(u8, 2 * overflow_size);
+        // const bytes_read = try file.read(buffers);
+// 
+        // if (uppercase) {
+            // string_utils.stringToUpper(buffers.ptr, bytes_read);
+        // }
+        // @memcpy(
+            // overflow_buffer[0..overflow_size], 
+            // buffers[(2 * buffer_size) - overflow_size..],
+        // );
+       //  
+        // return DoubleBufferedReader{
+            // .file = file,
+            // .buffers = buffers,
+            // .overflow_buffer = overflow_buffer,
+            // .single_buffer_size = buffer_size,
+            // .current_buffer = 0,
+            // .semaphore = .{},
+            // .end_token = end_token,
+            // .uppercase = uppercase,
+        // };
+    // }
+// 
+    // pub fn deinit(self: *DoubleBufferedReader, allocator: std.mem.Allocator) void {
+        // if (self.thread) |thread| {
+            // thread.join();
+        // }
+        // allocator.free(self.buffers);
+        // allocator.free(self.overflow_buffer);
+    // }
+// 
+    // fn readBufferThread(
+        // self: *DoubleBufferedReader,
+        // buffer: []u8,
+        // overflow_dest: []u8,
+        // overflow_size: usize,
+        // current_buffer: usize,
+    // ) void {
+        // const bytes_read = self.file.read(buffer) catch {
+            // std.debug.print("Error reading file\n", .{});
+            // return;
+        // };
+        // if (bytes_read != buffer.len) buffer[bytes_read] = self.end_token;
+        // if (self.uppercase) {
+            // string_utils.stringToUpper(buffer.ptr, bytes_read);
+        // }
+// 
+        // const start_idx = (buffer.len - overflow_size) * (1 - current_buffer);
+        // const end_idx   = start_idx + overflow_size;
+        // @memcpy(overflow_dest, buffer[start_idx..end_idx]);
+// 
+        // self.active_read.store(false, .release);
+        // self.semaphore.post();
+    // }
+// 
+    // pub inline fn getBuffer(
+        // self: *DoubleBufferedReader, 
+        // file_pos: u64,
+    // ) ![]u8 {
+        // const index = file_pos % self.buffers.len;
+        // const new_buffer = @intFromBool(index >= self.single_buffer_size);
+// 
+        // const overflow_size = @divFloor(self.overflow_buffer.len, 2);
+// 
+        // const bytes_from_end = self.buffers.len - index;
+        // if (bytes_from_end <= overflow_size) {
+            // if (self.thread) |thread| {
+                // self.semaphore.wait();
+                // thread.join();
+                // self.thread = null;
+            // }
+            // return self.overflow_buffer[overflow_size - bytes_from_end..];
+        // }
+// 
+        // if (new_buffer == self.current_buffer) {
+            // return self.buffers[index..];
+        // }
+// 
+        // const overflow_start_idx = overflow_size * new_buffer;
+        // const overflow_end_idx   = overflow_start_idx + overflow_size;
+// 
+        // const buffer_start_idx = self.single_buffer_size * (1 - new_buffer);
+        // const buffer_end_idx   = buffer_start_idx + self.single_buffer_size;
+// 
+        // if (self.thread) |thread| {
+            // self.semaphore.wait();
+            // thread.join();
+            // self.thread = null;
+        // }
+        // self.current_buffer = new_buffer;
+// 
+        // self.active_read.store(true, .release);
+        // self.thread = try std.Thread.spawn(
+            // .{},
+            // readBufferThread,
+            // .{
+                // self,
+                // self.buffers[buffer_start_idx..buffer_end_idx],
+                // self.overflow_buffer[overflow_start_idx..overflow_end_idx],
+                // overflow_size,
+                // self.current_buffer,
+            // },
+        // );
+// 
+        // return self.buffers[index..];
+    // }
+// };
+
 pub const DoubleBufferedReader = struct {
     file: std.fs.File,
     buffers: []u8,
@@ -142,17 +274,15 @@ pub const DoubleBufferedReader = struct {
     end_token: u8,
     uppercase: bool,
 
-    semaphore: std.Thread.Semaphore,
+    mutex: std.Thread.Mutex = .{},
+    thread_finished: bool = true,
 
-    active_read: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    
     pub fn init(
         allocator: std.mem.Allocator, 
         file: std.fs.File,
         comptime end_token: u8,
         uppercase: bool,
-        ) !DoubleBufferedReader {
-
+    ) !DoubleBufferedReader {
         const buffer_size = 1 << 24;
         const overflow_size = 1 << 18;
         const buffers = try allocator.alloc(u8, 2 * buffer_size);
@@ -173,18 +303,22 @@ pub const DoubleBufferedReader = struct {
             .overflow_buffer = overflow_buffer,
             .single_buffer_size = buffer_size,
             .current_buffer = 0,
-            .semaphore = .{},
             .end_token = end_token,
             .uppercase = uppercase,
         };
     }
 
     pub fn deinit(self: *DoubleBufferedReader, allocator: std.mem.Allocator) void {
-        if (self.thread) |thread| {
-            thread.join();
-        }
+        self.waitForThread();
         allocator.free(self.buffers);
         allocator.free(self.overflow_buffer);
+    }
+
+    fn waitForThread(self: *DoubleBufferedReader) void {
+        if (self.thread) |thread| {
+            thread.join();
+            self.thread = null;
+        }
     }
 
     fn readBufferThread(
@@ -196,6 +330,7 @@ pub const DoubleBufferedReader = struct {
     ) void {
         const bytes_read = self.file.read(buffer) catch {
             std.debug.print("Error reading file\n", .{});
+            self.markThreadFinished();
             return;
         };
         if (bytes_read != buffer.len) buffer[bytes_read] = self.end_token;
@@ -204,11 +339,16 @@ pub const DoubleBufferedReader = struct {
         }
 
         const start_idx = (buffer.len - overflow_size) * (1 - current_buffer);
-        const end_idx   = start_idx + overflow_size;
+        const end_idx = start_idx + overflow_size;
         @memcpy(overflow_dest, buffer[start_idx..end_idx]);
 
-        self.active_read.store(false, .release);
-        self.semaphore.post();
+        self.markThreadFinished();
+    }
+
+    fn markThreadFinished(self: *DoubleBufferedReader) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.thread_finished = true;
     }
 
     pub inline fn getBuffer(
@@ -217,16 +357,11 @@ pub const DoubleBufferedReader = struct {
     ) ![]u8 {
         const index = file_pos % self.buffers.len;
         const new_buffer = @intFromBool(index >= self.single_buffer_size);
-
         const overflow_size = @divFloor(self.overflow_buffer.len, 2);
 
         const bytes_from_end = self.buffers.len - index;
         if (bytes_from_end <= overflow_size) {
-            if (self.thread) |thread| {
-                self.semaphore.wait();
-                thread.join();
-                self.thread = null;
-            }
+            self.waitForThread();
             return self.overflow_buffer[overflow_size - bytes_from_end..];
         }
 
@@ -234,20 +369,18 @@ pub const DoubleBufferedReader = struct {
             return self.buffers[index..];
         }
 
-        const overflow_start_idx = overflow_size * new_buffer;
-        const overflow_end_idx   = overflow_start_idx + overflow_size;
-
-        const buffer_start_idx = self.single_buffer_size * (1 - new_buffer);
-        const buffer_end_idx   = buffer_start_idx + self.single_buffer_size;
-
-        if (self.thread) |thread| {
-            self.semaphore.wait();
-            thread.join();
-            self.thread = null;
-        }
+        self.waitForThread();
         self.current_buffer = new_buffer;
 
-        self.active_read.store(true, .release);
+        const overflow_start_idx = overflow_size * new_buffer;
+        const overflow_end_idx = overflow_start_idx + overflow_size;
+        const buffer_start_idx = self.single_buffer_size * (1 - new_buffer);
+        const buffer_end_idx = buffer_start_idx + self.single_buffer_size;
+
+        self.mutex.lock();
+        self.thread_finished = false;
+        self.mutex.unlock();
+
         self.thread = try std.Thread.spawn(
             .{},
             readBufferThread,

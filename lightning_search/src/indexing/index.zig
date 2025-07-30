@@ -1949,7 +1949,6 @@ pub const BM25Partition = struct {
         doc_id: u32,
         _: u16,
         col_idx: usize,
-        _: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
         std.debug.assert(
             self.II[col_idx].vocab.map.count() < (1 << 32),
@@ -2006,7 +2005,6 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: *u16,
         col_idx: usize,
-        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
         if (cntr.* == 0) {
             return;
@@ -2018,7 +2016,6 @@ pub const BM25Partition = struct {
             doc_id, 
             term_pos.*, 
             col_idx, 
-            terms_seen,
             );
 
         term_pos.* += @intFromBool(term_pos.* != std.math.maxInt(u16));
@@ -2033,7 +2030,6 @@ pub const BM25Partition = struct {
         term_pos: *u16,
         col_idx: usize,
         token_stream: *file_utils.TokenStreamV2(file_utils.token_32t_v2),
-        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
         new_doc: *bool,
     ) !void {
         try self.addTerm(
@@ -2043,7 +2039,6 @@ pub const BM25Partition = struct {
             term_pos.*, 
             col_idx, 
             token_stream, 
-            terms_seen,
             new_doc,
             );
 
@@ -2058,9 +2053,7 @@ pub const BM25Partition = struct {
         byte_idx: *usize,
         doc_id: u32,
         col_idx: usize,
-        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
-        // try self.II[col_idx].doc_sizes.append(self.allocator, 0);
         try self.II[col_idx].doc_sizes.append(self.arena.allocator(), 0);
 
         var buffer_idx = byte_idx.*;
@@ -2080,8 +2073,6 @@ pub const BM25Partition = struct {
 
         var cntr: usize = 0;
 
-        // terms_seen.clear();
-
         if (is_quoted) {
 
             outer_loop: while (true) {
@@ -2099,7 +2090,6 @@ pub const BM25Partition = struct {
                         doc_id, 
                         &term_pos, 
                         col_idx, 
-                        terms_seen,
                         );
                     buffer_idx += 1;
                     continue;
@@ -2124,7 +2114,6 @@ pub const BM25Partition = struct {
                                         doc_id, 
                                         &term_pos, 
                                         col_idx, 
-                                        terms_seen,
                                         );
                                 }
                                 buffer_idx += 1;
@@ -2147,7 +2136,6 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             col_idx, 
-                            terms_seen,
                             );
                     },
                     else => {
@@ -2172,7 +2160,6 @@ pub const BM25Partition = struct {
                         doc_id, 
                         &term_pos, 
                         col_idx, 
-                        terms_seen,
                         );
                     buffer_idx += 1;
                     continue;
@@ -2199,7 +2186,6 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             col_idx, 
-                            terms_seen,
                             );
                     },
                     else => {
@@ -2222,7 +2208,6 @@ pub const BM25Partition = struct {
                 doc_id, 
                 term_pos, 
                 col_idx, 
-                terms_seen,
                 );
         }
 
@@ -2235,7 +2220,6 @@ pub const BM25Partition = struct {
         buffer: []u8,
         doc_id: u32,
         search_col_idx: usize,
-        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
     ) !void {
         // try self.II[search_col_idx].doc_sizes.append(self.allocator, 0);
         try self.II[search_col_idx].doc_sizes.append(self.arena.allocator(), 0);
@@ -2253,8 +2237,6 @@ pub const BM25Partition = struct {
 
         var cntr: usize = 0;
 
-        terms_seen.clear();
-
         var buffer_idx: usize = 0;
         while (buffer_idx < buffer.len) {
             std.debug.assert(
@@ -2269,7 +2251,6 @@ pub const BM25Partition = struct {
                     doc_id, 
                     &term_pos, 
                     search_col_idx, 
-                    terms_seen,
                     );
                 buffer_idx += 1;
                 continue;
@@ -2291,7 +2272,6 @@ pub const BM25Partition = struct {
                         doc_id, 
                         &term_pos, 
                         search_col_idx, 
-                        terms_seen,
                         );
                 },
                 else => {
@@ -2313,7 +2293,6 @@ pub const BM25Partition = struct {
                 doc_id, 
                 term_pos, 
                 search_col_idx, 
-                terms_seen,
                 );
         }
     }
@@ -2325,130 +2304,99 @@ pub const BM25Partition = struct {
         search_col_idxs: *const std.ArrayListUnmanaged(u32),
         byte_idx: *usize,
         doc_id: u32,
-        terms_seen: *StaticIntegerSet(MAX_NUM_TERMS),
-    ) !void {
-        var buffer_idx: usize = 0;
-        // std.debug.print("BUFFER: {s}\n", .{buffer[buffer_idx..][0..64]});
 
+        matched_col_idx: *u32,
+        value_start_pos: *u64,
+        value_end_pos: *u64,
+    ) !void {
         // Matches key against keys stored in trie. If not found 
         // maxInt(u32) is returned. If EOL an error is returned.
-        // buffer_idx is incremented to the next key, next line,
+        // byte_idx is incremented to the next key, next line,
         // or if matched, start of value.
-        const matched_col_idx = json.matchKVPair(
+
+        var cntr: usize = 0;
+
+        var start_key_idx: usize = undefined;
+        var end_key_idx:   usize = undefined;
+        json.nextKeyValuePoints(
             buffer,
-            &buffer_idx,
+            byte_idx,
+
+            &start_key_idx,
+            &end_key_idx,
+
+            value_start_pos,
+            value_end_pos,
+        );
+        const next_key_idx = byte_idx.*;
+
+        var i = value_start_pos.*;
+        matched_col_idx.* = json.matchKey(
+            buffer,
+            &start_key_idx,
             trie,
-            false,
-        ) catch {
-            // EOL. Not indexed key.
-            byte_idx.* += buffer_idx;
-            return;
+            true,
+        ) catch |err| {
+            std.debug.print(
+                "Key {s} not found in map.\n", 
+                .{buffer[start_key_idx..end_key_idx]},
+                );
+            return err;
         };
-        if (matched_col_idx == std.math.maxInt(u32)) {
-            byte_idx.* += buffer_idx;
-            return;
-        }
 
         const II_idx = findSorted(
             u32,
             search_col_idxs.items,
-            matched_col_idx,
-        ) catch {
-            try json.iterValueJSON(buffer, &buffer_idx);
-            if (buffer[buffer_idx] == '}') {
-                buffer_idx += 1;
-                while (buffer[buffer_idx] != '{') buffer_idx += 1;
-                byte_idx.* += buffer_idx;
-                return error.EOL;
-            }
-            buffer_idx += 1;
-            buffer_idx += string_utils.simdFindCharIdxEscaped(
-                buffer[buffer_idx..], 
-                '"',
-                false,
-            );
-            byte_idx.* += buffer_idx;
-            return;
+            matched_col_idx.*,
+        ) catch |err| {
+            if (err == error.KeyNotFound) return;
+            return err;
         };
 
-        // try self.II[II_idx].doc_sizes.append(self.allocator, 0);
         try self.II[II_idx].doc_sizes.append(self.arena.allocator(), 0);
 
-        // Empty check.
-        if (
-            (buffer[buffer_idx] == ',') 
-                or 
-            (buffer[buffer_idx] == '}')
-            ) {
-
-            buffer_idx += 1;
-            switch (buffer[buffer_idx - 1]) {
-                '}' => {
-                    buffer_idx += string_utils.simdFindCharIdxEscapedFull(
-                        buffer[buffer_idx..],
-                        '{',
-                        );
-                    byte_idx.* += buffer_idx;
-                    return error.EOL;
-                },
-                ',' => {
-                    buffer_idx += string_utils.simdFindCharIdxEscapedFull(
-                        buffer[buffer_idx..],
-                        '"',
-                        );
-                    byte_idx.* += buffer_idx;
-                },
-                else => unreachable,
-            }
-
-            return;
-        }
-
         var term_pos: u16 = 0;
-        const is_quoted = (buffer[buffer_idx] == '"');
-        buffer_idx += @intFromBool(is_quoted);
 
-        var cntr: usize   = 0;
+        // Now we are on the start of a value for a search col key.
+        if (buffer[i] == '"') {
+            i += 1;
 
-        terms_seen.clear();
-
-        if (is_quoted) {
-
-            outer_loop: while (true) {
-                if (self.II[II_idx].doc_sizes.items[doc_id] >= MAX_NUM_TERMS) {
-                    buffer_idx = 0;
-                    try json._iterFieldJSON(buffer, &buffer_idx);
-                    byte_idx.* += buffer_idx;
-                    return;
-                }
-
+            loop: while (true) {
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
                     try self.addToken(
-                        buffer[buffer_idx - cntr..], 
+                        buffer[i - cntr..], 
                         &cntr, 
                         doc_id, 
                         &term_pos, 
                         II_idx, 
-                        terms_seen,
                         );
-                    buffer_idx += 1;
+                    i += 1;
                     continue;
                 }
 
-                switch (buffer[buffer_idx]) {
+                switch (buffer[i]) {
                     '"' => {
-                        buffer_idx += 1;
-                        json.nextPoint(buffer, &buffer_idx);
-                        break :outer_loop;
+                        if (cntr > 0) {
+                            const start_idx = i - @min(i, cntr);
+                            try self.addToken(
+                                buffer[start_idx..], 
+                                &cntr, 
+                                doc_id, 
+                                &term_pos, 
+                                II_idx, 
+                                );
+                        }
+                        i += 1;
+                        break :loop;
                     },
                     0...33, 35...47, 58...64, 91, 93...96, 123...126 => {
                         if (cntr == 0) {
-                            buffer_idx += 1;
-                            continue;
+                            i += 1;
+                            continue :loop;
                         }
 
-                        const start_idx = buffer_idx - @min(buffer_idx, cntr);
+                        const start_idx = i - @min(i, cntr);
 
                         try self.addToken(
                             buffer[start_idx..], 
@@ -2456,107 +2404,99 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
-                            terms_seen,
                             );
+                        cntr = 0;
+
+                        if (self.II[II_idx].doc_sizes.items[doc_id] >= MAX_NUM_TERMS) {
+                            @branchHint(.cold);
+                            break: loop;
+                        }
+
                     },
-                    '\\' => buffer_idx += 2,
+                    '\\' => i += 2,
                     else => {
                         cntr += 1;
-                        buffer_idx += 1;
+                        i += 1;
                     },
                 }
             }
         } else {
-
-            outer_loop: while (true) {
-                std.debug.assert(self.II[II_idx].doc_sizes.items[doc_id] < MAX_NUM_TERMS);
-
+            loop: while (true) {
                 if (cntr > MAX_TERM_LENGTH - 4) {
                     @branchHint(.cold);
                     try self.addToken(
-                        buffer[buffer_idx - cntr..], 
+                        buffer[i - cntr..], 
                         &cntr, 
                         doc_id, 
                         &term_pos, 
                         II_idx, 
-                        terms_seen,
                         );
-                    buffer_idx += 1;
+                    i += 1;
                     continue;
                 }
 
+                switch (buffer[i]) {
+                    ',', '}' => break :loop,
 
-                switch (buffer[buffer_idx]) {
-                    ',', '}' => break :outer_loop,
-
-                    78 => {
+                    'N', 'n' => {
                         // NULL
-                        buffer_idx += 4;
+                        i += 4;
                         cntr = 4;
 
                         try self.addToken(
-                            buffer[buffer_idx - 4..], 
+                            buffer[i - 4..], 
                             &cntr, 
                             doc_id, 
                             &term_pos, 
                             II_idx, 
-                            terms_seen,
                             );
-                        json.nextPoint(buffer, &buffer_idx);
-                        break: outer_loop;
+                        break: loop;
                     },
-                    84 => {
+                    'T', 't' => {
                         // TRUE
-                        buffer_idx += 4;
+                        i += 4;
                         cntr = 4;
 
                         try self.addToken(
-                            buffer[buffer_idx - 4..], 
+                            buffer[i - 4..], 
                             &cntr, 
                             doc_id, 
                             &term_pos, 
                             II_idx, 
-                            terms_seen,
                             );
-                        json.nextPoint(buffer, &buffer_idx);
-                        break: outer_loop;
+                        break: loop;
                     },
-                    70 => {
+                    'F', 'f' => {
                         // FALSE
-                        buffer_idx += 5;
+                        i += 5;
                         cntr = 5;
 
                         try self.addToken(
-                            buffer[buffer_idx - 5..], 
+                            buffer[i - 5..], 
                             &cntr, 
                             doc_id, 
                             &term_pos, 
                             II_idx, 
-                            terms_seen,
                             );
-                        json.nextPoint(buffer, &buffer_idx);
-                        break: outer_loop;
+                        break: loop;
                     },
-                    45, 48...57 => {
-                        if (cntr == 0) {
-                            buffer_idx += 1;
-                            cntr = 0;
-                            continue;
-                        }
+                    '-', '0'...'9' => {
+                        cntr = 0;
+
                         while (
-                            (buffer[buffer_idx] == 45)
+                            (buffer[i] == '-')
                                 or
                             (
-                             (buffer[buffer_idx] >= 48)
+                             (buffer[i] >= '0')
                                 and
-                             (buffer[buffer_idx] <= 57)
+                             (buffer[i] <= '9')
                             )
                         ) {
-                            buffer_idx += 1;
+                            i += 1;
                             cntr += 1;
                         }
 
-                        const start_idx = buffer_idx - @min(buffer_idx, cntr);
+                        const start_idx = i - @min(i, cntr);
 
                         try self.addToken(
                             buffer[start_idx..], 
@@ -2564,48 +2504,17 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
-                            terms_seen,
                             );
-                        json.nextPoint(buffer, &buffer_idx);
-                        break :outer_loop;
+                        break :loop;
                     },
                     else => {
                         cntr += 1;
-                        buffer_idx += 1;
-                        json.nextPoint(buffer, &buffer_idx);
-                        break :outer_loop;
+                        i += 1;
                     },
                 }
             }
         }
-
-        if (cntr > 0) {
-            std.debug.assert(self.II[II_idx].doc_sizes.items[doc_id] < MAX_NUM_TERMS);
-
-            const start_idx = buffer_idx - @intFromBool(is_quoted) - 
-                              @min(buffer_idx - @intFromBool(is_quoted), cntr + 1);
-            try self.addTerm(
-                buffer[start_idx..],
-                cntr,
-                doc_id,
-                term_pos,
-                II_idx,
-                terms_seen,
-                );
-        }
-
-        switch (buffer[buffer_idx]) {
-            ',' => {
-                while (buffer[buffer_idx] != '"') buffer_idx += 1;
-                byte_idx.* += buffer_idx;
-            },
-            '}' => {
-                while (buffer[buffer_idx] != '{') buffer_idx += 1;
-                byte_idx.* += buffer_idx;
-                return error.EOL;
-            },
-            else => unreachable,
-        }
+        byte_idx.* = next_key_idx;
     }
 
     pub inline fn fetchRecordsDocStore(

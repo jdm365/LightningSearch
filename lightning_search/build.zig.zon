@@ -6,7 +6,7 @@
             .url = "git+https://github.com/zigzap/zap?ref=v0.10.1#8d187310c7ee4f86faa7ef0ecdac0bf747216dea",
             .hash = "zap-0.9.1-GoeB84M8JACjZKDNq2LA5hB24Z-ZrZ_HUKRXd8qxL2JW",
         },
-    },
+   },
     .fingerprint = 0x6d48538dab1223e0,
     .paths = .{
         "build.zig",

@@ -47,8 +47,8 @@ const AtomicCounter = std.atomic.Value(u64);
 pub const MAX_QUERY_TERMS: usize = 64;
 pub const MAX_NUM_RESULTS = @import("index.zig").MAX_NUM_RESULTS;
 
-// const MAX_NUM_THREADS: usize = 1;
-const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
+const MAX_NUM_THREADS: usize = 1;
+// const MAX_NUM_THREADS: usize = std.math.maxInt(usize);
 
 
 const Column = struct {
@@ -745,6 +745,19 @@ pub const IndexManager = struct {
             doc_id += 1;
             if (doc_id == max_docs_scan) break;
         }
+
+        try self.file_data.column_names.resize(
+            self.stringArena(),
+            self.file_data.column_idx_map.num_keys,
+            );
+        var iterator = try self.file_data.column_idx_map.iterator();
+        while (try iterator.next()) |item| {
+            const col_name = item.key;
+            const cloned_col = try self.stringArena().dupe(u8, col_name);
+            const idx = item.value;
+
+            self.file_data.column_names.items[idx] = cloned_col;
+        }
     }
 
 
@@ -759,13 +772,14 @@ pub const IndexManager = struct {
         const file_size = try file.getEndPos();
 
         var buffered_reader = try fu.DoubleBufferedReader.init(
-            self.scratchArena(),
+            self.gpa(),
             file,
             '{',
             false,
         );
+        defer buffered_reader.deinit(self.gpa());
 
-        const num_partitions =  if (file_size > (1 << 24)) 
+        const num_partitions: usize = if (file_size > (1 << 24)) 
             @min(
             try std.Thread.getCpuCount(), 
             MAX_NUM_THREADS,
@@ -781,11 +795,11 @@ pub const IndexManager = struct {
 
         const start_time = std.time.milliTimestamp();
 
-        var file_pos: usize = 0;
+        var file_pos: u64 = 0;
         var partition_idx: usize = 0;
         var line_count: u64 = 0;
 
-        const buf = try buffered_reader.getBuffer(file_pos);
+        var buf = try buffered_reader.getBuffer(file_pos);
         while (buf[file_pos] != '{') file_pos += 1;
 
         while (file_pos < file_size) {
@@ -796,10 +810,10 @@ pub const IndexManager = struct {
                 self.partitions.row_offsets[partition_idx]  = line_count;
 
             }
-            const buffer = try buffered_reader.getBuffer(file_pos);
+            buf = try buffered_reader.getBuffer(file_pos);
 
             var index: usize = 0;
-            try json.iterLineJSON(buffer, &index);
+            try json.iterLineJSON(buf, &index);
             file_pos += index;
             line_count += 1;
         }
@@ -896,8 +910,6 @@ pub const IndexManager = struct {
             &freq_table,
         );
 
-        var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
-
         var file_pos:       usize = start_byte;
         var prev_doc_id:    usize = 0;
         var search_col_idx: usize = 0;
@@ -906,7 +918,7 @@ pub const IndexManager = struct {
         var is_quoted:      bool  = false;
 
 
-        for (0.., start_doc..end_doc) |doc_id, _| {
+        for (0.., start_doc..end_doc) |doc_id, global_doc_id| {
             buffer = try reader.getBuffer(file_pos);
             row_byte_idx = 0;
 
@@ -953,7 +965,6 @@ pub const IndexManager = struct {
                             &row_byte_idx,
                             @truncate(doc_id), 
                             search_col_idx,
-                            &terms_seen_bitset,
                             );
 
                         self.query_state.result_positions[partition_idx][self.file_data.search_col_idxs.items[search_col_idx]] = TermPos{
@@ -979,24 +990,51 @@ pub const IndexManager = struct {
                     }
                 },
                 fu.FileType.JSON => {
+                    // Goto first key
                     row_byte_idx += string_utils.simdFindCharIdxEscapedFull(
-                        buffer,
+                        buffer[row_byte_idx..],
                         '"',
                     );
 
-                    while (true) {
-                        current_IP.processDocRfc8259(
-                            // &token_stream,
+                    var col_idx:   u32 = undefined;
+                    var start_pos: u64 = undefined;
+                    var end_pos:   u64 = undefined;
+
+                    loop: while (true) {
+                        try current_IP.processDocRfc8259(
                             buffer,
                             &self.file_data.column_idx_map,
                             &self.file_data.search_col_idxs,
                             &row_byte_idx,
-                            @intCast(doc_id), 
-                            &terms_seen_bitset,
-                            ) catch break;
-                    }
+                            @truncate(doc_id), 
 
-                    file_pos += row_byte_idx;
+                            &col_idx,
+                            &start_pos,
+                            &end_pos,
+                            );
+
+                        self.query_state.result_positions[partition_idx][col_idx] = TermPos{
+                            .start_pos = @as(u32, @truncate(start_pos)) + @as(u32, @intFromBool(
+                                buffer[row_byte_idx] == '"',
+                            )),
+                            .field_len = @as(u32, @truncate(end_pos - start_pos)) - @as(u32, @intFromBool(
+                                buffer[row_byte_idx] == '"',
+                            )),
+                        };
+
+                        if (buffer[row_byte_idx] == '}') {
+                            if (global_doc_id != end_doc - 1) {
+                                const key_len = string_utils.simdFindCharIdxEscaped(
+                                    buffer[row_byte_idx..], 
+                                    '{',
+                                    false,
+                                );
+                                row_byte_idx += key_len;
+                            }
+
+                            break: loop;
+                        }
+                    }
                 },
                 fu.FileType.PARQUET => @panic("For parquet, readPartitionParquet must be called."),
             }
@@ -1087,8 +1125,6 @@ pub const IndexManager = struct {
             &freq_table,
         );
 
-        var terms_seen_bitset = StaticIntegerSet(MAX_NUM_TERMS).init();
-
 
         var prev_doc_id: usize = 0;
         var doc_id: usize = 0;
@@ -1138,7 +1174,6 @@ pub const IndexManager = struct {
                         buffer[byte_idx..][0..field_length],
                         @truncate(doc_id), 
                         search_col_idx,
-                        &terms_seen_bitset,
                         );
 
                     search_col_idx += 1;
@@ -1252,7 +1287,7 @@ pub const IndexManager = struct {
         var partition_idx: usize = 0;
         var line_count: u64 = 0;
         while (file_pos < file_size - 1) {
-            const buffer = buffered_reader.getBuffer(@intCast(file_pos)) catch {
+            const buffer = buffered_reader.getBuffer(file_pos) catch {
                 std.debug.print("Error reading buffer at {d}\n", .{file_pos});
                 return error.BufferError;
             };
