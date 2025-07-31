@@ -22,4 +22,8 @@ extensions = [
 
 setup(
         ext_modules=cythonize(extensions),
+        package_data={
+            'lightning_search': ["*.pxd", "*.pyi"],
+        },
+        include_package_data=True,
         )

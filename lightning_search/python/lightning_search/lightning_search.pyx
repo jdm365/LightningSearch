@@ -81,7 +81,10 @@ cdef class Index:
         self.query_col_map = {}
         self.num_cols = 0
 
-    cpdef void load(self, str dir_name):
+    def load(self, dir_name: str):
+        self._load(dir_name)
+
+    cdef void _load(self, str dir_name):
         dname = (dir_name + '\0').encode('utf-8')
         cdef uint8_t* c_dirname = <uint8_t*>dname
         load(self.idx_ptr, c_dirname)
@@ -92,7 +95,10 @@ cdef class Index:
             destroy_index(self.idx_ptr)
             self.idx_ptr = NULL
 
-    cpdef void index_file(self, str filename, list query_cols):
+    def index_file(self, filename: str, query_cols: List[str]) -> None:
+        self._index_file(filename, query_cols)
+
+    cpdef void _index_file(self, str filename, list query_cols):
         fname = (filename + '\0').encode('utf-8')
 
         cdef uint32_t num_query_cols = len(query_cols)
@@ -101,7 +107,9 @@ cdef class Index:
                 num_query_cols * sizeof(uint8_t*)
                 )
 
-        query_cols = [(query_cols[i] + '\0').encode('utf-8') for i in range(num_query_cols)]
+        query_cols = [
+                (query_cols[i] + '\0').encode('utf-8') for i in range(num_query_cols)
+                ]
 
         cdef uint32_t i
         for i in range(num_query_cols):
@@ -118,11 +126,11 @@ cdef class Index:
         free(c_query_cols)
         self.get_cols()
 
-    def index_from_polars(self, df: pl.DataFrame, query_cols: list):
+    def index_from_polars(self, df: object, query_cols: list):
         """
         Arrow reading is a WIP. For now just dump to disk first.
         """
-        hash_str = hash(randint()).hex()
+        hash_str = str(hash(randint(0, (1 << 31))))
         dst_path = f"/tmp/index_{hash_str}.csv"
         df.write_csv(dst_path)
 

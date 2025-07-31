@@ -1,15 +1,27 @@
 BIN_PATH  := lightning_search.bin
 DATA_PATH := ../../data/mb.csv
+OS	      := $(shell uname -s)
+LIB_EXT   := so
+ifeq ($(OS),Darwin)
+	LIB_EXT := dylib
+endif
 
-install:
-	## zig build shared -Doptimize=ReleaseFast
+release:
 	## zig build -Doptimize=ReleaseFast
-	## zig build -Doptimize=ReleaseSafe
+	zig build -Doptimize=ReleaseSafe
+
+debug:
 	zig build -Doptimize=Debug
-	mv zig-out/lib/liblightning_search.so ./python/lightning_search/
+
+_install:
+	mv zig-out/lib/liblightning_search.$(LIB_EXT) ./python/lightning_search/
 	mv zig-out/include/ffi.h ./python/lightning_search/ffi.h
 	uv pip uninstall lightning_search
 	cd python && uv pip install -n -e .
+
+install: release _install
+
+install_debug: debug _install
 
 bench:
 	zig build -Doptimize=ReleaseFast

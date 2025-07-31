@@ -49,6 +49,11 @@ if __name__ == '__main__':
                 ## "title"
                 ],
             )
+
+    import polars as pl
+    df = pl.read_csv(filename)
+    index.index_from_polars(df, query_cols=["text"])
+    exit()
     """
     index = Index()
     index.load(index_dir)

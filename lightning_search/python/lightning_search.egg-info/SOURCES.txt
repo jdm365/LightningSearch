@@ -4,6 +4,7 @@ lightning_search/__init__.py
 lightning_search/ffi.h
 lightning_search/liblightning_search.so
 lightning_search/lightning_search.c
+lightning_search/lightning_search.pyi
 lightning_search.egg-info/PKG-INFO
 lightning_search.egg-info/SOURCES.txt
 lightning_search.egg-info/dependency_links.txt
