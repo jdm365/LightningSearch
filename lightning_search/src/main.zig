@@ -47,7 +47,9 @@ fn bench(filename: []const u8) !void {
         // try index_manager.addSearchCol("comment_author");
 
     } else if (contains(filename, "enwik")) {
-        try index_manager.addSearchCol("text");
+        // try index_manager.addSearchCol("text");
+        // try index_manager.addSearchCol("title");
+        try index_manager.addSearchCol("body");
 
     } else if (contains(filename, "mb")) {
         try index_manager.addSearchCol("title");
@@ -74,7 +76,8 @@ fn bench(filename: []const u8) !void {
 
     } else if (contains(filename, "enwik")) {
         try index_manager.addQueryField(
-            "TEXT",
+            // "TEXT",
+            "BODY",
             "griffith observatory",
             1.0,
         );
@@ -166,7 +169,8 @@ fn serveHTML(filename: []const u8) !void {
         try boost_factors.append(1.0);
 
     } else if (contains(filename, "enwik")) {
-        try index_manager.addSearchCol("text");
+        // try index_manager.addSearchCol("text");
+        try index_manager.addSearchCol("body");
 
         try boost_factors.append(2.0);
 
@@ -213,13 +217,13 @@ pub fn main() !void {
         const filename = args[1];
         try serveHTML(filename);
     } else {
-        const filename = "../data/mb_small.json";
+        // const filename = "../data/mb_small.json";
 
         // const filename = "../data/mb_tiny.csv";
         // const filename = "../data/mb_small.csv";
         // const filename = "../data/mb.csv";
         // const filename = "../data/enwiki.csv";
-        // const filename = "../data/enwiki_small.csv";
+        const filename = "../data/enwiki_small.csv";
         // const filename = "../data/mb.parquet";
         // const filename = "../data/hn.csv";
         // const filename = "../data/hn_half.csv";

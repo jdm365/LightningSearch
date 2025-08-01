@@ -2096,222 +2096,13 @@ pub const IndexManager = struct {
         partition_idx: usize,
         query_results: *SortedScoreMultiArray(QueryResult),
     ) void {
-        const num_search_cols = self.file_data.search_col_idxs.items.len;
-        std.debug.assert(num_search_cols > 0);
-
-        var term_buffer: [MAX_TERM_LENGTH]u8 = undefined;
-
-        var search_col_counts = self.gpa().alloc(usize, num_search_cols) catch {
-            @panic("Failed to alloc search_col_counts.");
-        };
-        defer self.gpa().free(search_col_counts);
-
-        @memset(search_col_counts, 0);
-
-        const bigrams = self.gpa().alloc(
-            std.ArrayListUnmanaged(u64),
-            num_search_cols,
-        ) catch {
-            @panic("Failed to alloc bigrams.");
-        };
-        defer {
-            for (bigrams) |*inner_arr| {
-                inner_arr.deinit(self.gpa());
-            }
-            self.gpa().free(bigrams);
-        }
-        for (bigrams) |*bg| {
-            bg.* = std.ArrayListUnmanaged(u64){};
-        }
-
-        var empty_query = true; 
-
-        // TODO: Figure out meta typing to just map doc_id and term_pos types.
-        var iterators = std.ArrayListUnmanaged(
-            PostingsIteratorV2,
-        ){};
+        var iterators = std.ArrayListUnmanaged(PostingsIteratorV2){};
         defer iterators.deinit(self.gpa());
 
-
-        var query_it = queries.iterator();
-        while (query_it.next()) |entry| {
-            const col_idx = self.columns.find(entry.key_ptr.*) catch {
-                std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
-                continue;
-            };
-            const II_idx = findSorted(
-                u32,
-                self.file_data.search_col_idxs.items,
-                col_idx,
-            ) catch {
-                std.debug.print("Column {s} not found!\n", .{entry.key_ptr.*});
-                @panic("Column not found. Check findSorted function and self.columns map.");
-            };
-
-            std.debug.assert(II_idx <= self.file_data.search_col_idxs.items.len);
-
-            var term_len: usize = 0;
-
-            var term_pos: u16 = 0;
-            for (entry.value_ptr.*) |c| {
-                switch (c) {
-                    0...33, 35...47, 58...64, 91...96, 123...126 => {
-                        if (term_len == 0) continue;
-
-                        const II = &self.partitions.index_partitions[partition_idx].II[II_idx];
-
-                        const token = II.vocab.get(
-                            term_buffer[0..term_len],
-                            II.vocab.getAdapter(),
-                            );
-                        if (token) |_token| {
-                            const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
-                                               @as(f32, @floatFromInt(II.getDF(_token)));
-                            const boost_weighted_idf: f32 = (
-                                1.0 + std.math.log2(inner_term)
-                                ) * boost_factors.items[II_idx];
-
-                            std.debug.assert(II_idx <= self.file_data.search_col_idxs.items.len);
-
-                            const iterator_ptr = iterators.addOne(
-                                self.gpa(),
-                            ) catch @panic("Error adding iterator");
-                            // iterator_ptr.* = PostingsIteratorV2.init(
-                            iterator_ptr.* = PostingsIterator.init(
-                                II.postings,
-                                _token,
-                                @truncate(II_idx),
-                                @intFromFloat(boost_weighted_idf),
-                                // if (II.getDF(_token) == 1) II.postings.doc_id_ptrs[_token] else null,
-                                // if (II.getDF(_token) == 1) II.postings.term_pos_ptrs[_token] else null,
-                            );
-
-                            term_pos += 1;
-                            empty_query = false;
-
-                            search_col_counts[II_idx] += 1;
-                            if (search_col_counts[II_idx] > 1) {
-                                bigrams[II_idx].append(
-                                    self.gpa(),
-                                    (@as(u64, @intCast(iterators.items[iterators.items.len - 2].term_id)) << 32) | 
-                                    @as(u64, @intCast(_token)),
-                                ) catch {
-                                    @panic("Failed to append bigram.");
-                                };
-                            }
-                        }
-                        term_len = 0;
-                        continue;
-                    },
-                    else => {
-                        term_buffer[term_len] = std.ascii.toUpper(c);
-                        term_len += 1;
-
-                        if (term_len == MAX_TERM_LENGTH) {
-                            const II = &self.partitions.index_partitions[partition_idx].II[II_idx];
-
-                            const token = II.vocab.get(
-                                term_buffer[0..term_len],
-                                II.vocab.getAdapter(),
-                                );
-
-                            if (token) |_token| {
-                                const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
-                                                   @as(f32, @floatFromInt(II.getDF(_token)));
-                                const boost_weighted_idf: f32 = (
-                                    1.0 + std.math.log2(inner_term)
-                                    ) * boost_factors.items[II_idx];
-
-
-                                const iterator_ptr = iterators.addOne(
-                                    self.gpa(),
-                                ) catch @panic("Error adding iterator");
-                                // iterator_ptr.* = PostingsIteratorV2.init(
-                                iterator_ptr.* = PostingsIterator.init(
-                                    II.postings,
-                                    _token,
-                                    @truncate(II_idx),
-                                    @intFromFloat(boost_weighted_idf),
-                                    // if (II.getDF(_token) else null,
-                                    // if (II.getDF(_token) else null,
-                                );
-
-                                term_pos += 1;
-                                empty_query = false;
-
-                                search_col_counts[II_idx] += 1;
-                                if (search_col_counts[II_idx] > 1) {
-                                    bigrams[II_idx].append(
-                                        self.gpa(),
-                                        (@as(u64, @intCast(iterators.items[iterators.items.len - 2].term_id)) << 32) | 
-                                        @as(u64, @intCast(_token)),
-                                    ) catch {
-                                        @panic("Failed to append bigram.");
-                                    };
-                                }
-                            }
-                            term_len = 0;
-                        }
-                    },
-                }
-            }
-
-            if (term_len > 0) {
-                const II = &self.partitions.index_partitions[partition_idx].II[II_idx];
-
-                const token = II.vocab.get(
-                    term_buffer[0..term_len],
-                    II.vocab.getAdapter(),
-                    );
-
-                if (token) |_token| {
-                    const inner_term = @as(f32, @floatFromInt(II.doc_sizes.items.len)) / 
-                                       @as(f32, @floatFromInt(II.getDF(_token)));
-                    const boost_weighted_idf: f32 = (
-                        1.0 + std.math.log2(inner_term)
-                        ) * boost_factors.items[II_idx];
-
-                    const iterator_ptr = iterators.addOne(
-                        self.gpa(),
-                    ) catch @panic("Error adding iterator");
-                    // iterator_ptr.* = PostingsIteratorV2.init(
-                    iterator_ptr.* = PostingsIterator.init(
-                        II.postings,
-                        _token,
-                        @truncate(II_idx),
-                        @intFromFloat(boost_weighted_idf),
-                        // if (II.getDF(_token) == 1) II.getDF(_token) else null,
-                    );
-
-                    term_pos += 1;
-                    empty_query = false;
-
-                    search_col_counts[II_idx] += 1;
-                    if (search_col_counts[II_idx] > 1) {
-                        bigrams[II_idx].append(
-                            self.gpa(),
-                            (@as(u64, @intCast(iterators.items[iterators.items.len - 2].term_id)) << 32) | 
-                            @as(u64, @intCast(_token)),
-                        ) catch {
-                            @panic("Failed to append bigram.");
-                        };
-                    }
-                }
-            }
-        }
-
-        if (empty_query) {
-            std.debug.print("Empty query\n", .{});
-            var iterator = queries.iterator();
-            std.debug.print("\n", .{});
-            std.debug.print("-----------------------------------------", .{});
-            while (iterator.next()) |item| {
-                std.debug.print("{s}: {s}\n", .{item.key_ptr.*, item.value_ptr.*});
-            }
-            std.debug.print("-----------------------------------------", .{});
-            std.debug.print("\n", .{});
-            return;
-        }
+        self.collectQueryTerms(
+            partition_idx,
+            &iterators,
+        );
 
         var sorted_scores = SortedScoreMultiArray(u32).init(
             self.gpa(), 
@@ -2321,127 +2112,58 @@ pub const IndexManager = struct {
             };
         defer sorted_scores.deinit();
 
-        if (iterators.items.len == 1) {
-            const score: f32 = @floatFromInt(iterators.items[0].score);
-
-            var score_sum: f32 = 0.0;
-            var res = iterators.items[0].nextSlice();
-
-            while (res.doc_id != std.math.maxInt(u32)) {
-                score_sum = 0.0;
-                for (res.term_pos) |tp| {
-
-                    // TODO: Assess how we want to do term pos scoring.
-                    tp &= 0b01111111_11111111;
-                    score_sum += score + 25.0 * @as(f32, @floatFromInt(@intFromBool(tp == 0)));
-                }
-                sorted_scores.insert(res.doc_id, score_sum);
-                res = iterators.items[0].nextSlice();
-            }
-
-            // std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{iterators.items[0].len});
-
-            for (0..sorted_scores.count) |idx| {
-
-                const result = QueryResult{
-                    .doc_id = sorted_scores.items[idx],
-                    .partition_idx = @intCast(partition_idx),
-                };
-                query_results.insert(result, sorted_scores.scores[idx]);
-            }
-
-            return;
-        }
-
+        // Intersection query must have every term.
         // Sort iterators by score.
         sortStruct(
-            PostingsIterator,
-            // PostingsIteratorV2,
+            PostingsIteratorV2,
             iterators.items,
-            "score",
+            "boost_weighted_idf",
             true,
-        );
-        // Check sorting.
-        for (0..iterators.items.len) |idx| {
-            const iterator = iterators.items[idx];
-            std.debug.print("Score: {d}\n", .{iterator.score});
-        }
-
-        var doc_term_positions = self.gpa().alloc(
-            SortedIntMultiArray(u32, false), 
-            num_search_cols,
-            ) catch {
-            @panic("Failed to alloc doc_term_positions.");
-        };
-        defer self.gpa().free(doc_term_positions);
-        for (doc_term_positions) |*arr| {
-            arr.* = SortedIntMultiArray(u32, false).init(
-                self.gpa(),
-                64,
-            ) catch {
-                @panic("Failed to init doc_term_positions.");
-            };
-        }
-
-        // TODO: Fix rest of this function to work with PostingsV2
-        var lead_iter = &iterators.items[0];
-        var total_docs_scored: usize = 0;
-        while (true) {
-            const result = lead_iter.next();
-            if (result.doc_id == std.math.maxInt(u32)) break;
-            for (doc_term_positions) |*pos| {
-                pos.clear();
-            }
-
-            doc_term_positions[lead_iter.col_idx].insert(
-                lead_iter.term_id,
-                result.term_pos,
             );
+        const num_terms = iterators.items.len;
 
-            const doc_id = result.doc_id;
+        const lead_II = self.partitions.index_partitions[partition_idx].II[iterators.items[0].col_idx];
 
-            var score = iterators.items[0].score;
-            for (iterators.items[1..]) |*iterator| {
-                const score_add = iterator.score;
+        var doc_id: u32 = undefined;
+        var term_freq: u16 = undefined;
+        loop: while (!iterators.items[0].consumed) {
+            const _lead_res = try iterators.items[0].next();
+            if (_lead_res) |lead_res| {
+                doc_id    = lead_res.doc_id;
+                term_freq = lead_res.term_freq;
 
-                const res = iterator.advanceTo(doc_id);
-                if (res.doc_id == doc_id) {
-                    score += score_add;
-                }
-
-                doc_term_positions[iterator.col_idx].insert(
-                    iterator.term_id,
-                    res.term_pos,
+                var base_score: f32 = scoreBM25Fast(
+                    term_freq,
+                    lead_II.doc_sizes.items[doc_id],
+                    iterators.items[0].A,
+                    iterators.items[0].C2,
                 );
-            }
 
-            // Term pos scoring.
-            for (0.., doc_term_positions) |II_idx, *pos| {
-                if (pos.count <= 1) continue;
-
-                for (0..(pos.count - 1)) |idx| {
-                    const diff = pos.values[idx + 1] - pos.values[idx];
-                    if (diff != 1) continue;
-
-                    const new_bigram = @as(u64, @intCast(pos.items[idx])) << 32 | 
-                                       @as(u64, @intCast(pos.items[idx + 1]));
-                    for (bigrams[II_idx].items) |bg| {
-                        score *= 2 * @as(u32, @intCast(@intFromBool(bg == new_bigram)));
+                if (num_terms > 1) {
+                    for (iterators.items[1..]) |*it| {
+                        const _res = try it.advanceTo(doc_id);
+                        if (_res) |res| {
+                            if (res.doc_id > doc_id) {
+                                continue: loop;
+                            }
+                            const II = self.partitions.index_partitions[partition_idx].II[it.col_idx];
+                            base_score += scoreBM25Fast(
+                                res.term_freq,
+                                II.doc_sizes.items[doc_id],
+                                it.A,
+                                it.C2,
+                            );
+                                
+                        }
                     }
                 }
+                sorted_scores.insert(doc_id, base_score);
+            } else {
+                break: loop;
             }
-
-            sorted_scores.insert(
-                doc_id,
-                @floatFromInt(score),
-            );
-            total_docs_scored += 1;
         }
 
-        std.debug.print("\nTOTAL DOCS SCORED: {d}\n", .{total_docs_scored});
-
         for (0..sorted_scores.count) |idx| {
-
             const result = QueryResult{
                 .doc_id = sorted_scores.items[idx],
                 .partition_idx = @intCast(partition_idx),
@@ -2546,8 +2268,8 @@ pub const IndexManager = struct {
             self.query_state.results_arrays[partition_idx].resize(k);
             self.query_state.thread_pool.spawnWg(
                 &wg,
-                // queryPartitionDAATIntersection,
-                queryPartitionDAATUnion,
+                queryPartitionDAATIntersection,
+                // queryPartitionDAATUnion,
                 .{
                     self,
                     partition_idx,

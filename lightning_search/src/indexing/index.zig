@@ -298,6 +298,13 @@ pub const PostingsIteratorV2 = struct {
         return self.uncompressed_doc_ids_buffer[self.current_doc_idx % BLOCK_SIZE];
     }
 
+    pub inline fn currentTermFreq(self: *const PostingsIteratorV2) ?u16 {
+        if (self.consumed) {
+            return null;
+        }
+        return self.uncompressed_tfs_buffer[self.current_doc_idx % BLOCK_SIZE];
+    }
+
     // pub inline fn currentTermPos(self: *const PostingsIteratorV2) ?u16 {
         // if (self.current_idx >= self.term_positions.len) {
             // return null;
