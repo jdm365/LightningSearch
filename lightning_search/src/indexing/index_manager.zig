@@ -2268,8 +2268,8 @@ pub const IndexManager = struct {
             self.query_state.results_arrays[partition_idx].resize(k);
             self.query_state.thread_pool.spawnWg(
                 &wg,
-                queryPartitionDAATIntersection,
-                // queryPartitionDAATUnion,
+                // queryPartitionDAATIntersection,
+                queryPartitionDAATUnion,
                 .{
                     self,
                     partition_idx,
@@ -2289,61 +2289,3 @@ pub const IndexManager = struct {
         }
     }
 };
-
-
-test "index_csv" {
-    @breakpoint();
-    const filename: []const u8 = "../data/mb_small.csv";
-    // const filename: []const u8 = "../data/mb.csv";
-
-    var gpa = std.heap.DebugAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var index_manager = try IndexManager.init(allocator);
-
-    defer {
-        index_manager.deinit(gpa.allocator()) catch {};
-        _ = gpa.deinit();
-    }
-
-
-    try index_manager.readHeader(filename, fu.FileType.CSV);
-    try index_manager.scanFile();
-
-    try index_manager.addSearchCol("title");
-    try index_manager.addSearchCol("artist");
-    try index_manager.addSearchCol("album");
-
-    try index_manager.indexFile();
-
-    // try index_manager.deinit();
-}
-
-test "index_json" {
-    @breakpoint();
-    const filename: []const u8 = "../data/mb_small.json";
-    // const filename: []const u8 = "../data/mb.json";
-
-    var gpa = std.heap.DebugAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var index_manager = try IndexManager.init(allocator);
-
-    defer {
-        index_manager.deinit(gpa.allocator()) catch {};
-        _ = gpa.deinit();
-    }
-
-    try index_manager.readHeader(filename, fu.FileType.JSON);
-    try index_manager.scanFile();
-
-    try index_manager.addSearchCol("title");
-    try index_manager.addSearchCol("artist");
-    try index_manager.addSearchCol("album");
-
-    try index_manager.indexFile();
-    @breakpoint();
-    // try index_manager.deinit();
-}
