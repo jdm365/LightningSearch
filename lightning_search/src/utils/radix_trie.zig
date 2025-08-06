@@ -301,10 +301,10 @@ pub fn RadixTrie(comptime T: type) type {
 
         // edge_4s: std.ArrayList([4]RadixEdge(T)),
         // edge_4s_freelist: std.ArrayList(u32),
-// 
+ 
         // edge_8s: std.ArrayList([8]RadixEdge(T)),
         // edge_8s_freelist: std.ArrayList(u32),
-// 
+ 
         // edge_16s: std.ArrayList([16]RadixEdge(T)),
         // edge_16s_freelist: std.ArrayList(u32),
 
