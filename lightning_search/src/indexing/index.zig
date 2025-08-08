@@ -703,7 +703,9 @@ pub const DeltaBitpackedBlock = struct {
 
 
     pub fn build(
-        allocator: std.mem.Allocator,
+        // allocator: std.mem.Allocator,
+        buffer: []u8,
+        buffer_idx: *u64,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
         sorted_vals: *align(64) [BLOCK_SIZE]u32,
         ) !DeltaBitpackedBlock {
@@ -736,12 +738,14 @@ pub const DeltaBitpackedBlock = struct {
         const max_gap: u32 = @reduce(.Max, block_maxes);
         dbp.bit_size = 32 - @clz(max_gap);
         const buffer_size = ((BLOCK_SIZE * dbp.bit_size) + 7) >> 3;
-        dbp.buffer = @ptrCast(try allocator.alignedAlloc(
-            u8,
-            POST_ALIGNMENT,
-            buffer_size,
-            ));
+        // dbp.buffer = @ptrCast(try allocator.alignedAlloc(
+            // u8,
+            // POST_ALIGNMENT,
+            // buffer_size,
+            // ));
+        dbp.buffer = buffer[buffer_idx.*..].ptr;
         @memset(dbp.buffer[0..buffer_size], 0);
+        buffer_idx.* += buffer_size;
 
         var bit_pos: usize = 0;
         inline for (0..BLOCK_SIZE) |idx| {
@@ -762,7 +766,9 @@ pub const BitpackedBlock = struct {
     buffer: [*]u8 align(64),
 
     pub fn build(
-        allocator: std.mem.Allocator,
+        // allocator: std.mem.Allocator,
+        buffer: []u8,
+        buffer_idx: *u64,
         vals: *align(64) [BLOCK_SIZE]u16,
         ) !BitpackedBlock {
         var dbp = BitpackedBlock{
@@ -781,12 +787,15 @@ pub const BitpackedBlock = struct {
         dbp.bit_size = 16 - @clz(@as(u16, @truncate(dbp.max_val)));
         const buffer_size = ((BLOCK_SIZE * dbp.bit_size) + 7) >> 3;
 
-        dbp.buffer = @ptrCast(try allocator.alignedAlloc(
-            u8,
-            POST_ALIGNMENT,
-            buffer_size,
-            ));
+        // dbp.buffer = @ptrCast(try allocator.alignedAlloc(
+            // u8,
+            // POST_ALIGNMENT,
+            // buffer_size,
+            // ));
+        dbp.buffer = buffer[buffer_idx.*..].ptr;
         @memset(dbp.buffer[0..buffer_size], 0);
+
+        buffer_idx.* += buffer_size;
 
         var bit_pos: usize = 0;
         inline for (0..BLOCK_SIZE) |idx| {
@@ -925,7 +934,9 @@ const DeltaVByteBlock = struct {
 
     pub fn buildIntoDeltaBitpacked(
         self: *DeltaVByteBlock,
-        allocator: std.mem.Allocator,
+        // allocator: std.mem.Allocator,
+        buffer: []u8,
+        buffer_idx: *u64,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
         ) !DeltaBitpackedBlock {
         // Optimize later. For now, just convert to u32 buf, then call above func.
@@ -944,7 +955,9 @@ const DeltaVByteBlock = struct {
         }
 
         return try DeltaBitpackedBlock.build(
-            allocator,
+            // allocator,
+            buffer,
+            buffer_idx,
             scratch_arr,
             &tmp_arr,
         );
@@ -1020,7 +1033,9 @@ const VByteBlock = struct {
 
     pub fn buildIntoBitpacked(
         self: *VByteBlock,
-        allocator: std.mem.Allocator,
+        // allocator: std.mem.Allocator,
+        buffer: []u8,
+        buffer_idx: *u64,
         ) !BitpackedBlock {
         // Optimize later. For now, just convert to u32 buf, then call above func.
 
@@ -1042,7 +1057,7 @@ const VByteBlock = struct {
             // std.debug.print("IDX: {d}\n\n", .{idx});
         }
 
-        return try BitpackedBlock.build(allocator, &tmp_arr);
+        return try BitpackedBlock.build(buffer, buffer_idx, &tmp_arr);
     }
 
     pub inline fn clear(self: *VByteBlock) void {
@@ -1081,13 +1096,17 @@ pub const PostingsBlockPartial = struct {
     pub fn flush(
         self: *PostingsBlockPartial,
         gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
-        arena: *std.heap.ArenaAllocator,
+        // arena: *std.heap.ArenaAllocator,
+        buffer: []u8,
+        buffer_idx: *u64,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
     ) !PostingsBlockFull {
         if (self.tp_indexing.items.len > 0) {
-            try self.flushTPTermBuf(gpa.allocator());
+            // try self.flushTPTermBuf(gpa.allocator());
+            try self.flushTPTermBuf(buffer, buffer_idx);
         }
-        const full_map = try self.partialToFull(gpa, arena, scratch_arr);
+        // const full_map = try self.partialToFull(gpa, arena, scratch_arr);
+        const full_map = try self.partialToFull(gpa, buffer, buffer_idx, scratch_arr);
 
         self.num_docs = 0;
         self.doc_ids.clear();
@@ -1105,7 +1124,9 @@ pub const PostingsBlockPartial = struct {
         self: *PostingsBlockPartial,
         // gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
         _: *std.heap.DebugAllocator(.{.thread_safe = true}),
-        arena: *std.heap.ArenaAllocator,
+        // arena: *std.heap.ArenaAllocator,
+        buffer: []u8,
+        buffer_idx: *u64,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
     ) !PostingsBlockFull {
         // TODO: CONSIDER MODIFYING STANDARD BM25 HERE.
@@ -1115,19 +1136,24 @@ pub const PostingsBlockPartial = struct {
         std.debug.assert(self.num_docs == BLOCK_SIZE);
         var pbf = PostingsBlockFull{
             .doc_ids = try self.doc_ids.buildIntoDeltaBitpacked(
-                arena.allocator(),
+                // arena.allocator(),
+                buffer,
+                buffer_idx,
                 scratch_arr,
             ),
             .tfs = try self.tfs.buildIntoBitpacked(
-                arena.allocator(),
+                // arena.allocator(),
+                buffer,
+                buffer_idx,
             ),
             // .term_positions = (try gpa.allocator().alignedAlloc(
             // .term_positions = (try arena.allocator().alignedAlloc(
-            .term_positions = (try arena.allocator().alloc(
-                u8,
-                // POST_ALIGNMENT,
-                self.term_positions.items.len,
-            )).ptr,
+            // .term_positions = (try arena.allocator().alloc(
+                // u8,
+                // // POST_ALIGNMENT,
+                // self.term_positions.items.len,
+            // )).ptr,
+            .term_positions = buffer[buffer_idx.*..].ptr,
             .max_tf = self.max_tf,
             .max_doc_size = self.max_doc_size,
             .max_doc_id = undefined,
@@ -1138,6 +1164,7 @@ pub const PostingsBlockPartial = struct {
             pbf.term_positions[0..self.term_positions.items.len],
             self.term_positions.items,
         );
+        buffer_idx.* += self.term_positions.items.len;
         self.term_positions.clearRetainingCapacity();
 
         return pbf;
@@ -1145,12 +1172,23 @@ pub const PostingsBlockPartial = struct {
 
     pub inline fn flushTPTermBuf(
         self: *PostingsBlockPartial, 
-        allocator: std.mem.Allocator,
+        // allocator: std.mem.Allocator,
+        buffer: []u8,
+        buffer_idx: *u64,
         ) !void {
         std.debug.assert(self.tp_indexing.items.len > 0);
 
-        var bit_size:    usize = 0;
         const start_val: u64 = @intCast(self.tp_indexing.items[0]);
+
+        if (self.tp_indexing.items.len == 1) {
+            pq.encodeVbyte(
+                buffer.ptr,
+                buffer_idx,
+                start_val,
+            );
+        }
+
+        var bit_size:    usize = 0;
         var prev_val:    u16 = self.tp_indexing.items[0];
 
         var tmp_val: u16 = undefined;
@@ -1162,30 +1200,21 @@ pub const PostingsBlockPartial = struct {
             bit_size = @max(bit_size, 16 - @clz(val.*));
         }
 
-        const bytes_needed = pq.getVbyteSize(start_val) + try std.math.divCeil(
+        pq.encodeVbyte(
+            buffer.ptr,
+            buffer_idx,
+            start_val,
+        );
+        var bit_idx: u64 = buffer_idx.* << 3;
+        for (self.tp_indexing.items[1..]) |val| {
+            putBits(buffer.ptr, bit_idx, val, @truncate(bit_size));
+            bit_idx += bit_size;
+        }
+        buffer_idx.* += try std.math.divCeil(
             usize,
             self.tp_indexing.items.len * bit_size,
             8,
             );
-
-        const new_slice = try self.term_positions.addManyAsSlice(
-            allocator, 
-            bytes_needed,
-            );
-
-        var byte_idx: u64 = 0;
-        pq.encodeVbyte(
-            new_slice.ptr,
-            &byte_idx,
-            start_val,
-        );
-        if (bit_size > 0) {
-            var bit_idx: u64 = byte_idx << 3;
-            for (self.tp_indexing.items) |val| {
-                putBits(new_slice.ptr, bit_idx, val, @truncate(bit_size));
-                bit_idx += bit_size;
-            }
-        }
 
         self.tp_indexing.clearRetainingCapacity();
     }
@@ -1194,13 +1223,16 @@ pub const PostingsBlockPartial = struct {
         self: *PostingsBlockPartial,
         gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
         // arena: *std.heap.ArenaAllocator,
-        _: *std.heap.ArenaAllocator,
+        // _: *std.heap.ArenaAllocator,
+        buffer: []u8,
+        buffer_idx: *u64,
         doc_id: u32,
         doc_size: u16,
         term_pos: u16,
     ) !void {
         // Needed to increment df in indexing loop.
         if (doc_id != self.prev_doc_id) {
+            @branchHint(.likely);
 
             // TODO: 
             // 1. Swith tf_cntr to tf_max.
@@ -1219,7 +1251,8 @@ pub const PostingsBlockPartial = struct {
             self.prev_tf = 1;
 
             if (self.num_docs > 1) {
-                try self.flushTPTermBuf(gpa.allocator());
+                // try self.flushTPTermBuf(gpa.allocator());
+                try self.flushTPTermBuf(buffer, buffer_idx);
             }
             try self.tp_indexing.append(gpa.allocator(), term_pos);
 
@@ -1298,7 +1331,9 @@ pub const PostingV3 = struct {
     pub inline fn add(
         self: *PostingV3,
         gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
-        arena: *std.heap.ArenaAllocator,
+        // arena: *std.heap.ArenaAllocator,
+        buffer: []u8,
+        buffer_idx: *u64,
         doc_id: u32,
         doc_size: u16,
         term_pos: u16,
@@ -1309,16 +1344,22 @@ pub const PostingV3 = struct {
                 and
             (self.partial_block.num_docs == BLOCK_SIZE)
         ) {
-            const new_val = try self.full_blocks.addOne(arena.allocator());
+            const new_val = try self.full_blocks.addOne(
+                gpa.allocator(),
+                );
             new_val.* = try self.partial_block.flush(
                 gpa,
-                arena, 
+                // arena, 
+                buffer,
+                buffer_idx,
                 scratch_arr,
                 );
         }
         try self.partial_block.add(
             gpa,
-            arena,
+            // arena,
+            buffer,
+            buffer_idx,
             doc_id,
             doc_size,
             term_pos,
@@ -1331,6 +1372,7 @@ pub const PostingV3 = struct {
         allocator: std.mem.Allocator,
         current_pos: *usize,
         ) !void {
+        // TODO: Add term_positions
 
         pq.encodeVbyte(
             buffer.items.ptr,
@@ -1567,22 +1609,26 @@ pub const PostingsList = struct {
                   PostingV3,
                   POST_ALIGNMENT,
               ),
-    arena: std.heap.ArenaAllocator,
+    buffer: []u8,
+    buffer_idx: u64,
 
-    pub fn init() PostingsList {
+    pub fn init(allocator: std.mem.Allocator) !PostingsList {
         return PostingsList{
             .postings = std.ArrayListAlignedUnmanaged(
                   PostingV3,
                   POST_ALIGNMENT,
               ){},
-            .arena = std.heap.ArenaAllocator.init(
-                std.heap.page_allocator,
+            .buffer = try allocator.alloc(
+                u8,
+                // 1 << 29, // 512MiB
+                1 << 30, // 1GiB
             ),
+            .buffer_idx = 0,
         };
     }
 
-    pub fn deinit(self: *PostingsList) void {
-        self.arena.deinit();
+    pub fn deinit(self: *PostingsList, allocator: std.mem.Allocator) void {
+        allocator.free(self.buffer);
     }
 
     pub inline fn add(
@@ -1596,18 +1642,24 @@ pub const PostingsList = struct {
         ) !void {
         try self.postings.items[term_id].add(
             gpa,
-            &self.arena, 
+            // &self.arena, 
+            self.buffer, 
+            &self.buffer_idx,
             doc_id, 
             doc_size,
             term_pos,
             scratch_arr,
             );
-        const capacity = self.arena.queryCapacity();
-        if (capacity > 4_000_000_000) {
+        std.debug.assert(self.buffer_idx < self.buffer.len);
+        if (self.buffer_idx > 99 * @divFloor(self.buffer.len, 100)) {
             std.debug.print(
-                "Capacity: {d}MB\n",
-                .{capacity >> 20},
+                "Space Used: {d}/{d}MB\n",
+                .{
+                    self.buffer_idx >> 20,
+                    self.buffer.len >> 20,
+                },
             );
+            return error.IndexTooLargeAndMergingNotImplemented;
         }
     }
 
@@ -1620,12 +1672,14 @@ pub const PostingsList = struct {
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
         ) !void {
         const val = try self.postings.addOne(
-            self.arena.allocator(),
+            gpa.allocator(),
             );
         val.* = PostingV3.init();
         try val.add(
             gpa,
-            &self.arena,
+            // &self.arena,
+            self.buffer,
+            &self.buffer_idx,
             doc_id, 
             doc_size, 
             term_pos, 
@@ -1650,7 +1704,7 @@ pub const InvertedIndexV2 = struct {
         create_file: bool,
         ) !InvertedIndexV2 {
         var II = InvertedIndexV2{
-            .posting_list = PostingsList.init(),
+            .posting_list = try PostingsList.init(allocator),
             .vocab = undefined,
             .doc_sizes = std.ArrayListUnmanaged(u16){},
             .avg_doc_size = 0.0,
@@ -1684,10 +1738,10 @@ pub const InvertedIndexV2 = struct {
         return II;
     }
 
-    pub fn deinit(self: *InvertedIndexV2) void {
+    pub fn deinit(self: *InvertedIndexV2, allocator: std.mem.Allocator) void {
         self.file_handle.close();
 
-        self.posting_list.deinit();
+        self.posting_list.deinit(allocator);
 
         // Using arena now.
         // self.vocab.deinit(allocator);
@@ -1961,7 +2015,7 @@ pub const BM25Partition = struct {
             defer gpa.allocator().free(output_filename);
 
             partition.II[idx] = try InvertedIndexV2.init(
-                partition.arena.allocator(), 
+                partition.gpa.allocator(), 
                 num_records,
                 output_filename,
                 true,
@@ -1973,7 +2027,7 @@ pub const BM25Partition = struct {
 
     pub fn deinit(self: *BM25Partition) !void {
         for (0..self.II.len) |i| {
-            self.II[i].deinit();
+            self.II[i].deinit(self.gpa.allocator());
         }
         self.gpa.allocator().free(self.II);
 
@@ -2039,7 +2093,7 @@ pub const BM25Partition = struct {
             defer allocator.free(filename);
 
             partition.II[idx] = InvertedIndexV2.init(
-                partition.arena.allocator(), 
+                partition.gpa.allocator(), 
                 null,
                 filename,
                 false,
@@ -2074,7 +2128,7 @@ pub const BM25Partition = struct {
             defer self.gpa.allocator().free(output_filename);
 
             self.II[idx] = try InvertedIndexV2.init(
-                self.arena.allocator(), 
+                self.gpa.allocator(), 
                 self.II[idx].doc_sizes.items.len,
                 output_filename,
                 true,
