@@ -1054,7 +1054,7 @@ pub const IndexManager = struct {
         // Flush remaining tokens.
         for (0..current_IP.II.len) |_search_col_idx| {
             try current_IP.II[_search_col_idx].commit(
-                current_IP.allocator,
+                current_IP.arena.allocator(),
             );
         }
         _ = total_docs_read.fetchAdd(end_doc - (start_doc + prev_doc_id), .monotonic);
@@ -1233,7 +1233,7 @@ pub const IndexManager = struct {
         for (0..current_IP.II.len) |_search_col_idx| {
             // try token_stream.flushTokenStream(_search_col_idx);
             try current_IP.II[_search_col_idx].commit(
-                current_IP.allocator,
+                current_IP.arena.allocator(),
             );
         }
 
@@ -1378,7 +1378,7 @@ pub const IndexManager = struct {
             };
 
             self.partitions.index_partitions[idx] = try BM25Partition.init(
-                self.gpa(), 
+                self.allocators.gpa, 
                 1, 
                 num_rows,
                 postings_dir,
@@ -1425,7 +1425,7 @@ pub const IndexManager = struct {
             };
 
             self.partitions.index_partitions[idx] = try BM25Partition.init(
-                self.gpa(), 
+                self.allocators.gpa, 
                 1, 
                 num_rows,
                 postings_dir,

@@ -58,7 +58,6 @@ pub inline fn scoreBM25Fast(
 
     const L = tf + C1 + C2 * d;
     const r = 1.0 / L;
-    // r = r * (2.0 - L * r);
     return A * tf * r;
 }
 
@@ -805,7 +804,8 @@ pub const BitpackedBlock = struct {
 pub const PostingsBlockFull = struct {
     doc_ids: DeltaBitpackedBlock,
     tfs:     BitpackedBlock,
-    term_positions: [*]align(POST_ALIGNMENT)u8,
+    // term_positions: [*]align(POST_ALIGNMENT)u8,
+    term_positions: [*]u8,
     max_tf: u16,
     max_doc_size: u16,
     max_doc_id: u32,
@@ -1005,15 +1005,15 @@ const VByteBlock = struct {
         allocator: std.mem.Allocator,
         value: u32,
     ) !void {
-        const bytes_needed = pq.getVbyteSize(value);
-        var init_ptr = self.buffer.items.len;
-        try self.buffer.resize(
+        const bytes_needed = pq.getVbyteSize(@intCast(value));
+        const new_slice = try self.buffer.addManyAsSlice(
             allocator,
-            init_ptr + bytes_needed
+            bytes_needed,
         );
+        var idx: usize = 0;
         pq.encodeVbyte(
-            self.buffer.items.ptr,
-            &init_ptr,
+            new_slice.ptr,
+            &idx,
             @intCast(value),
         );
     }
@@ -1027,12 +1027,19 @@ const VByteBlock = struct {
         // TODO: Thread local static arrays.
         var tmp_arr: [BLOCK_SIZE]u16 align(64) = undefined;
 
+        // TODO: Fix this.
+        self.buffer.items[0] &= 0b01111111;
+
         var byte_ptr: usize = 0;
         for (0..BLOCK_SIZE) |idx| {
+            // std.debug.print("IDX: {d}\n", .{idx});
+            // std.debug.print("POS: {d}/{d}\n", .{byte_ptr, self.buffer.items.len});
             tmp_arr[idx] = @truncate(pq.decodeVbyte(
                 self.buffer.items.ptr,
                 &byte_ptr,
             ));
+            // std.debug.print("VALUE: {d}\n", .{tmp_arr[idx]});
+            // std.debug.print("IDX: {d}\n\n", .{idx});
         }
 
         return try BitpackedBlock.build(allocator, &tmp_arr);
@@ -1047,7 +1054,6 @@ const VByteBlock = struct {
 pub const PostingsBlockPartial = struct {
     doc_ids: DeltaVByteBlock,
     tfs:     VByteBlock,
-    // term_positions: std.ArrayListAlignedUnmanaged(DeltaBitpackedBlock, POST_ALIGNMENT),
     term_positions: std.ArrayListAlignedUnmanaged(u8, POST_ALIGNMENT),
     tp_indexing: std.ArrayListAlignedUnmanaged(u16, POST_ALIGNMENT),
 
@@ -1064,7 +1070,7 @@ pub const PostingsBlockPartial = struct {
             .term_positions = std.ArrayListAlignedUnmanaged(u8, POST_ALIGNMENT){},
             .tp_indexing = std.ArrayListAlignedUnmanaged(u16, POST_ALIGNMENT){},
 
-            .prev_doc_id = 0,
+            .prev_doc_id = std.math.maxInt(u32),
             .prev_tf = 1,
             .max_tf = 1,
             .max_doc_size = 1,
@@ -1074,18 +1080,21 @@ pub const PostingsBlockPartial = struct {
 
     pub fn flush(
         self: *PostingsBlockPartial,
-        allocator: std.mem.Allocator,
+        gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
+        arena: *std.heap.ArenaAllocator,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
     ) !PostingsBlockFull {
-        try self.flushTPTermBuf(allocator);
-        const full_map = try self.partialToFull(allocator, scratch_arr);
+        if (self.tp_indexing.items.len > 0) {
+            try self.flushTPTermBuf(gpa.allocator());
+        }
+        const full_map = try self.partialToFull(gpa, arena, scratch_arr);
 
         self.num_docs = 0;
         self.doc_ids.clear();
         self.tfs.clear();
         self.max_tf = 1;
         self.max_doc_size = 1;
-        self.prev_doc_id = 0;
+        self.prev_doc_id = std.math.maxInt(u32);
         self.prev_tf = 1;
 
 
@@ -1094,24 +1103,29 @@ pub const PostingsBlockPartial = struct {
 
     fn partialToFull(
         self: *PostingsBlockPartial,
-        allocator: std.mem.Allocator,
+        // gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
+        _: *std.heap.DebugAllocator(.{.thread_safe = true}),
+        arena: *std.heap.ArenaAllocator,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
     ) !PostingsBlockFull {
         // TODO: CONSIDER MODIFYING STANDARD BM25 HERE.
         //       1. For short docs, don't use tf.
         //       2. For medium docs, cap tf score incluence.
 
+        std.debug.assert(self.num_docs == BLOCK_SIZE);
         var pbf = PostingsBlockFull{
             .doc_ids = try self.doc_ids.buildIntoDeltaBitpacked(
-                allocator,
+                arena.allocator(),
                 scratch_arr,
             ),
             .tfs = try self.tfs.buildIntoBitpacked(
-                allocator,
+                arena.allocator(),
             ),
-            .term_positions = (try allocator.alignedAlloc(
+            // .term_positions = (try gpa.allocator().alignedAlloc(
+            // .term_positions = (try arena.allocator().alignedAlloc(
+            .term_positions = (try arena.allocator().alloc(
                 u8,
-                POST_ALIGNMENT,
+                // POST_ALIGNMENT,
                 self.term_positions.items.len,
             )).ptr,
             .max_tf = self.max_tf,
@@ -1124,6 +1138,7 @@ pub const PostingsBlockPartial = struct {
             pbf.term_positions[0..self.term_positions.items.len],
             self.term_positions.items,
         );
+        self.term_positions.clearRetainingCapacity();
 
         return pbf;
     }
@@ -1147,9 +1162,9 @@ pub const PostingsBlockPartial = struct {
             bit_size = @max(bit_size, 16 - @clz(val.*));
         }
 
-        const bytes_needed = try std.math.divCeil(
+        const bytes_needed = pq.getVbyteSize(start_val) + try std.math.divCeil(
             usize,
-            pq.getVbyteSize(start_val) + self.tp_indexing.items.len * bit_size,
+            self.tp_indexing.items.len * bit_size,
             8,
             );
 
@@ -1164,10 +1179,12 @@ pub const PostingsBlockPartial = struct {
             &byte_idx,
             start_val,
         );
-        var bit_idx: u64 = byte_idx << 3;
-        for (self.tp_indexing.items) |val| {
-            putBits(new_slice.ptr, bit_idx, val, @truncate(bit_size));
-            bit_idx += bit_size;
+        if (bit_size > 0) {
+            var bit_idx: u64 = byte_idx << 3;
+            for (self.tp_indexing.items) |val| {
+                putBits(new_slice.ptr, bit_idx, val, @truncate(bit_size));
+                bit_idx += bit_size;
+            }
         }
 
         self.tp_indexing.clearRetainingCapacity();
@@ -1175,15 +1192,15 @@ pub const PostingsBlockPartial = struct {
 
     pub inline fn add(
         self: *PostingsBlockPartial,
-        allocator: std.mem.Allocator,
+        gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
+        // arena: *std.heap.ArenaAllocator,
+        _: *std.heap.ArenaAllocator,
         doc_id: u32,
         doc_size: u16,
         term_pos: u16,
-    ) !u32 {
-        // Return 1 if first_occurence of doc_id, 0 otherwise.
+    ) !void {
         // Needed to increment df in indexing loop.
-
-        if (doc_id != self.prev_doc_id or self.num_docs == 0) {
+        if (doc_id != self.prev_doc_id) {
 
             // TODO: 
             // 1. Swith tf_cntr to tf_max.
@@ -1191,48 +1208,50 @@ pub const PostingsBlockPartial = struct {
             // 3. On first doc append new element to tfs/doc_ids.
             // 4. Increment tf on subsequent docs.
 
-            try self.tfs.add(allocator, 1);
+            try self.tfs.add(gpa.allocator(), 1);
 
-            try self.doc_ids.add(allocator, doc_id, self.prev_doc_id);
+            // try self.doc_ids.add(allocator, doc_id, self.prev_doc_id);
+            const delta_base = if (self.num_docs == 0) 0 else self.prev_doc_id;
+            try self.doc_ids.add(gpa.allocator(), doc_id, delta_base);
+
             self.num_docs += 1;
             self.prev_doc_id = doc_id;
             self.prev_tf = 1;
 
             if (self.num_docs > 1) {
-                try self.flushTPTermBuf(allocator);
+                try self.flushTPTermBuf(gpa.allocator());
             }
-            try self.tp_indexing.append(allocator, term_pos);
-
-            return 1;
+            try self.tp_indexing.append(gpa.allocator(), term_pos);
 
         } else {
             // TODO: Technincally when equal, doc size needs to be considered.
-            const new_tf          = self.prev_tf + 1;
-            const old_size        = pq.getVbyteSize(@intCast(self.prev_tf));
-            const new_size        = pq.getVbyteSize(@intCast(new_tf));
-            const start           = self.tfs.buffer.items.len - old_size;
+            const new_tf = self.prev_tf + 1;
+            const old_size = pq.getVbyteSize(@intCast(self.prev_tf));
 
-            // remove the old encoding
+            // if (comptime builtin.mode == .Debug) {
+                // std.debug.print(
+                    // "Num docs: {d} | Buffer size: {d}\n", 
+                    // .{self.num_docs, self.tfs.buffer.items.len},
+                    // );
+            // }
+
+            // Remove the old encoded value
             self.tfs.buffer.items.len -= old_size;
 
-            // make room for the new one
-            try self.tfs.buffer.resize(allocator, self.tfs.buffer.items.len + new_size);
+            // Append the new encoded value  
+            try self.tfs.add(gpa.allocator(), new_tf);
 
-            var write_ptr: usize = start;
-            pq.encodeVbyte(self.tfs.buffer.items.ptr, &write_ptr, @intCast(new_tf));
-
-            self.prev_tf = new_tf;
+            self.prev_tf     = new_tf;
             self.prev_doc_id = doc_id;
-
-            try self.tp_indexing.append(allocator, term_pos);
+            
+            std.debug.assert(term_pos >= self.tp_indexing.getLastOrNull() orelse 0);
+            try self.tp_indexing.append(gpa.allocator(), term_pos);
 
             if (new_tf > self.max_tf) {
-                self.max_tf       = new_tf;
+                self.max_tf = new_tf;
                 self.max_doc_size = doc_size;
             }
-            return 0;
         }
-
     }
 
     pub inline fn decompressToBuffers(
@@ -1278,25 +1297,32 @@ pub const PostingV3 = struct {
 
     pub inline fn add(
         self: *PostingV3,
-        allocator: std.mem.Allocator,
+        gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
+        arena: *std.heap.ArenaAllocator,
         doc_id: u32,
-        term_pos: u16,
         doc_size: u16,
+        term_pos: u16,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
-    ) !u32 {
-        const first_occurence = try self.partial_block.add(
-            allocator,
+    ) !void {
+        if (
+            (doc_id != self.partial_block.prev_doc_id)
+                and
+            (self.partial_block.num_docs == BLOCK_SIZE)
+        ) {
+            const new_val = try self.full_blocks.addOne(arena.allocator());
+            new_val.* = try self.partial_block.flush(
+                gpa,
+                arena, 
+                scratch_arr,
+                );
+        }
+        try self.partial_block.add(
+            gpa,
+            arena,
             doc_id,
             doc_size,
             term_pos,
         );
-
-        if (self.partial_block.num_docs == BLOCK_SIZE) {
-            const new_val = try self.full_blocks.addOne(allocator);
-            new_val.* = try self.partial_block.flush(allocator, scratch_arr);
-        }
-
-        return first_occurence;
     }
 
     pub fn serialize(
@@ -1384,7 +1410,7 @@ pub const PostingV3 = struct {
             current_pos.* += tf_buf_len;
         }
 
-        const max_range = current_pos.* + 1 + 4 +
+        const max_range = current_pos.* + 16 +
             (self.partial_block.doc_ids.buffer.items.len + 
              self.partial_block.tfs.buffer.items.len);
         if (max_range > buffer.items.len) {
@@ -1549,7 +1575,9 @@ pub const PostingsList = struct {
                   PostingV3,
                   POST_ALIGNMENT,
               ){},
-            .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+            .arena = std.heap.ArenaAllocator.init(
+                std.heap.page_allocator,
+            ),
         };
     }
 
@@ -1559,36 +1587,48 @@ pub const PostingsList = struct {
 
     pub inline fn add(
         self: *PostingsList, 
+        gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
         term_id: u32,
         doc_id: u32,
-        term_pos: u16,
         doc_size: u16,
+        term_pos: u16,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
-        ) !u32 {
-        const first_occurence = try self.postings.items[term_id].add(
-            self.arena.allocator(), 
+        ) !void {
+        try self.postings.items[term_id].add(
+            gpa,
+            &self.arena, 
             doc_id, 
-            term_pos,
             doc_size,
+            term_pos,
             scratch_arr,
             );
-        return first_occurence;
+        const capacity = self.arena.queryCapacity();
+        if (capacity > 4_000_000_000) {
+            std.debug.print(
+                "Capacity: {d}MB\n",
+                .{capacity >> 20},
+            );
+        }
     }
 
     pub inline fn append(
         self: *PostingsList, 
+        gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
         doc_id: u32,
-        term_pos: u16,
         doc_size: u16,
+        term_pos: u16,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
         ) !void {
-        const val = try self.postings.addOne(self.arena.allocator());
+        const val = try self.postings.addOne(
+            self.arena.allocator(),
+            );
         val.* = PostingV3.init();
-        _ = try val.add(
-            self.arena.allocator(), 
+        try val.add(
+            gpa,
+            &self.arena,
             doc_id, 
-            term_pos, 
             doc_size, 
+            term_pos, 
             scratch_arr,
             );
     }
@@ -1634,7 +1674,11 @@ pub const InvertedIndexV2 = struct {
 
             // Guess capacity
             try II.vocab.string_bytes.ensureTotalCapacity(allocator, @intCast(nd));
-            try II.vocab.map.ensureTotalCapacityContext(allocator, @intCast(nd / 25), II.vocab.getCtx());
+            try II.vocab.map.ensureTotalCapacityContext(
+                allocator, 
+                @intCast(@divFloor(nd, 25)), 
+                II.vocab.getCtx(),
+                );
         }
 
         return II;
@@ -1884,7 +1928,7 @@ pub const InvertedIndexV2 = struct {
 
 pub const BM25Partition = struct {
     II: []InvertedIndexV2,
-    allocator: std.mem.Allocator,
+    gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
     arena: std.heap.ArenaAllocator,
 
     doc_store: DocStore,
@@ -1892,16 +1936,16 @@ pub const BM25Partition = struct {
     scratch_arr: [BLOCK_SIZE]u32 align(64),
 
     pub fn init(
-        allocator: std.mem.Allocator,
+        gpa: *std.heap.DebugAllocator(.{ .thread_safe = true }),
         num_search_cols: usize,
         num_records: usize,
         tmp_dir: []const u8,
         partition_idx: usize,
     ) !BM25Partition {
         var partition = BM25Partition{
-            .II = try allocator.alloc(InvertedIndexV2, num_search_cols),
-            .arena = std.heap.ArenaAllocator.init(allocator),
-            .allocator = allocator,
+            .II = try gpa.allocator().alloc(InvertedIndexV2, num_search_cols),
+            .gpa = gpa,
+            .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
             .doc_store = undefined,
 
             .scratch_arr = undefined,
@@ -1910,11 +1954,11 @@ pub const BM25Partition = struct {
 
         for (0..num_search_cols) |idx| {
             const output_filename = try std.fmt.allocPrint(
-                allocator, 
+                gpa.allocator(), 
                 "{s}/posting_{d}_{d}.bin", 
                 .{tmp_dir, idx, partition_idx}
                 );
-            defer allocator.free(output_filename);
+            defer gpa.allocator().free(output_filename);
 
             partition.II[idx] = try InvertedIndexV2.init(
                 partition.arena.allocator(), 
@@ -1928,16 +1972,14 @@ pub const BM25Partition = struct {
     }
 
     pub fn deinit(self: *BM25Partition) !void {
-        // TODO: Organize allocations / allocators better.
-
         for (0..self.II.len) |i| {
-            // self.II[i].deinit(self.allocator);
             self.II[i].deinit();
         }
-        self.allocator.free(self.II);
+        self.gpa.allocator().free(self.II);
 
         try self.doc_store.deinit();
         self.arena.deinit();
+
     }
 
     pub fn initFromDisk(
@@ -1955,7 +1997,7 @@ pub const BM25Partition = struct {
                 std.debug.print("{any}\n", .{err});
                 @panic("Failed to allocate memory for II's");
             },
-            .allocator = allocator,
+            .gpa = gpa,
             .arena = std.heap.ArenaAllocator.init(allocator),
 
             // TODO: Implement doc_store loading.
@@ -2022,14 +2064,14 @@ pub const BM25Partition = struct {
         if (num_search_cols <= current_length) return;
 
 
-        self.II = try self.allocator.realloc(self.II, num_search_cols);
+        self.II = try self.gpa.allocator().realloc(self.II, num_search_cols);
         for (current_length..num_search_cols) |idx| {
             const output_filename = try std.fmt.allocPrint(
-                self.allocator, 
+                self.gpa.allocator(), 
                 "{s}/posting_{d}_{d}.bin", 
                 .{tmp_dir, idx, partition_idx},
                 );
-            defer self.allocator.free(output_filename);
+            defer self.gpa.allocator().free(output_filename);
 
             self.II[idx] = try InvertedIndexV2.init(
                 self.arena.allocator(), 
@@ -2047,6 +2089,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: u16,
         col_idx: usize,
+        scratch_arr: *align(64) [BLOCK_SIZE]u32,
     ) !void {
         std.debug.assert(
             self.II[col_idx].vocab.map.count() < (1 << 32),
@@ -2071,28 +2114,32 @@ pub const BM25Partition = struct {
                 0,
                 );
 
+            const term_id = self.II[col_idx].vocab.map.count() - 1;
             gop.key_ptr.* = @truncate(
                 self.II[col_idx].vocab.string_bytes.items.len - term_len - 1,
                 );
-            gop.value_ptr.* = self.II[col_idx].vocab.map.count() - 1;
+            gop.value_ptr.* = term_id;
 
-            try self.II[col_idx].posting_list.append(
+            _ = try self.II[col_idx].posting_list.append(
+                self.gpa,
                 doc_id,
-                term_pos,
                 self.II[col_idx].doc_sizes.items[doc_id],
-                &self.scratch_arr,
+                term_pos,
+                scratch_arr,
             );
 
         } else {
-            const val = gop.value_ptr.*;
-            _ = try self.II[col_idx].posting_list.add(
-                val,
+            const term_id = gop.value_ptr.*;
+            try self.II[col_idx].posting_list.add(
+                self.gpa,
+                term_id,
                 doc_id,
-                term_pos,
                 self.II[col_idx].doc_sizes.items[doc_id],
-                &self.scratch_arr,
+                term_pos,
+                scratch_arr,
                 );
         }
+
     }
 
     inline fn addToken(
@@ -2102,6 +2149,7 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: *u16,
         col_idx: usize,
+        scratch_arr: *align(64) [BLOCK_SIZE]u32,
     ) !void {
         if (cntr.* == 0) {
             return;
@@ -2113,6 +2161,7 @@ pub const BM25Partition = struct {
             doc_id, 
             term_pos.*, 
             col_idx, 
+            scratch_arr,
             );
 
         term_pos.* += @intFromBool(term_pos.* != std.math.maxInt(u16));
@@ -2126,6 +2175,10 @@ pub const BM25Partition = struct {
         doc_id: u32,
         col_idx: usize,
     ) !void {
+        // std.debug.print(
+            // "Capacity Main: {d}MB\n",
+            // .{self.arena.queryCapacity() >> 20},
+        // );
         try self.II[col_idx].doc_sizes.append(self.arena.allocator(), 0);
 
         var buffer_idx = byte_idx.*;
@@ -2162,6 +2215,7 @@ pub const BM25Partition = struct {
                         doc_id, 
                         &term_pos, 
                         col_idx, 
+                        &self.scratch_arr,
                         );
                     buffer_idx += 1;
                     continue;
@@ -2186,6 +2240,7 @@ pub const BM25Partition = struct {
                                         doc_id, 
                                         &term_pos, 
                                         col_idx, 
+                                        &self.scratch_arr,
                                         );
                                 }
                                 buffer_idx += 1;
@@ -2208,6 +2263,7 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             col_idx, 
+                            &self.scratch_arr,
                             );
                     },
                     else => {
@@ -2232,6 +2288,7 @@ pub const BM25Partition = struct {
                         doc_id, 
                         &term_pos, 
                         col_idx, 
+                        &self.scratch_arr,
                         );
                     buffer_idx += 1;
                     continue;
@@ -2258,6 +2315,7 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             col_idx, 
+                            &self.scratch_arr,
                             );
                     },
                     else => {
@@ -2280,6 +2338,7 @@ pub const BM25Partition = struct {
                 doc_id, 
                 &term_pos, 
                 col_idx, 
+                &self.scratch_arr,
                 );
         }
 
@@ -2293,7 +2352,6 @@ pub const BM25Partition = struct {
         doc_id: u32,
         search_col_idx: usize,
     ) !void {
-        // try self.II[search_col_idx].doc_sizes.append(self.allocator, 0);
         try self.II[search_col_idx].doc_sizes.append(self.arena.allocator(), 0);
 
         string_utils.stringToUpper(
@@ -2323,6 +2381,7 @@ pub const BM25Partition = struct {
                     doc_id, 
                     &term_pos, 
                     search_col_idx, 
+                    &self.scratch_arr,
                     );
                 buffer_idx += 1;
                 continue;
@@ -2344,6 +2403,7 @@ pub const BM25Partition = struct {
                         doc_id, 
                         &term_pos, 
                         search_col_idx, 
+                        &self.scratch_arr,
                         );
                 },
                 else => {
@@ -2359,12 +2419,13 @@ pub const BM25Partition = struct {
                 );
 
             const start_idx = buffer_idx - @min(buffer_idx, cntr + 1);
-            try self.addTerm(
+            try self.addToken(
                 buffer[start_idx..], 
-                cntr, 
+                &cntr, 
                 doc_id, 
-                term_pos, 
+                &term_pos, 
                 search_col_idx, 
+                &self.scratch_arr,
                 );
         }
     }
@@ -2442,6 +2503,7 @@ pub const BM25Partition = struct {
                         doc_id, 
                         &term_pos, 
                         II_idx, 
+                        &self.scratch_arr,
                         );
                     i += 1;
                     continue;
@@ -2457,6 +2519,7 @@ pub const BM25Partition = struct {
                                 doc_id, 
                                 &term_pos, 
                                 II_idx, 
+                                &self.scratch_arr,
                                 );
                         }
                         i += 1;
@@ -2476,6 +2539,7 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
+                            &self.scratch_arr,
                             );
                         cntr = 0;
 
@@ -2502,6 +2566,7 @@ pub const BM25Partition = struct {
                         doc_id, 
                         &term_pos, 
                         II_idx, 
+                        &self.scratch_arr,
                         );
                     i += 1;
                     continue;
@@ -2521,6 +2586,7 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
+                            &self.scratch_arr,
                             );
                         break: loop;
                     },
@@ -2535,6 +2601,7 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
+                            &self.scratch_arr,
                             );
                         break: loop;
                     },
@@ -2549,6 +2616,7 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
+                            &self.scratch_arr,
                             );
                         break: loop;
                     },
@@ -2576,6 +2644,7 @@ pub const BM25Partition = struct {
                             doc_id, 
                             &term_pos, 
                             II_idx, 
+                            &self.scratch_arr,
                             );
                         break :loop;
                     },
@@ -2600,7 +2669,7 @@ pub const BM25Partition = struct {
         self.doc_store.getRow(
             @intCast(query_result.doc_id),
             record_string,
-            self.allocator,
+            self.gpa.allocator(),
             result_positions,
 
             bit_sizes,

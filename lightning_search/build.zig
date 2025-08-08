@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
     shared_lib.addObjectFile(b.path("lib/libparquet_bindings.a"));
     shared_lib.installHeader(b.path("lib/parquet_bindings.h"), "parquet_bindings.h");
     shared_lib.installHeader(b.path("lib/ffi.h"), "ffi.h");
-    shared_lib.linkFramework("CoreFoundation");
+    // shared_lib.linkFramework("CoreFoundation");
 
     b.installArtifact(shared_lib);
 
@@ -48,7 +48,7 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(b.path("lib"));
     exe.addObjectFile(b.path("lib/libparquet_bindings.a"));
     exe.installHeader(b.path("lib/parquet_bindings.h"), "parquet_bindings.h");
-    exe.linkFramework("CoreFoundation");
+    // exe.linkFramework("CoreFoundation");
 
     exe.root_module.addImport("zap", zap.module("zap"));
     b.installArtifact(exe);

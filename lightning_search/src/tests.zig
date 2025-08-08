@@ -63,7 +63,6 @@ test "PostingFullBlock compression/decompression" {
                 allocator,
                 &tf_arr,
             ),
-            .max_score = 0.0,
             .max_doc_id = scratch_arr[idx.BLOCK_SIZE - 1],
         };
     defer allocator.free(fb.doc_ids.buffer);
