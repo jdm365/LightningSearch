@@ -219,11 +219,11 @@ pub const PostingsIteratorV2 = struct {
     A: f32,
     C2: f32,
 
-    term_id: u32,
     col_idx: u32,
     avg_doc_size: f32,
     consumed: bool,
     on_partial_block: bool,
+    fb_meta: PostingsBlockFullV2,
 
     pub const Result = packed struct(u64) {
         doc_id:    u32,
@@ -239,7 +239,7 @@ pub const PostingsIteratorV2 = struct {
         boost: f32,
         avg_doc_size: f32,
         ) !PostingsIteratorV2 {
-        const partial_block = postings_list.postings_partial[term_id];
+        const partial_block = &postings_list.partial.items[term_id];
         const posting_len = (BLOCK_SIZE * partial_block.num_full_blocks) + 
                              partial_block.num_docs;
         var it = PostingsIteratorV2{ 
@@ -257,34 +257,38 @@ pub const PostingsIteratorV2 = struct {
             .A = (K1 + 1) * idf * boost,
             .C2 = (K1 * B) / avg_doc_size,
 
-            .term_id = term_id,
             .col_idx = col_idx,
             .avg_doc_size = avg_doc_size,
             .consumed = false,
             .on_partial_block = posting_len < BLOCK_SIZE,
+            .fb_meta = undefined,
         };
 
         if (it.on_partial_block) {
             // Decompress partial
-            it.posting.partial_block.decompressToBuffers(
+            partial_block.decompressToBuffers(
                 &it.uncompressed_doc_ids_buffer,
                 &it.uncompressed_tfs_buffer,
                 );
             it.current_block_max_score = scoreBM25Fast(
-                it.posting.partial_block.max_tf,
-                it.posting.partial_block.max_doc_size,
+                partial_block.max_tf,
+                partial_block.max_doc_size,
                 it.A,
                 it.C2,
             );
         } else {
             // Decompress full
-            try it.posting.full_blocks.items[0].decompressToBuffers(
+            const start_buf_idx = it.postings_list.full_buf_idxs.items[term_id];
+
+            it.fb_meta = try PostingsBlockFullV2.decompressToBuffers(
                 &it.uncompressed_doc_ids_buffer,
                 &it.uncompressed_tfs_buffer,
+                it.postings_list.full_buffer,
+                start_buf_idx,
                 );
             it.current_block_max_score = scoreBM25Fast(
-                it.posting.full_blocks.items[0].max_tf,
-                it.posting.full_blocks.items[0].max_doc_size,
+                it.fb_meta.max_tf,
+                it.fb_meta.max_doc_size,
                 it.A,
                 it.C2,
             );
@@ -315,6 +319,10 @@ pub const PostingsIteratorV2 = struct {
         // return self.term_positions[self.current_idx];
     // }
 
+    pub inline fn partial(self: *PostingsIteratorV2) PostingsBlockPartial {
+        return self.postings_list.partial.items[self.term_id];
+    }
+
     pub inline fn next(self: *PostingsIteratorV2) !?Result {
         if (self.consumed) {
             return null;
@@ -335,36 +343,43 @@ pub const PostingsIteratorV2 = struct {
         }
 
 
+        const partial_block = self.partial();
         if (self.current_doc_idx % BLOCK_SIZE == 0) {
             const block_idx = self.current_doc_idx >> (comptime std.math.log2(BLOCK_SIZE));
-            if (block_idx == self.posting.full_blocks.items.len) {
+
+            if (block_idx == partial_block.num_full_blocks) {
                 self.on_partial_block = true;
-                self.posting.partial_block.decompressToBuffers(
+                partial_block.decompressToBuffers(
                     &self.uncompressed_doc_ids_buffer,
                     &self.uncompressed_tfs_buffer,
                     );
             } else {
-                try self.posting.full_blocks.items[block_idx].decompressToBuffers(
+                std.debug.assert(self.fb_meta.next_block_idx != std.math.maxInt(u32));
+                self.fb_meta = try PostingsBlockFullV2.decompressToBuffers(
                     &self.uncompressed_doc_ids_buffer,
                     &self.uncompressed_tfs_buffer,
+                    self.postings_list.full_buffer,
+                    self.fb_meta.next_block_idx,
+                    );
+                self.current_block_max_score = scoreBM25Fast(
+                    self.fb_meta.max_tf,
+                    self.fb_meta.max_doc_size,
+                    self.A,
+                    self.C2,
                 );
-                // std.debug.print(
-                    // "BLOCK IDX: {d} | DOC IDS: {d}\n",
-                    // .{block_idx, self.uncompressed_doc_ids_buffer},
-                // );
             }
 
             if (self.on_partial_block) {
                 self.current_block_max_score = scoreBM25Fast(
-                        self.posting.partial_block.max_tf,
-                        self.posting.partial_block.max_doc_size,
+                        partial_block.max_tf,
+                        partial_block.max_doc_size,
                         self.A,
                         self.C2,
                     );
             } else {
                 self.current_block_max_score = scoreBM25Fast(
-                        self.posting.full_blocks.items[block_idx].max_tf,
-                        self.posting.full_blocks.items[block_idx].max_doc_size,
+                        self.fb_meta.max_tf,
+                        self.fb_meta.max_doc_size,
                         self.A,
                         self.C2,
                     );
@@ -380,8 +395,9 @@ pub const PostingsIteratorV2 = struct {
             return null;
         }
 
+        const num_full_blocks = self.partial().num_full_blocks;
         var skipped = false;
-        while (self.currentBlockMaxScore() <= min_score) {
+        while (self.current_block_max_score <= min_score) {
             if (self.on_partial_block) {
                 self.consumed = true;
                 self.current_doc_idx = std.math.maxInt(u32);
@@ -396,7 +412,7 @@ pub const PostingsIteratorV2 = struct {
                 64,
             );
             const block_idx = self.current_doc_idx >> (comptime std.math.log2(BLOCK_SIZE));
-            if (block_idx == self.posting.full_blocks.items.len) {
+            if (block_idx == num_full_blocks) {
                 self.on_partial_block = true;
             }
             continue;
@@ -409,17 +425,26 @@ pub const PostingsIteratorV2 = struct {
         };
 
 
+        const partial_block = self.partial();
         if (skipped) {
             if (self.on_partial_block) {
-                self.posting.partial_block.decompressToBuffers(
+                partial_block.decompressToBuffers(
                     &self.uncompressed_doc_ids_buffer,
                     &self.uncompressed_tfs_buffer,
                     );
             } else {
-                const block_idx = @divFloor(self.current_doc_idx, BLOCK_SIZE);
-                try self.posting.full_blocks.items[block_idx].decompressToBuffers(
+                std.debug.assert(self.fb_meta.next_block_idx != std.math.maxInt(u32));
+                self.fb_meta = try PostingsBlockFullV2.decompressToBuffers(
                     &self.uncompressed_doc_ids_buffer,
                     &self.uncompressed_tfs_buffer,
+                    self.postings_list.full_buffer,
+                    self.fb_meta.next_block_idx,
+                    );
+                self.current_block_max_score = scoreBM25Fast(
+                    self.fb_meta.max_tf,
+                    self.fb_meta.max_doc_size,
+                    self.A,
+                    self.C2,
                 );
             }
         } else {
@@ -427,16 +452,25 @@ pub const PostingsIteratorV2 = struct {
 
             const block_idx = @divFloor(self.current_doc_idx, BLOCK_SIZE);
             if (self.current_doc_idx % BLOCK_SIZE == 0) {
-                self.on_partial_block = (block_idx == self.posting.full_blocks.items.len);
+                self.on_partial_block = (block_idx == num_full_blocks);
                 if (self.on_partial_block) {
-                    self.posting.partial_block.decompressToBuffers(
+                    partial_block.decompressToBuffers(
                         &self.uncompressed_doc_ids_buffer,
                         &self.uncompressed_tfs_buffer,
                         );
                 } else {
-                    try self.posting.full_blocks.items[block_idx].decompressToBuffers(
+                    std.debug.assert(self.fb_meta.next_block_idx != std.math.maxInt(u32));
+                    self.fb_meta = try PostingsBlockFullV2.decompressToBuffers(
                         &self.uncompressed_doc_ids_buffer,
                         &self.uncompressed_tfs_buffer,
+                        self.postings_list.full_buffer,
+                        self.fb_meta.next_block_idx,
+                        );
+                    self.current_block_max_score = scoreBM25Fast(
+                        self.fb_meta.max_tf,
+                        self.fb_meta.max_doc_size,
+                        self.A,
+                        self.C2,
                     );
                 }
             }
@@ -466,8 +500,9 @@ pub const PostingsIteratorV2 = struct {
             };
         }
 
+        const partial_block = self.partial();
         if (!self.on_partial_block) {
-            const num_full_blocks = self.posting.full_blocks.items.len;
+            const num_full_blocks = partial_block.num_full_blocks;
 
             std.debug.assert(num_full_blocks > 0);
 
@@ -475,7 +510,7 @@ pub const PostingsIteratorV2 = struct {
             var skipped_block = false;
             while (block_idx < num_full_blocks) {
 
-                if (target_id > self.posting.full_blocks.items[block_idx].max_doc_id) {
+                if (target_id > self.fb_meta.max_doc_id) {
                     idx = 0;
                     block_idx += 1;
                     self.current_doc_idx = std.mem.alignForward(
@@ -489,9 +524,12 @@ pub const PostingsIteratorV2 = struct {
 
                 // Doc id in full block if here.
                 if (skipped_block) {
-                    try self.posting.full_blocks.items[block_idx].decompressToBuffers(
+                    std.debug.assert(self.fb_meta.next_block_idx != std.math.maxInt(u32));
+                    self.fb_meta = try PostingsBlockFullV2.decompressToBuffers(
                         &self.uncompressed_doc_ids_buffer,
                         &self.uncompressed_tfs_buffer,
+                        self.postings_list.full_buffer,
+                        self.fb_meta.next_block_idx,
                         );
                 }
 
@@ -508,29 +546,22 @@ pub const PostingsIteratorV2 = struct {
                     ) + matched_idx;
 
                     self.current_block_max_score = scoreBM25Fast(
-                            self.posting.full_blocks.items[block_idx].max_tf,
-                            self.posting.full_blocks.items[block_idx].max_doc_size,
-                            self.A,
-                            self.C2,
-                        );
+                        self.fb_meta.max_tf,
+                        self.fb_meta.max_doc_size,
+                        self.A,
+                        self.C2,
+                    );
                     return .{
-                        .doc_id = self.uncompressed_doc_ids_buffer[matched_idx],
+                        .doc_id    = self.uncompressed_doc_ids_buffer[matched_idx],
                         .term_freq = self.uncompressed_tfs_buffer[matched_idx],
-                        .term_pos = undefined,
+                        .term_pos  = undefined,
                     };
                 }
 
                 unreachable;
             }
 
-            // if (skipped_block) {
-                // self.current_doc_idx = std.mem.alignBackward(
-                    // usize,
-                    // self.current_doc_idx + BLOCK_SIZE,
-                    // 64,
-                // );
-            // }
-            self.posting.partial_block.decompressToBuffers(
+            partial_block.decompressToBuffers(
                 &self.uncompressed_doc_ids_buffer,
                 &self.uncompressed_tfs_buffer,
                 );
@@ -538,7 +569,7 @@ pub const PostingsIteratorV2 = struct {
         }
 
         const match_idx = linearLowerBound(
-            self.uncompressed_doc_ids_buffer[idx..self.posting.partial_block.num_docs],
+            self.uncompressed_doc_ids_buffer[idx..partial_block.num_docs],
             target_id,
         );
         self.current_doc_idx += match_idx;
@@ -550,8 +581,8 @@ pub const PostingsIteratorV2 = struct {
         }
 
         self.current_block_max_score = scoreBM25Fast(
-                self.posting.partial_block.max_tf,
-                self.posting.partial_block.max_doc_size,
+                partial_block.max_tf,
+                partial_block.max_doc_size,
                 self.A,
                 self.C2,
             );
@@ -562,26 +593,6 @@ pub const PostingsIteratorV2 = struct {
             .term_freq = self.uncompressed_tfs_buffer[idx],
             .term_pos  = undefined,
         };
-    }
-
-    pub inline fn currentBlockMaxScore(self: *const PostingsIteratorV2) f32 {
-        if (self.on_partial_block) {
-            return scoreBM25(
-                self.boost_weighted_idf,
-                @intCast(self.posting.partial_block.max_tf),
-                self.posting.partial_block.max_doc_size,
-                self.avg_doc_size,
-            );
-        }
-        const fb = self.posting.full_blocks.items[
-            self.current_doc_idx >> (comptime std.math.log2(BLOCK_SIZE))
-        ];
-        return scoreBM25(
-            self.boost_weighted_idf,
-            @intCast(fb.max_tf),
-            fb.max_doc_size,
-            self.avg_doc_size,
-        );
     }
 };
 
@@ -697,10 +708,10 @@ inline fn getBits32(
     return @as(u32, @truncate(value));
 }
 
-pub const DeltaBitpackedBlock = extern struct {
+pub const DeltaBitpackedBlock = packed struct (u64) {
     min_val: u32,
     bit_size: u8,
-    buffer_start: [1]u8,
+    _: u24,
 
 
     pub fn build(
@@ -711,8 +722,8 @@ pub const DeltaBitpackedBlock = extern struct {
         ) !DeltaBitpackedBlock {
         var dbp = DeltaBitpackedBlock{
             .min_val = sorted_vals[0],
-            .buffer = undefined,
             .bit_size = undefined,
+            ._ = undefined,
         };
         var block_maxes: @Vector(NUM_BLOCKS, u32) = @splat(0);
 
@@ -739,14 +750,20 @@ pub const DeltaBitpackedBlock = extern struct {
         dbp.bit_size = 32 - @clz(max_gap);
         const buffer_size = ((BLOCK_SIZE * dbp.bit_size) + 7) >> 3;
 
-        dbp.buffer_start = buffer[buffer_idx.*];
+        const struct_size = comptime @sizeOf(DeltaBitpackedBlock);
+        @memcpy(
+            buffer[buffer_idx.*..][0..struct_size], 
+            std.mem.asBytes(&dbp),
+            );
+        buffer_idx.* += struct_size;
+
         @memset(buffer[buffer_idx.*..][0..buffer_size], 0);
 
         var bit_pos: usize = buffer_idx.* << 3;
         inline for (0..BLOCK_SIZE) |idx| {
             const gap: u32  = scratch_arr[idx];
 
-            putBits(buffer, bit_pos, gap, dbp.bit_size);
+            putBits(buffer.ptr, bit_pos, gap, dbp.bit_size);
             bit_pos += dbp.bit_size;
         }
 
@@ -760,20 +777,20 @@ pub const DeltaBitpackedBlock = extern struct {
     }
 };
 
-pub const BitpackedBlock = extern struct {
+pub const BitpackedBlock = packed struct (u64) {
     max_val: u32,
     bit_size: u8,
-    buffer_start: [1]u8,
+    _: u24,
 
     pub fn build(
         buffer: []u8,
         buffer_idx: *u64,
         vals: *align(64) [BLOCK_SIZE]u16,
         ) !BitpackedBlock {
-        var dbp = BitpackedBlock{
+        var bp = BitpackedBlock{
             .max_val = undefined,
             .bit_size = undefined,
-            .buffer_start = undefined,
+            ._ = undefined,
         };
         var block_maxes: @Vector(NUM_BLOCKS, u16) = @splat(0);
 
@@ -782,21 +799,25 @@ pub const BitpackedBlock = extern struct {
             block_maxes[block_idx] = @reduce(.Max, sv_vec[block_idx]);
         }
 
-        dbp.max_val = @reduce(.Max, block_maxes);
-        dbp.bit_size = 16 - @clz(@as(u16, @truncate(dbp.max_val)));
-        const buffer_size = ((BLOCK_SIZE * dbp.bit_size) + 7) >> 3;
+        bp.max_val = @reduce(.Max, block_maxes);
+        bp.bit_size = 16 - @clz(@as(u16, @truncate(bp.max_val)));
+        const buffer_size = ((BLOCK_SIZE * bp.bit_size) + 7) >> 3;
 
-        dbp.buffer_start = buffer[buffer_idx.*];
+        const struct_size = comptime @sizeOf(BitpackedBlock);
+        @memcpy(
+            buffer[buffer_idx.*..][0..struct_size], 
+            std.mem.asBytes(&bp),
+            );
+        buffer_idx.* += struct_size;
+
         @memset(buffer[buffer_idx.*..][0..buffer_size], 0);
-
-        // buffer_idx.* += buffer_size;
 
         var bit_pos: usize = buffer_idx.* << 3;
         inline for (0..BLOCK_SIZE) |idx| {
             const val: u16  = vals[idx];
 
-            putBits(buffer, bit_pos, val, dbp.bit_size);
-            bit_pos += dbp.bit_size;
+            putBits(buffer.ptr, bit_pos, val, bp.bit_size);
+            bit_pos += bp.bit_size;
         }
         buffer_idx.* = try std.math.divCeil(
             u64,
@@ -804,12 +825,12 @@ pub const BitpackedBlock = extern struct {
             8,
         );
 
-        return dbp;
+        return bp;
     }
 
 };
 
-pub const PostingsBlockFullV2 = extern struct {
+pub const PostingsBlockFullV2 = packed struct {
     max_doc_id: u32,
     max_tf: u16,
     max_doc_size: u16,
@@ -817,6 +838,8 @@ pub const PostingsBlockFullV2 = extern struct {
     doc_id_buf_len: u16,
     tfs_buf_len: u16,
     tp_buf_len: u32,
+
+    next_block_idx: u32,
 
     // doc_ids: DeltaBitpackedBlock,
     // tfs:     BitpackedBlock,
@@ -829,17 +852,26 @@ pub const PostingsBlockFullV2 = extern struct {
     //  --------------------- 
     // | docs_ids | tfs | tp |
     //  --------------------- 
-    blocks_buf_start: [1]u8,
 
     pub inline fn decompressToBuffers(
-        self: *const PostingsBlockFullV2,
         doc_ids: *[BLOCK_SIZE]u32,
         tfs: *[BLOCK_SIZE]u16,
-    ) !void {
-        const doc_id_block = @as(
+        full_block_buffer: []u8,
+        start_idx: u64,
+    ) !PostingsBlockFullV2 {
+        const pbf_size = comptime @sizeOf(PostingsBlockFullV2);
+        const meta = std.mem.bytesAsValue(
+            PostingsBlockFullV2,
+            full_block_buffer[start_idx..][0..pbf_size],
+            ).*;
+        var buf = full_block_buffer[start_idx + pbf_size..];
+
+        const dbp_size = comptime @sizeOf(DeltaBitpackedBlock);
+        const doc_id_block = std.mem.bytesAsValue(
             DeltaBitpackedBlock,
-            @bitCast(self.blocks_buf_start.ptr[0..self.doc_id_buf_len]),
-        );
+            buf[0..dbp_size],
+            ).*;
+        buf = buf[dbp_size..];
 
         const d_bits: usize = doc_id_block.bit_size;
         var bit_pos: usize = 0;
@@ -852,11 +884,9 @@ pub const PostingsBlockFullV2 = extern struct {
             for (1..BLOCK_SIZE) |i| doc_ids[i] = prev;
         } else {
             for (1..BLOCK_SIZE) |i| {
-                // @setEvalBranchQuota(1600);
 
                 const gap: u32 = getBits32(
-                    // doc_ids_buffer, 
-                    doc_id_block.buffer_start.ptr,
+                    buf.ptr,
                     bit_pos, 
                     d_bits,
                     );
@@ -868,12 +898,15 @@ pub const PostingsBlockFullV2 = extern struct {
             }
         }
 
-        const tf_block = @as(
+        buf = buf[meta.doc_id_buf_len - dbp_size..];
+
+        const bp_size = comptime @sizeOf(DeltaBitpackedBlock);
+        const tf_block = std.mem.bytesAsValue(
             BitpackedBlock,
-            @bitCast(
-                self.blocks_buf_start.ptr[self.doc_id_buf_len..][0..self.tfs_buf_len]
-                ),
-        );
+            buf[0..bp_size],
+            ).*;
+        buf = buf[bp_size..];
+
         const tf_bits: usize = tf_block.bit_size;
         bit_pos = 0;
 
@@ -883,7 +916,7 @@ pub const PostingsBlockFullV2 = extern struct {
         } else {
             inline for (0..BLOCK_SIZE) |i| {
                 const v = getBits32(
-                    tf_block.buffer_start.ptr, 
+                    buf.ptr,
                     bit_pos, 
                     tf_bits,
                     );
@@ -893,6 +926,8 @@ pub const PostingsBlockFullV2 = extern struct {
         }
 
         // TODO: TP Block
+
+        return meta;
     }
 };
 
@@ -1168,6 +1203,8 @@ pub const PostingsBlockPartial = struct {
     num_full_blocks: u16,
     num_docs: u8,
 
+    prev_fb_idx_ptr: ?*align(1) u32,
+
     pub fn init() PostingsBlockPartial {
         return PostingsBlockPartial{
             .doc_ids = DeltaVByteBlock.init(),
@@ -1181,23 +1218,30 @@ pub const PostingsBlockPartial = struct {
             .max_doc_size = 1,
             .num_full_blocks = 0,
             .num_docs = 0,
+
+            .prev_fb_idx_ptr = null,
         };
+    }
+
+    pub inline fn deinit(self: *PostingsBlockPartial, allocator: std.mem.Allocator) void {
+        self.tp_indexing.deinit(allocator);
+        self.term_positions.deinit(allocator);
+        self.doc_ids.buffer.deinit(allocator);
+        self.tfs.buffer.deinit(allocator);
     }
 
     pub fn flush(
         self: *PostingsBlockPartial,
         gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
-        // arena: *std.heap.ArenaAllocator,
         buffer: []u8,
         buffer_idx: *u64,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
-    // ) !PostingsBlockFull {
     ) !void {
         if (self.tp_indexing.items.len > 0) {
             try self.flushTPTermBuf(gpa.allocator());
         }
-        // const full_map = try self.partialToFull(gpa, arena, scratch_arr);
-        try self.partialToFull(gpa, buffer, buffer_idx, scratch_arr);
+
+        try self.partialToFull(buffer, buffer_idx, scratch_arr);
 
         self.num_docs = 0;
         self.doc_ids.clear();
@@ -1211,17 +1255,10 @@ pub const PostingsBlockPartial = struct {
 
     fn partialToFull(
         self: *PostingsBlockPartial,
-        // gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
-        _: *std.heap.DebugAllocator(.{.thread_safe = true}),
-        // arena: *std.heap.ArenaAllocator,
         buffer: []u8,
         buffer_idx: *u64,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
     ) !void {
-        // TODO: CONSIDER MODIFYING STANDARD BM25 HERE.
-        //       1. For short docs, don't use tf.
-        //       2. For medium docs, cap tf score incluence.
-
         std.debug.assert(self.num_docs == BLOCK_SIZE);
         var pbf = PostingsBlockFullV2{
             .max_doc_id = undefined,
@@ -1232,8 +1269,17 @@ pub const PostingsBlockPartial = struct {
             .tfs_buf_len = undefined,
             .tp_buf_len = undefined,
 
-            .blocks_buf_start = undefined,
+            .next_block_idx = std.math.maxInt(u32),
         };
+
+        const init_idx = buffer_idx.*;
+
+        const pbf_size = comptime @sizeOf(PostingsBlockFullV2);
+        buffer_idx.* += pbf_size;
+
+        if (self.prev_fb_idx_ptr) |fb_idx_ptr| {
+            fb_idx_ptr.* = @truncate(init_idx);
+        }
 
         var start_idx = buffer_idx.*;
         _ = try self.doc_ids.buildIntoDeltaBitpacked(
@@ -1251,15 +1297,25 @@ pub const PostingsBlockPartial = struct {
         pbf.tfs_buf_len = @truncate(buffer_idx.* - start_idx);
 
         @memcpy(
-            buffer[buffer_idx.*..],
+            buffer[buffer_idx.*..][0..self.term_positions.items.len],
             self.term_positions.items,
         );
         buffer_idx.* += self.term_positions.items.len;
-        pbf.tp_buf_len = self.term_positions.items.len;
+        pbf.tp_buf_len = @truncate(self.term_positions.items.len);
 
         pbf.max_doc_id = scratch_arr[BLOCK_SIZE - 1];
 
         self.term_positions.clearRetainingCapacity();
+
+        @memcpy(
+            buffer[init_idx..][0..pbf_size],
+            std.mem.asBytes(&pbf),
+        );
+        self.prev_fb_idx_ptr = @ptrCast(
+            buffer[init_idx + @offsetOf(PostingsBlockFullV2, "next_block_idx")..].ptr
+            );
+
+        // std.debug.print("Full buffer size: {d}MiB\n", .{buffer_idx.* >> 20});
     }
 
     pub inline fn flushTPTermBuf(
@@ -1327,8 +1383,6 @@ pub const PostingsBlockPartial = struct {
     pub inline fn add(
         self: *PostingsBlockPartial,
         gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
-        // arena: *std.heap.ArenaAllocator,
-        // _: *std.heap.ArenaAllocator,
         doc_id: u32,
         doc_size: u16,
         term_pos: u16,
@@ -1410,6 +1464,80 @@ pub const PostingsBlockPartial = struct {
 
             prev_doc_id = doc_ids[idx];
         }
+    }
+
+
+    pub fn serialize(
+        self: *const PostingsBlockPartial,
+        buffer: *std.ArrayListUnmanaged(u8),
+        allocator: std.mem.Allocator,
+        current_pos: *usize,
+        ) !void {
+        const max_range = current_pos.* + 16 +
+            (self.doc_ids.buffer.items.len + 
+             self.tfs.buffer.items.len + 
+             self.term_positions.items.len
+             );
+        if (max_range > buffer.items.len) {
+            @branchHint(.unlikely);
+            try buffer.resize(allocator, 2 * max_range);
+            const range = 2 * max_range - current_pos.*;
+            @memset(buffer.items[current_pos.*..][0..range], 0);
+        }
+
+        buffer.items[current_pos.*] = self.num_docs;
+        current_pos.* += 1;
+
+        pq.encodeVbyte(
+            buffer.items.ptr,
+            current_pos,
+            @intCast(self.max_tf),
+        );
+        pq.encodeVbyte(
+            buffer.items.ptr,
+            current_pos,
+            @intCast(self.max_doc_size),
+        );
+
+        pq.encodeVbyte(
+            buffer.items.ptr,
+            current_pos,
+            self.doc_ids.buffer.items.len,
+        );
+        @memcpy(
+            buffer.items[current_pos.*..][
+                0..self.doc_ids.buffer.items.len
+            ],
+            self.doc_ids.buffer.items,
+        );
+        current_pos.* += self.doc_ids.buffer.items.len;
+
+        pq.encodeVbyte(
+            buffer.items.ptr,
+            current_pos,
+            self.tfs.buffer.items.len,
+        );
+        @memcpy(
+            buffer.items[current_pos.*..][
+                0..self.tfs.buffer.items.len
+            ],
+            self.tfs.buffer.items,
+        );
+        current_pos.* += self.tfs.buffer.items.len;
+
+
+        pq.encodeVbyte(
+            buffer.items.ptr,
+            current_pos,
+            self.term_positions.items.len,
+        );
+        @memcpy(
+            buffer.items[current_pos.*..][
+                0..self.term_positions.items.len
+            ],
+            self.term_positions.items,
+        );
+        current_pos.* += self.term_positions.items.len;
     }
 };
 
@@ -1765,8 +1893,8 @@ pub const PostingsBlockPartial = struct {
 // };
 
 pub const PostingsListV2 = struct {
-    postings_full_buf_idxs: std.ArrayListUnmanaged(u32),
-    postings_partial: std.ArrayListAlignedUnmanaged(
+    full_buf_idxs: std.ArrayListUnmanaged(u32),
+    partial: std.ArrayListAlignedUnmanaged(
         PostingsBlockPartial,
         POST_ALIGNMENT,
         ),
@@ -1777,8 +1905,8 @@ pub const PostingsListV2 = struct {
 
     pub fn init(allocator: std.mem.Allocator) !PostingsListV2 {
         return PostingsListV2{
-            .postings_full_buf_idxs = std.ArrayListUnmanaged(u32){},
-            .postings_partial = std.ArrayListAlignedUnmanaged(
+            .full_buf_idxs = std.ArrayListUnmanaged(u32){},
+            .partial = std.ArrayListAlignedUnmanaged(
                 PostingsBlockPartial,
                 POST_ALIGNMENT,
             ){},
@@ -1793,11 +1921,13 @@ pub const PostingsListV2 = struct {
     }
 
     pub fn deinit(self: *PostingsListV2, allocator: std.mem.Allocator) void {
-        self.postings_full_buf_idxs.deinit(allocator);
-        self.postings_partial_buf_idxs.deinit(allocator);
+        self.full_buf_idxs.deinit(allocator);
 
         allocator.free(self.full_buffer);
-        allocator.free(self.partial_buffer);
+        for (self.partial.items) |*p| {
+            p.deinit(allocator);
+        }
+        self.partial.deinit(allocator);
     }
 
     pub inline fn add(
@@ -1809,27 +1939,36 @@ pub const PostingsListV2 = struct {
         term_pos: u16,
         scratch_arr: *align(64) [BLOCK_SIZE]u32,
     ) !void {
-        if (term_id == self.postings_partial.items.len) {
-            const val = try self.postings_partial.addOne(gpa.allocator());
-            val.* = PostingV3.init();
+        const new_term = term_id == self.partial.items.len;
+
+        if (new_term) {
+            const val = try self.partial.addOne(gpa.allocator());
+            val.* = PostingsBlockPartial.init();
             try val.add(
                 gpa,
                 doc_id, 
                 doc_size, 
                 term_pos, 
-                scratch_arr,
+                );
+            
+            try self.full_buf_idxs.append(
+                gpa.allocator(), 
+                std.math.maxInt(u32),
                 );
         } else {
-            var partial_block = self.postings_partial.items[term_id];
+            var partial_block = &self.partial.items[term_id];
             if (
                 (doc_id != partial_block.prev_doc_id)
                     and
                 (partial_block.num_docs == BLOCK_SIZE)
             ) {
+                if (partial_block.num_full_blocks == 0) {
+                    self.full_buf_idxs.items[term_id] = @truncate(self.full_buffer_idx);
+                }
                 try partial_block.flush(
                     gpa,
                     self.full_buffer,
-                    self.full_buffer_idx,
+                    &self.full_buffer_idx,
                     scratch_arr,
                     );
             }
@@ -1844,91 +1983,91 @@ pub const PostingsListV2 = struct {
 
 };
 
-pub const PostingsList = struct {
-    postings: std.ArrayListAlignedUnmanaged(
-                  PostingV3,
-                  POST_ALIGNMENT,
-              ),
-    buffer: []u8,
-    buffer_idx: u64,
-
-    pub fn init(allocator: std.mem.Allocator) !PostingsList {
-        return PostingsList{
-            .postings = std.ArrayListAlignedUnmanaged(
-                  PostingV3,
-                  POST_ALIGNMENT,
-              ){},
-            .buffer = try allocator.alloc(
-                u8,
-                // 1 << 29, // 512MiB
-                1 << 30, // 1GiB
-            ),
-            .buffer_idx = 0,
-        };
-    }
-
-    pub fn deinit(self: *PostingsList, allocator: std.mem.Allocator) void {
-        for (self.postings.items) |*posting| {
-            posting.deinit(allocator);
-        }
-        self.postings.deinit(allocator);
-        allocator.free(self.buffer);
-    }
-
-    pub inline fn add(
-        self: *PostingsList, 
-        gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
-        term_id: u32,
-        doc_id: u32,
-        doc_size: u16,
-        term_pos: u16,
-        scratch_arr: *align(64) [BLOCK_SIZE]u32,
-        ) !void {
-        try self.postings.items[term_id].add(
-            gpa,
-            // &self.arena, 
-            self.buffer, 
-            &self.buffer_idx,
-            doc_id, 
-            doc_size,
-            term_pos,
-            scratch_arr,
-            );
-        std.debug.assert(self.buffer_idx < self.buffer.len);
-        if (self.buffer_idx > 99 * @divFloor(self.buffer.len, 100)) {
-            std.debug.print(
-                "Space Used: {d}/{d}MB\n",
-                .{
-                    self.buffer_idx >> 20,
-                    self.buffer.len >> 20,
-                },
-            );
-            return error.IndexTooLargeAndMergingNotImplemented;
-        }
-    }
-
-    pub inline fn append(
-        self: *PostingsList, 
-        gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
-        doc_id: u32,
-        doc_size: u16,
-        term_pos: u16,
-        scratch_arr: *align(64) [BLOCK_SIZE]u32,
-        ) !void {
-        const val = try self.postings.addOne(gpa.allocator());
-        val.* = PostingV3.init();
-        try val.add(
-            gpa,
-            // &self.arena,
-            self.buffer,
-            &self.buffer_idx,
-            doc_id, 
-            doc_size, 
-            term_pos, 
-            scratch_arr,
-            );
-    }
-};
+// pub const PostingsList = struct {
+    // postings: std.ArrayListAlignedUnmanaged(
+                  // PostingV3,
+                  // POST_ALIGNMENT,
+              // ),
+    // buffer: []u8,
+    // buffer_idx: u64,
+// 
+    // pub fn init(allocator: std.mem.Allocator) !PostingsList {
+        // return PostingsList{
+            // .postings = std.ArrayListAlignedUnmanaged(
+                  // PostingV3,
+                  // POST_ALIGNMENT,
+              // ){},
+            // .buffer = try allocator.alloc(
+                // u8,
+                // // 1 << 29, // 512MiB
+                // 1 << 30, // 1GiB
+            // ),
+            // .buffer_idx = 0,
+        // };
+    // }
+// 
+    // pub fn deinit(self: *PostingsList, allocator: std.mem.Allocator) void {
+        // for (self.postings.items) |*posting| {
+            // posting.deinit(allocator);
+        // }
+        // self.postings.deinit(allocator);
+        // allocator.free(self.buffer);
+    // }
+// 
+    // pub inline fn add(
+        // self: *PostingsList, 
+        // gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
+        // term_id: u32,
+        // doc_id: u32,
+        // doc_size: u16,
+        // term_pos: u16,
+        // scratch_arr: *align(64) [BLOCK_SIZE]u32,
+        // ) !void {
+        // try self.postings.items[term_id].add(
+            // gpa,
+            // // &self.arena, 
+            // self.buffer, 
+            // &self.buffer_idx,
+            // doc_id, 
+            // doc_size,
+            // term_pos,
+            // scratch_arr,
+            // );
+        // std.debug.assert(self.buffer_idx < self.buffer.len);
+        // if (self.buffer_idx > 99 * @divFloor(self.buffer.len, 100)) {
+            // std.debug.print(
+                // "Space Used: {d}/{d}MB\n",
+                // .{
+                    // self.buffer_idx >> 20,
+                    // self.buffer.len >> 20,
+                // },
+            // );
+            // return error.IndexTooLargeAndMergingNotImplemented;
+        // }
+    // }
+// 
+    // pub inline fn append(
+        // self: *PostingsList, 
+        // gpa: *std.heap.DebugAllocator(.{.thread_safe = true}),
+        // doc_id: u32,
+        // doc_size: u16,
+        // term_pos: u16,
+        // scratch_arr: *align(64) [BLOCK_SIZE]u32,
+        // ) !void {
+        // const val = try self.postings.addOne(gpa.allocator());
+        // val.* = PostingV3.init();
+        // try val.add(
+            // gpa,
+            // // &self.arena,
+            // self.buffer,
+            // &self.buffer_idx,
+            // doc_id, 
+            // doc_size, 
+            // term_pos, 
+            // scratch_arr,
+            // );
+    // }
+// };
 
 pub const InvertedIndexV2 = struct {
     // posting_list: PostingsList,
@@ -1998,9 +2137,9 @@ pub const InvertedIndexV2 = struct {
     }
 
     pub inline fn getDF(self: *InvertedIndexV2, term_id: u32) u32 {
-        const posting = self.posting_list.postings.items[term_id];
-        return @as(u32, @truncate(posting.full_blocks.items.len * BLOCK_SIZE)) + 
-               @as(u32, @intCast(posting.partial_block.num_docs));
+        const partial_block = self.posting_list.partial.items[term_id];
+        return @as(u32, @truncate(partial_block.num_full_blocks * BLOCK_SIZE)) + 
+               @as(u32, @intCast(partial_block.num_docs));
     }
 
     pub fn commit(
@@ -2008,6 +2147,23 @@ pub const InvertedIndexV2 = struct {
         gpa: *std.heap.DebugAllocator(.{ .thread_safe = true }),
         _: *std.heap.ArenaAllocator,
         ) !void {
+        // Directly flush entire full_buffer.
+        var fb_size_buf: [4]u8 = undefined;
+        std.mem.writePackedInt(
+            u32,
+            std.mem.bytesAsSlice(u8, &fb_size_buf),
+            0,
+            @truncate(self.posting_list.full_buffer_idx),
+            comptime builtin.cpu.arch.endian(),
+        );
+        try self.file_handle.writeAll(std.mem.bytesAsSlice(u8, &fb_size_buf));
+        try self.file_handle.writeAll(
+            self.posting_list.full_buffer[0..self.posting_list.full_buffer_idx],
+        );
+        try self.file_handle.writeAll(
+            std.mem.sliceAsBytes(self.posting_list.full_buf_idxs.items),
+        );
+
         var buf = std.ArrayListUnmanaged(u8){};
         try buf.resize(gpa.allocator(), 1 << 22);
         defer buf.deinit(gpa.allocator());
@@ -2017,14 +2173,15 @@ pub const InvertedIndexV2 = struct {
             u32,
             buf.items[current_pos..][0..4],
             0,
-            @truncate(self.posting_list.postings.items.len),
+            @truncate(self.posting_list.partial.items.len),
             comptime builtin.cpu.arch.endian(),
         );
         current_pos += 4;
+        
 
-        for (self.posting_list.postings.items) |*pos| {
-            if (pos.partial_block.tp_indexing.items.len > 1) {
-                try pos.partial_block.flushTPTermBuf(gpa.allocator());
+        for (self.posting_list.partial.items) |*pos| {
+            if (pos.tp_indexing.items.len > 1) {
+                try pos.flushTPTermBuf(gpa.allocator());
             }
             try pos.serialize(&buf, gpa.allocator(), &current_pos);
         }
@@ -2127,112 +2284,113 @@ pub const InvertedIndexV2 = struct {
 
     }
 
-    pub fn load(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
-            
-        // TODO: Consider buffering on large indexes.
-        const file_size = try self.file_handle.getEndPos();
-        try self.file_handle.seekTo(0);
-
-        var buf = try allocator.alloc(u8, file_size);
-        defer allocator.free(buf);
-
-        const bytes_read = try self.file_handle.readAll(buf);
-        std.debug.assert(bytes_read > 0);
-
-        var current_pos: usize = 0;
-
-        // 1. Postings
-        const num_postings = std.mem.readPackedInt(
-            u32,
-            buf[current_pos..][0..4],
-            0,
-            comptime builtin.cpu.arch.endian(),
-        );
-        current_pos += 4;
-
-        var arena = std.heap.ArenaAllocator.init(allocator);
-
-        try self.posting_list.postings.resize(arena.allocator(), num_postings);
-        for (0..num_postings) |idx| {
-            self.posting_list.postings.items[idx] = PostingV3.init();
-            try self.posting_list.postings.items[idx].deserialize(
-                arena.allocator(),
-                buf,
-                &current_pos,
-            );
-        }
-
-        // 2. Vocab
-        const num_string_bytes_vocab = std.mem.readPackedInt(
-            u32,
-            buf[current_pos..][0..4],
-            0,
-            comptime builtin.cpu.arch.endian(),
-        );
-        current_pos += 4;
-
-        try self.vocab.string_bytes.resize(allocator, num_string_bytes_vocab);
-        @memcpy(
-            self.vocab.string_bytes.items,
-            buf[current_pos..][0..num_string_bytes_vocab],
-        );
-        current_pos += num_string_bytes_vocab;
-
-        const num_terms_vocab = std.mem.readPackedInt(
-            u32,
-            buf[current_pos..][0..4],
-            0,
-            comptime builtin.cpu.arch.endian(),
-        );
-        current_pos += 4;
-
-        for (0..num_terms_vocab) |_| {
-            const key = std.mem.readPackedInt(
-                u32,
-                buf[current_pos..][0..4],
-                0,
-                comptime builtin.cpu.arch.endian(),
-            );
-            const value = std.mem.readPackedInt(
-                u32,
-                buf[current_pos..][4..8],
-                0,
-                comptime builtin.cpu.arch.endian(),
-            );
-            current_pos += 8;
-
-            try self.vocab.map.putNoClobberContext(
-                allocator, 
-                key, 
-                value, 
-                self.vocab.getCtx(),
-                );
-        }
-
-        // Doc sizes
-        const num_docs = std.mem.readPackedInt(
-            u32,
-            buf[current_pos..][0..4],
-            0,
-            comptime builtin.cpu.arch.endian(),
-        );
-        current_pos += 4;
-
-        try self.doc_sizes.resize(allocator, num_docs);
-        @memcpy(
-            std.mem.sliceAsBytes(self.doc_sizes.items),
-            buf[current_pos..][0..(num_docs * @sizeOf(u16))],
-        );
-        current_pos += num_docs * @sizeOf(u16);
-
-        // Avg doc size
-        self.avg_doc_size = @bitCast(std.mem.readPackedInt(
-            u32,
-            buf[current_pos..][0..4],
-            0,
-            comptime builtin.cpu.arch.endian(),
-        ));
-        current_pos += 4;
+    // pub fn load(self: *InvertedIndexV2, allocator: std.mem.Allocator) !void {
+    pub fn load(_: *InvertedIndexV2, _: std.mem.Allocator) !void {
+        // TODO: Clean up and make work with new structure.
+           //  
+        // const file_size = try self.file_handle.getEndPos();
+        // try self.file_handle.seekTo(0);
+// 
+        // var buf = try allocator.alloc(u8, file_size);
+        // defer allocator.free(buf);
+// 
+        // const bytes_read = try self.file_handle.readAll(buf);
+        // std.debug.assert(bytes_read > 0);
+// 
+        // var current_pos: usize = 0;
+// 
+        // // 1. Postings
+        // const num_postings = std.mem.readPackedInt(
+            // u32,
+            // buf[current_pos..][0..4],
+            // 0,
+            // comptime builtin.cpu.arch.endian(),
+        // );
+        // current_pos += 4;
+// 
+        // var arena = std.heap.ArenaAllocator.init(allocator);
+// 
+        // try self.posting_list.partial.resize(arena.allocator(), num_postings);
+        // for (0..num_postings) |idx| {
+            // self.posting_list.partial.items[idx] = PostingsBlockPartial.init();
+            // try self.posting_list.partial.items[idx].deserialize(
+                // arena.allocator(),
+                // buf,
+                // &current_pos,
+            // );
+        // }
+// 
+        // // 2. Vocab
+        // const num_string_bytes_vocab = std.mem.readPackedInt(
+            // u32,
+            // buf[current_pos..][0..4],
+            // 0,
+            // comptime builtin.cpu.arch.endian(),
+        // );
+        // current_pos += 4;
+// 
+        // try self.vocab.string_bytes.resize(allocator, num_string_bytes_vocab);
+        // @memcpy(
+            // self.vocab.string_bytes.items,
+            // buf[current_pos..][0..num_string_bytes_vocab],
+        // );
+        // current_pos += num_string_bytes_vocab;
+// 
+        // const num_terms_vocab = std.mem.readPackedInt(
+            // u32,
+            // buf[current_pos..][0..4],
+            // 0,
+            // comptime builtin.cpu.arch.endian(),
+        // );
+        // current_pos += 4;
+// 
+        // for (0..num_terms_vocab) |_| {
+            // const key = std.mem.readPackedInt(
+                // u32,
+                // buf[current_pos..][0..4],
+                // 0,
+                // comptime builtin.cpu.arch.endian(),
+            // );
+            // const value = std.mem.readPackedInt(
+                // u32,
+                // buf[current_pos..][4..8],
+                // 0,
+                // comptime builtin.cpu.arch.endian(),
+            // );
+            // current_pos += 8;
+// 
+            // try self.vocab.map.putNoClobberContext(
+                // allocator, 
+                // key, 
+                // value, 
+                // self.vocab.getCtx(),
+                // );
+        // }
+// 
+        // // Doc sizes
+        // const num_docs = std.mem.readPackedInt(
+            // u32,
+            // buf[current_pos..][0..4],
+            // 0,
+            // comptime builtin.cpu.arch.endian(),
+        // );
+        // current_pos += 4;
+// 
+        // try self.doc_sizes.resize(allocator, num_docs);
+        // @memcpy(
+            // std.mem.sliceAsBytes(self.doc_sizes.items),
+            // buf[current_pos..][0..(num_docs * @sizeOf(u16))],
+        // );
+        // current_pos += num_docs * @sizeOf(u16);
+// 
+        // // Avg doc size
+        // self.avg_doc_size = @bitCast(std.mem.readPackedInt(
+            // u32,
+            // buf[current_pos..][0..4],
+            // 0,
+            // comptime builtin.cpu.arch.endian(),
+        // ));
+        // current_pos += 4;
     }
 };
 

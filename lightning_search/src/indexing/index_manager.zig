@@ -1628,7 +1628,7 @@ pub const IndexManager = struct {
                                 self.gpa(),
                             ) catch @panic("Error adding iterator");
                             iterator_ptr.* = try PostingsIteratorV2.init(
-                                II.posting_list.postings.items[_token],
+                                II.posting_list,
                                 _token,
                                 @truncate(II_idx),
                                 idf,
@@ -1685,7 +1685,7 @@ pub const IndexManager = struct {
                                     self.gpa(),
                                 ) catch @panic("Error adding iterator");
                                 iterator_ptr.* = try PostingsIteratorV2.init(
-                                    II.posting_list.postings.items[_token],
+                                    II.posting_list,
                                     _token,
                                     @truncate(II_idx),
                                     idf,
@@ -1741,7 +1741,7 @@ pub const IndexManager = struct {
                         self.gpa(),
                     ) catch @panic("Error adding iterator");
                     iterator_ptr.* = try PostingsIteratorV2.init(
-                        II.posting_list.postings.items[_token],
+                        II.posting_list,
                         _token,
                         @truncate(II_idx),
                         idf,
