@@ -280,6 +280,8 @@ pub const PostingsIteratorV2 = struct {
             // Decompress full
             const start_buf_idx = it.postings_list.full_buf_idxs.items[term_id];
 
+            std.debug.assert(it.partial().num_docs != BLOCK_SIZE);
+            std.debug.assert(it.partial().num_full_blocks >= 1);
             it.fb_meta = try PostingsBlockFullV2.decompressToBuffers(
                 &it.uncompressed_doc_ids_buffer,
                 &it.uncompressed_tfs_buffer,
@@ -507,8 +509,14 @@ pub const PostingsIteratorV2 = struct {
             std.debug.assert(num_full_blocks > 0);
 
             var block_idx = self.current_doc_idx >> (comptime std.math.log2(BLOCK_SIZE));
+            var prev_next_block_idx = self.fb_meta.next_block_idx;
+
             var skipped_block = false;
             while (block_idx < num_full_blocks) {
+                // std.debug.print(
+                    // "Current idx: {d} | Block idx: {d}/{d} | Target id: {d} | FB META: {any}\n",
+                    // .{self.current_doc_idx, block_idx, num_full_blocks, target_id, self.fb_meta},
+                // );
 
                 if (target_id > self.fb_meta.max_doc_id) {
                     idx = 0;
@@ -519,17 +527,24 @@ pub const PostingsIteratorV2 = struct {
                         BLOCK_SIZE,
                     );
                     skipped_block = true;
+                    if (block_idx < num_full_blocks - 1) {
+                        prev_next_block_idx = self.fb_meta.next_block_idx;
+                        self.fb_meta = try PostingsBlockFullV2.getNextMeta(
+                            self.postings_list.full_buffer,
+                            self.fb_meta.next_block_idx,
+                            );
+                    }
                     continue;
                 }
 
                 // Doc id in full block if here.
                 if (skipped_block) {
-                    std.debug.assert(self.fb_meta.next_block_idx != std.math.maxInt(u32));
+                    std.debug.assert(prev_next_block_idx != std.math.maxInt(u32));
                     self.fb_meta = try PostingsBlockFullV2.decompressToBuffers(
                         &self.uncompressed_doc_ids_buffer,
                         &self.uncompressed_tfs_buffer,
                         self.postings_list.full_buffer,
-                        self.fb_meta.next_block_idx,
+                        prev_next_block_idx,
                         );
                 }
 
@@ -852,6 +867,18 @@ pub const PostingsBlockFullV2 = packed struct {
     //  --------------------- 
     // | docs_ids | tfs | tp |
     //  --------------------- 
+
+    pub inline fn getNextMeta(
+        full_block_buffer: []u8,
+        start_idx: u64,
+    ) !PostingsBlockFullV2 {
+        const pbf_size = comptime @sizeOf(PostingsBlockFullV2);
+        const meta = std.mem.bytesAsValue(
+            PostingsBlockFullV2,
+            full_block_buffer[start_idx..][0..pbf_size],
+            ).*;
+        return meta;
+    }
 
     pub inline fn decompressToBuffers(
         doc_ids: *[BLOCK_SIZE]u32,
@@ -2147,22 +2174,6 @@ pub const InvertedIndexV2 = struct {
         gpa: *std.heap.DebugAllocator(.{ .thread_safe = true }),
         _: *std.heap.ArenaAllocator,
         ) !void {
-        // Directly flush entire full_buffer.
-        var fb_size_buf: [4]u8 = undefined;
-        std.mem.writePackedInt(
-            u32,
-            std.mem.bytesAsSlice(u8, &fb_size_buf),
-            0,
-            @truncate(self.posting_list.full_buffer_idx),
-            comptime builtin.cpu.arch.endian(),
-        );
-        try self.file_handle.writeAll(std.mem.bytesAsSlice(u8, &fb_size_buf));
-        try self.file_handle.writeAll(
-            self.posting_list.full_buffer[0..self.posting_list.full_buffer_idx],
-        );
-        try self.file_handle.writeAll(
-            std.mem.sliceAsBytes(self.posting_list.full_buf_idxs.items),
-        );
 
         var buf = std.ArrayListUnmanaged(u8){};
         try buf.resize(gpa.allocator(), 1 << 22);
@@ -2179,12 +2190,46 @@ pub const InvertedIndexV2 = struct {
         current_pos += 4;
         
 
-        for (self.posting_list.partial.items) |*pos| {
+        var scratch_arr: [BLOCK_SIZE]u32 align(64) = undefined;
+        for (0.., self.posting_list.partial.items) |term_id, *pos| {
             if (pos.tp_indexing.items.len > 1) {
                 try pos.flushTPTermBuf(gpa.allocator());
             }
+
+            if (pos.num_docs == BLOCK_SIZE) {
+                @branchHint(.unlikely);
+
+                if (pos.num_full_blocks == 0) {
+                    self.posting_list.full_buf_idxs.items[term_id] = @truncate(
+                        self.posting_list.full_buffer_idx
+                        );
+                }
+                try pos.flush(
+                    gpa,
+                    self.posting_list.full_buffer,
+                    &self.posting_list.full_buffer_idx,
+                    &scratch_arr,
+                    );
+            }
             try pos.serialize(&buf, gpa.allocator(), &current_pos);
         }
+
+        // Directly flush entire full_buffer.
+        var fb_size_buf: [4]u8 = undefined;
+        std.mem.writePackedInt(
+            u32,
+            std.mem.bytesAsSlice(u8, &fb_size_buf),
+            0,
+            @truncate(self.posting_list.full_buffer_idx),
+            comptime builtin.cpu.arch.endian(),
+        );
+        try self.file_handle.writeAll(std.mem.bytesAsSlice(u8, &fb_size_buf));
+        try self.file_handle.writeAll(
+            self.posting_list.full_buffer[0..self.posting_list.full_buffer_idx],
+        );
+        try self.file_handle.writeAll(
+            std.mem.sliceAsBytes(self.posting_list.full_buf_idxs.items),
+        );
 
         std.mem.writePackedInt(
             u32,
