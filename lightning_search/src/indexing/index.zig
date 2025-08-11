@@ -1039,8 +1039,11 @@ const DeltaVByteBlock = struct {
 
         var bytes_needed: usize = 0;
         for (sorted_vals) |val| {
-            const delta = if (val == 0) 0 else val - sorted_vals[0];
-            bytes_needed += pq.getVbyteSize(@intCast(delta));
+            const delta: u32 = if (val == 0) 0 else val - sorted_vals[0];
+            bytes_needed += pq.getVbyteSizeTable(
+                @TypeOf(delta),
+                delta,
+                );
         }
         const dvb = DeltaVByteBlock{
             .buffer = try std.ArrayListAlignedUnmanaged(
@@ -1054,10 +1057,11 @@ const DeltaVByteBlock = struct {
         var buf_idx: usize = 0;
         for (sorted_vals) |val| {
             const delta = if (val == 0) 0 else val - sorted_vals[0];
-            pq.encodeVbyte(
+            pq.encodeVbyteTable(
+                @TypeOf(delta),
                 dvb.buffer.items.ptr,
                 &buf_idx,
-                @intCast(delta),
+                delta,
             );
         }
 
@@ -1070,16 +1074,20 @@ const DeltaVByteBlock = struct {
         value: u32,
         prev_val: u32,
     ) !void {
-        const bytes_needed = pq.getVbyteSize(value - prev_val);
+        const bytes_needed = pq.getVbyteSizeTable(
+            @TypeOf(value),
+            value - prev_val,
+            );
         var init_ptr = self.buffer.items.len;
         try self.buffer.resize(
             allocator,
             init_ptr + bytes_needed
         );
-        pq.encodeVbyte(
+        pq.encodeVbyteTable(
+            @TypeOf(value),
             self.buffer.items.ptr,
             &init_ptr,
-            @intCast(value - prev_val),
+            value - prev_val,
         );
     }
 
@@ -1140,7 +1148,7 @@ const VByteBlock = struct {
         ) !VByteBlock {
         var bytes_needed: usize = 0;
         for (vals) |val| {
-            bytes_needed += pq.getVbyteSize(@intCast(val));
+            bytes_needed += pq.getVbyteSizeTable(@TypeOf(val), val);
         }
         const vb = VByteBlock{
             .buffer = try std.ArrayListAlignedUnmanaged(
@@ -1154,10 +1162,11 @@ const VByteBlock = struct {
 
         var buf_idx: usize = 0;
         for (vals) |val| {
-            pq.encodeVbyte(
+            pq.encodeVbyteTable(
+                @TypeOf(val),
                 vb.buffer.items.ptr,
                 &buf_idx,
-                @intCast(val),
+                val,
             );
         }
 
@@ -1169,16 +1178,17 @@ const VByteBlock = struct {
         allocator: std.mem.Allocator,
         value: u32,
     ) !void {
-        const bytes_needed = pq.getVbyteSize(@intCast(value));
+        const bytes_needed = pq.getVbyteSizeTable(@TypeOf(value), value);
         const new_slice = try self.buffer.addManyAsSlice(
             allocator,
             bytes_needed,
         );
         var idx: usize = 0;
-        pq.encodeVbyte(
+        pq.encodeVbyteTable(
+            @TypeOf(value),
             new_slice.ptr,
             &idx,
-            @intCast(value),
+            value,
         );
     }
 
@@ -1350,20 +1360,24 @@ pub const PostingsBlockPartial = struct {
         allocator: std.mem.Allocator,
         ) !void {
         std.debug.assert(self.tp_indexing.items.len > 0);
-        const start_val: u64 = @intCast(self.tp_indexing.items[0]);
+        // const start_val: u64 = @intCast(self.tp_indexing.items[0]);
 
         if (self.tp_indexing.items.len == 1) {
-            const bytes_needed = pq.getVbyteSize(start_val);
+            const bytes_needed = pq.getVbyteSizeTable(
+                comptime @TypeOf(self.tp_indexing.items[0]),
+                self.tp_indexing.items[0],
+                );
             const new_slice = try self.term_positions.addManyAsSlice(
                 allocator, 
                 bytes_needed,
                 );
 
             var byte_idx: u64 = 0;
-            pq.encodeVbyte(
+            pq.encodeVbyteTable(
+                comptime @TypeOf(self.tp_indexing.items[0]),
                 new_slice.ptr,
                 &byte_idx,
-                start_val,
+                self.tp_indexing.items[0],
             );
             self.tp_indexing.clearRetainingCapacity();
             return;
@@ -1381,11 +1395,14 @@ pub const PostingsBlockPartial = struct {
             bit_size = @max(bit_size, 16 - @clz(val.*));
         }
 
-        const bytes_needed = pq.getVbyteSize(start_val) + try std.math.divCeil(
-            usize,
-            self.tp_indexing.items.len * bit_size,
-            8,
-            );
+        const bytes_needed = pq.getVbyteSizeTable(
+                comptime @TypeOf(self.tp_indexing.items[0]),
+                self.tp_indexing.items[0],
+                ) + try std.math.divCeil(
+                usize,
+                self.tp_indexing.items.len * bit_size,
+                8,
+                );
 
         const new_slice = try self.term_positions.addManyAsSlice(
             allocator, 
@@ -1393,10 +1410,11 @@ pub const PostingsBlockPartial = struct {
             );
 
         var byte_idx: u64 = 0;
-        pq.encodeVbyte(
+        pq.encodeVbyteTable(
+            comptime @TypeOf(self.tp_indexing.items[0]),
             new_slice.ptr,
             &byte_idx,
-            start_val,
+            self.tp_indexing.items[0],
         );
         var bit_idx: u64 = byte_idx << 3;
         for (self.tp_indexing.items[1..]) |val| {
@@ -1442,7 +1460,10 @@ pub const PostingsBlockPartial = struct {
         } else {
             // TODO: Technincally when equal, doc size needs to be considered.
             const new_tf = self.prev_tf + 1;
-            const old_size = pq.getVbyteSize(@intCast(self.prev_tf));
+            const old_size = pq.getVbyteSizeTable(
+                @TypeOf(self.prev_tf), 
+                self.prev_tf,
+                );
 
             // if (comptime builtin.mode == .Debug) {
                 // std.debug.print(
@@ -1515,18 +1536,21 @@ pub const PostingsBlockPartial = struct {
         buffer.items[current_pos.*] = self.num_docs;
         current_pos.* += 1;
 
-        pq.encodeVbyte(
+        pq.encodeVbyteTable(
+            @TypeOf(self.max_tf),
             buffer.items.ptr,
             current_pos,
-            @intCast(self.max_tf),
+            self.max_tf,
         );
-        pq.encodeVbyte(
+        pq.encodeVbyteTable(
+            @TypeOf(self.max_doc_size),
             buffer.items.ptr,
             current_pos,
-            @intCast(self.max_doc_size),
+            self.max_doc_size,
         );
 
-        pq.encodeVbyte(
+        pq.encodeVbyteTable(
+            @TypeOf(self.doc_ids.buffer.items.len),
             buffer.items.ptr,
             current_pos,
             self.doc_ids.buffer.items.len,
@@ -1539,7 +1563,8 @@ pub const PostingsBlockPartial = struct {
         );
         current_pos.* += self.doc_ids.buffer.items.len;
 
-        pq.encodeVbyte(
+        pq.encodeVbyteTable(
+            @TypeOf(self.tfs.buffer.items.len),
             buffer.items.ptr,
             current_pos,
             self.tfs.buffer.items.len,
@@ -1553,7 +1578,8 @@ pub const PostingsBlockPartial = struct {
         current_pos.* += self.tfs.buffer.items.len;
 
 
-        pq.encodeVbyte(
+        pq.encodeVbyteTable(
+            @TypeOf(self.term_positions.items.len),
             buffer.items.ptr,
             current_pos,
             self.term_positions.items.len,
@@ -1985,10 +2011,11 @@ pub const PostingsListV2 = struct {
         } else {
             var partial_block = &self.partial.items[term_id];
             if (
-                (doc_id != partial_block.prev_doc_id)
-                    and
                 (partial_block.num_docs == BLOCK_SIZE)
+                    and
+                (doc_id != partial_block.prev_doc_id)
             ) {
+
                 if (partial_block.num_full_blocks == 0) {
                     self.full_buf_idxs.items[term_id] = @truncate(self.full_buffer_idx);
                 }

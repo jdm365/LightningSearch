@@ -6,6 +6,6 @@
         /_____/_/\__, /_/ /_/\__/_/ /_/_/_/ /_/\__, /   /____/\___/\__,_/_/   \___/_/ /_/ 
                 /____/                        /____/                                      
 ```
-(IN DEVELOPMENT - Base features are availbable but things may be broken or innefficient compared to the goal 1.0 state.)
+(IN DEVELOPMENT / PRE-RELEASER - Base features are availbable but things may be broken or innefficient compared to the goal 0.1 state.)
 
 Full Text Search Engine library with first class python bindings.

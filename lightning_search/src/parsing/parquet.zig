@@ -86,13 +86,50 @@ pub inline fn decodeVbyte(buffer: [*]u8, idx: *usize) u64 {
 
 
 pub inline fn getVbyteSize(value: u64) usize {
-    if (value == 0) return 1;
-
     const num_bits = 64 - @clz(value);
     const num_bytes = @divFloor((num_bits + 6), 7);
 
     return @max(1, num_bytes);
 }
+
+
+pub inline fn getVbyteSizeTable(comptime T: type, value: T) usize {
+    const table = comptime blk: {
+        @setEvalBranchQuota(10_000);
+        
+        var arr: [@bitSizeOf(T) + 1]usize = undefined;
+        for (0..(@bitSizeOf(T) + 1)) |idx| {
+            arr[idx] = @max(1, @divFloor((idx + 6), 7));
+        }
+        break :blk arr;
+    };
+    const num_bits = (comptime @bitSizeOf(T)) - @clz(value);
+    return table[num_bits];
+}
+
+pub inline fn encodeVbyteTable(
+    comptime T: type,
+    buffer: [*]u8, 
+    idx: *usize, 
+    value: T,
+    ) void {
+    const size = getVbyteSizeTable(T, value);
+    const max_bytes = comptime @sizeOf(T) + 1;
+
+    inline for (0..max_bytes) |shift_val| {
+        // Will overwrite data when not supposed to. This is fine.
+        buffer[idx.* + shift_val] = @as(
+            u8, 
+            @truncate(value >> (comptime 7 * shift_val)),
+            ) | 0b10000000;
+    }
+    buffer[idx.* + size - 1] = @as(
+        u8, 
+        @truncate(value >> @truncate(7 * (size - 1))),
+        );
+    idx.* += size;
+}
+
 
 pub fn getParquetCols(
     allocator: std.mem.Allocator,
