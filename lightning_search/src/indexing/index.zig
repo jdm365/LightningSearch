@@ -1226,13 +1226,6 @@ const VByteBlock = struct {
     }
 };
 
-pub const DocIDPostingsBlockPartialChunk = packed struct (u32) {
-    // doc_ids: DeltaVByteBlock,
-    // tfs:     VByteBlock,
-    // term_positions: std.ArrayListAlignedUnmanaged(u8, POST_ALIGNMENT),
-    // tp_indexing: std.ArrayListAlignedUnmanaged(u16, POST_ALIGNMENT),
-};
-
 pub const PostingsFreeLists = struct {
     fl_16: std.ArrayListUnmanaged(u32),
     fl_32: std.ArrayListUnmanaged(u32),
@@ -1320,42 +1313,43 @@ pub const PostingsFreeLists = struct {
 
 pub const PostingsListIndexing = struct {
     // Size: (5 * 4 * num_terms) + epsilon + (3 * 256MiB)
+    // TODO: Consider coalescing into one block. Clear inefficiencies there but would save memory.
 
     d_chunk_start_idxs: std.ArrayListUnmanaged(u32),
+    d_chunk_current_idxs: std.ArrayListUnmanaged(u32),
     d_buffer: []u8,
     d_bump_idx: u32,
-    d_free_lists: PostingsFreeLists,
     prev_doc_ids: std.ArrayListUnmanaged(u32),
 
     tf_chunk_start_idxs: std.ArrayListUnmanaged(u32),
+    tf_chunk_current_idxs: std.ArrayListUnmanaged(u32),
     tf_buffer: []u8,
     tf_bump_idx: u32,
-    tf_free_lists: PostingsFreeLists,
 
     tp_chunk_start_idxs: std.ArrayListUnmanaged(u32),
+    tp_chunk_current_idxs: std.ArrayListUnmanaged(u32),
     tp_buffer: []u8,
     tp_bump_idx: u32,
-    tp_free_lists: PostingsFreeLists,
 
     doc_freqs: std.ArrayListUnmanaged(u32),
 
     pub fn init(allocator: std.mem.Allocator) !PostingsListIndexing {
         return PostingsListIndexing{
             .d_chunk_start_idxs = std.ArrayListUnmanaged(u32){},
+            .d_chunk_current_idxs = std.ArrayListUnmanaged(u32){},
             .d_buffer = try allocator.alloc(u8, 1 << 28), // 256 MiB
             .d_bump_idx = 0,
-            .d_free_lists = PostingsFreeLists.init(),
             .prev_doc_ids = std.ArrayListUnmanaged(u32){},
 
             .tf_chunk_start_idxs = std.ArrayListUnmanaged(u32){},
+            .tf_chunk_current_idxs = std.ArrayListUnmanaged(u32){},
             .tf_buffer = try allocator.alloc(u8, 1 << 28), // 256 MiB
             .tf_bump_idx = 0,
-            .tf_free_lists = PostingsFreeLists.init(),
 
             .tp_chunk_start_idxs = std.ArrayListUnmanaged(u32){},
+            .tp_chunk_current_idxs = std.ArrayListUnmanaged(u32){},
             .tp_buffer = try allocator.alloc(u8, 1 << 30), // 1 GiB
             .tp_bump_idx = 0,
-            .tp_free_lists = PostingsFreeLists.init(),
 
             .doc_freqs = std.ArrayListUnmanaged(u32){},
         };
@@ -1366,9 +1360,9 @@ pub const PostingsListIndexing = struct {
         self.tf_chunk_start_idxs.deinit(allocator);
         self.tp_chunk_start_idxs.deinit(allocator);
 
-        self.d_free_lists.deinit(allocator);
-        self.tf_free_lists.deinit(allocator);
-        self.tp_free_lists.deinit(allocator);
+        self.d_chunk_current_idxs.deinit(allocator);
+        self.tf_chunk_current_idxs.deinit(allocator);
+        self.tp_chunk_current_idxs.deinit(allocator);
 
         allocator.free(self.d_buffer);
         allocator.free(self.tf_buffer);
@@ -1378,28 +1372,44 @@ pub const PostingsListIndexing = struct {
         self.prev_doc_ids.deinit(allocator);
     }
 
+    pub inline fn writeNextPtr(
+        buf: []u8,
+        buf_size: usize,
+        end_ptr: u32,
+    ) void {
+        std.mem.writeInt(
+            u32,
+            buf[buf_size-4..][0..4],
+            end_ptr,
+            std.builtin.Endian.little,
+        );
+    }
+
+    pub inline fn readNextPtr(buf: []u8, buf_size: usize) u32 {
+        return std.mem.readInt(
+            u32,
+            buf[buf_size-4..][0..4],
+            std.builtin.Endian.little,
+        );
+    }
+
+    pub inline fn writeBufSize(buf: []u8, buf_size: usize) void {
+        buf[0] = @truncate(std.math.log2(buf_size));
+    }
+
     pub inline fn appendToBuf(
         comptime T: type,
         start_pos: *u32,
+        current_local_pos: *u32,
         bump_idx: *u32,
         global_buf: []u8,
-        freelists: *PostingsFreeLists,
         new_val: T,
     ) void {
-        // try self.prev_doc_ids.append(gpa.allocator(), doc_id);
+        start_pos.* = bump_idx.*;
 
-        var buf: []u8 = undefined;
-        if (freelists.fl_16.pop()) |free_idx_16| {
-            start_pos.* = free_idx_16;
-
-            buf = global_buf[free_idx_16..][0..16];
-        } else {
-            start_pos.* = bump_idx.*;
-
-            buf = global_buf[bump_idx.*..][0..16];
-            bump_idx.* += 16;
-        }
-        buf[0] = comptime std.math.log2(16);
+        const buf = global_buf[bump_idx.*..][0..16];
+        bump_idx.* += 16;
+        PostingsListIndexing.writeBufSize(buf, 16);
 
         var idx: usize = 1;
         pq.encodeVbyteTable(
@@ -1408,54 +1418,24 @@ pub const PostingsListIndexing = struct {
             &idx,
             new_val,
         );
-        // buf[15] = @truncate(idx);
-        std.mem.writeInt(
-            u32,
-            buf[(comptime 16-4)..][0..4],
-            @as(u32, @truncate(idx)),
-            std.builtin.Endian.little,
-        );
+        current_local_pos.* = @truncate(idx);
+
+        PostingsListIndexing.writeNextPtr(buf, 16, new_val);
     }
 
     pub inline fn addToBuf(
         comptime T: type,
-        gpa: *std.heap.DebugAllocator(.{ .thread_safe = true }),
         start_pos: *u32,
+        current_local_pos: *u32,
         bump_idx: *u32,
         global_buf: []u8,
-        freelists: *PostingsFreeLists,
         new_val: T,
         prev_val: ?*T,
-    ) !void {
-        var current_pos: usize = undefined;
-
+    ) void {
         var buf = global_buf[start_pos.*..];
         var buf_size = @as(u32, 1) << @truncate(buf[0]);
 
-        // if (buf_size <= (comptime 1 << 8)) {
-            // current_pos = buf[buf_size-1..][0];
-        // } else if (buf_size <= (comptime 1 << 16)) {
-            // current_pos = std.mem.readInt(
-                // u16,
-                // buf[buf_size-2..][0..2],
-                // std.builtin.Endian.little,
-            // );
-        // } else {
-            // current_pos = std.mem.readInt(
-                // u32,
-                // buf[buf_size-4..][0..4],
-                // std.builtin.Endian.little,
-            // );
-        // }
-        current_pos = std.mem.readInt(
-            u32,
-            buf[buf_size-4..][0..4],
-            std.builtin.Endian.little,
-        );
-
-        const footer_size: u32 = 4;
-
-        const space_remaining = buf_size - footer_size - current_pos;
+        const space_remaining = buf_size - 4 - current_local_pos.*;
         var space_needed: usize = undefined;
         var write_val: T = undefined;
         if (prev_val) |pv| {
@@ -1473,155 +1453,74 @@ pub const PostingsListIndexing = struct {
             write_val = new_val;
         }
 
+        // std.debug.print(
+            // "Space needed: {d} | Space space_remaining: {d} | buf_size: {d} | current_pos: {d}\n",
+            // .{space_needed, space_remaining, buf_size, current_local_pos.*},
+        // );
         if (space_needed > space_remaining) {
-            const _new_start_idx = try freelists.add(
-                gpa.allocator(), 
-                @intCast(start_pos.*),
-                @intCast(buf_size),
-                );
-
-            const old_start_idx = start_pos.*;
-            if (_new_start_idx) |new_start_idx| {
-                start_pos.* = new_start_idx;
-            } else {
-                start_pos.* = bump_idx.*;
-                bump_idx.* += buf_size << 1;
-            }
-
-            @memcpy(
-                global_buf[start_pos.*..][0..buf_size],
-                global_buf[old_start_idx..][0..buf_size],
-            );
-
+            PostingsListIndexing.writeNextPtr(buf, buf_size, bump_idx.*);
             buf_size <<= 1;
-            buf = global_buf[start_pos.*..][0..buf_size];
-        }
-        buf[0] = @truncate(std.math.log2(buf_size));
 
-        var dummy_idx = @as(usize, @intCast(current_pos));
+            start_pos.* = bump_idx.*;
+            bump_idx.* += buf_size << 1;
+
+            buf = global_buf[start_pos.*..][0..buf_size];
+            PostingsListIndexing.writeBufSize(buf, buf_size);
+        }
+
+        var dummy_idx: usize = 1;
         pq.encodeVbyteTable(
             @TypeOf(write_val),
             buf.ptr,
             &dummy_idx,
             write_val,
         );
-        current_pos = @truncate(dummy_idx);
+        current_local_pos.* = @truncate(dummy_idx);
 
-        // if (buf_size <= (comptime 1 << 8)) {
-            // buf[buf_size-1..][0] = @truncate(current_pos);
-        // } else if (buf_size <= (comptime 1 << 16)) {
-             // std.mem.writeInt(
-                // u16,
-                // buf[buf_size-2..][0..2],
-                // @as(u16, @truncate(current_pos)),
-                // std.builtin.Endian.little,
-            // );
-        // } else {
-            // std.mem.writeInt(
-                // u32,
-                // buf[buf_size-4..][0..4],
-                // @as(u32, @truncate(current_pos)),
-                // std.builtin.Endian.little,
-            // );
-        // }
-        std.mem.writeInt(
-            u32,
-            buf[buf_size-4..][0..4],
-            @as(u32, @truncate(current_pos)),
-            std.builtin.Endian.little,
-        );
+        // Write prev val (used for tf)
+        PostingsListIndexing.writeNextPtr(buf, buf_size, new_val);
     }
 
     pub inline fn incBuf(
-        gpa: *std.heap.DebugAllocator(.{ .thread_safe = true }),
         start_pos: *u32,
+        current_local_pos: *u32,
         bump_idx: *u32,
         global_buf: []u8,
-        freelists: *PostingsFreeLists,
-    ) !void {
-        var current_pos: usize = undefined;
-
+    ) void {
         var buf = global_buf[start_pos.*..];
         var buf_size = @as(u32, 1) << @truncate(buf[0]);
-        // if (buf_size <= (comptime 1 << 8)) {
-            // current_pos = buf[buf_size-1..][0];
-        // } else if (buf_size <= (comptime 1 << 16)) {
-            // current_pos = std.mem.readInt(
-                // u16,
-                // buf[buf_size-2..][0..2],
-                // std.builtin.Endian.little,
-            // );
-        // } else {
-            // current_pos = std.mem.readInt(
-                // u32,
-                // buf[buf_size-4..][0..4],
-                // std.builtin.Endian.little,
-            // );
-        // }
-        current_pos = std.mem.readInt(
-            u32,
-            buf[buf_size-4..][0..4],
-            std.builtin.Endian.little,
+
+        const prev_val = PostingsListIndexing.readNextPtr(buf, buf_size);
+        const prev_vbyte_size = pq.getVbyteSizeTable(
+            @TypeOf(prev_val),
+            prev_val,
         );
 
-        const footer_size: u32 = 4;
+        current_local_pos.* -= @truncate(prev_vbyte_size);
+        var dummy_idx: usize = 1;
+        pq.encodeVbyteTable(
+            @TypeOf(prev_val),
+            buf.ptr,
+            &dummy_idx,
+            prev_val + 1,
+        );
+        current_local_pos.* = @truncate(dummy_idx);
 
-        if (current_pos >= buf_size - footer_size - 1) {
-            const _new_start_idx = try freelists.add(
-                gpa.allocator(), 
-                @intCast(start_pos.*),
-                @intCast(buf_size),
-                );
-
-            const old_start_idx = start_pos.*;
-            if (_new_start_idx) |new_start_idx| {
-                start_pos.* = new_start_idx;
-            } else {
-                start_pos.* = bump_idx.*;
-                bump_idx.* += buf_size << 1;
-            }
-
-            @memcpy(
-                global_buf[start_pos.*..][0..buf_size],
-                global_buf[old_start_idx..][0..buf_size],
-            );
-
+        if (current_local_pos.* >= buf_size - 4 - 1) {
+            PostingsListIndexing.writeNextPtr(buf, buf_size, bump_idx.*);
             buf_size <<= 1;
+
+            start_pos.* = bump_idx.*;
+            bump_idx.* += buf_size << 1;
+
             buf = global_buf[start_pos.*..][0..buf_size];
-        }
+            PostingsListIndexing.writeBufSize(buf, buf_size);
+            PostingsListIndexing.writeNextPtr(buf, buf_size, prev_val + 1);
 
-        if (buf[current_pos - 1] == 0b01111111) {
-            buf[current_pos - 1] = 0b10000000;
-            buf[current_pos] = 0b00000001;
-            current_pos += 1;
-        } else {
-            buf[current_pos - 1] += 0b00000001;
+            current_local_pos.* = 1;
+            return;
         }
-        buf[0] = @truncate(std.math.log2(buf_size));
-
-        // if (buf_size <= (comptime 1 << 8)) {
-            // buf[buf_size-1..][0] = @truncate(current_pos);
-        // } else if (buf_size <= (comptime 1 << 16)) {
-             // std.mem.writeInt(
-                // u16,
-                // buf[buf_size-2..][0..2],
-                // @as(u16, @truncate(current_pos)),
-                // std.builtin.Endian.little,
-            // );
-        // } else {
-            // std.mem.writeInt(
-                // u32,
-                // buf[buf_size-4..][0..4],
-                // @as(u32, @truncate(current_pos)),
-                // std.builtin.Endian.little,
-            // );
-        // }
-        std.mem.writeInt(
-            u32,
-            buf[buf_size-4..][0..4],
-            @as(u32, @truncate(current_pos)),
-            std.builtin.Endian.little,
-        );
+        PostingsListIndexing.writeNextPtr(buf, buf_size, prev_val + 1);
     }
 
     pub fn add(
@@ -1639,9 +1538,9 @@ pub const PostingsListIndexing = struct {
             PostingsListIndexing.appendToBuf(
                 u32,
                 try self.d_chunk_start_idxs.addOne(gpa.allocator()),
+                try self.d_chunk_current_idxs.addOne(gpa.allocator()),
                 &self.d_bump_idx,
                 self.d_buffer,
-                &self.d_free_lists,
                 doc_id,
             );
 
@@ -1649,9 +1548,9 @@ pub const PostingsListIndexing = struct {
             PostingsListIndexing.appendToBuf(
                 u16,
                 try self.tf_chunk_start_idxs.addOne(gpa.allocator()),
+                try self.tf_chunk_current_idxs.addOne(gpa.allocator()),
                 &self.tf_bump_idx,
                 self.tf_buffer,
-                &self.tf_free_lists,
                 1,
             );
 
@@ -1659,9 +1558,9 @@ pub const PostingsListIndexing = struct {
             PostingsListIndexing.appendToBuf(
                 u16,
                 try self.tp_chunk_start_idxs.addOne(gpa.allocator()),
+                try self.tp_chunk_current_idxs.addOne(gpa.allocator()),
                 &self.tp_bump_idx,
                 self.tp_buffer,
-                &self.tp_free_lists,
                 term_pos,
             );
 
@@ -1670,22 +1569,20 @@ pub const PostingsListIndexing = struct {
         } else {
 
             if (doc_id == self.prev_doc_ids.items[term_id]) {
-                try PostingsListIndexing.incBuf(
-                    gpa,
+                PostingsListIndexing.incBuf(
                     &self.tf_chunk_start_idxs.items[term_id],
+                    &self.tf_chunk_current_idxs.items[term_id],
                     &self.tf_bump_idx,
                     self.tf_buffer,
-                    &self.tf_free_lists,
                 );
 
                 // Term Positions
-                try PostingsListIndexing.addToBuf(
+                PostingsListIndexing.addToBuf(
                     u16,
-                    gpa,
                     &self.tp_chunk_start_idxs.items[term_id],
+                    &self.tp_chunk_current_idxs.items[term_id],
                     &self.tp_bump_idx,
                     self.tp_buffer,
-                    &self.tp_free_lists,
                     term_pos,
                     null,
                 );
@@ -1694,37 +1591,34 @@ pub const PostingsListIndexing = struct {
             }
 
             // Doc Ids
-            try PostingsListIndexing.addToBuf(
+            PostingsListIndexing.addToBuf(
                 u32,
-                gpa,
                 &self.d_chunk_start_idxs.items[term_id],
+                &self.d_chunk_current_idxs.items[term_id],
                 &self.d_bump_idx,
                 self.d_buffer,
-                &self.d_free_lists,
                 doc_id,
                 &self.prev_doc_ids.items[term_id],
             );
 
             // Term Freqs
-            try PostingsListIndexing.addToBuf(
+            PostingsListIndexing.addToBuf(
                 u32,
-                gpa,
                 &self.tf_chunk_start_idxs.items[term_id],
+                &self.tf_chunk_current_idxs.items[term_id],
                 &self.tf_bump_idx,
                 self.tf_buffer,
-                &self.tf_free_lists,
                 1,
                 null,
             );
 
             // Term Positions
-            try PostingsListIndexing.addToBuf(
+            PostingsListIndexing.addToBuf(
                 u16,
-                gpa,
                 &self.tp_chunk_start_idxs.items[term_id],
+                &self.tp_chunk_current_idxs.items[term_id],
                 &self.tp_bump_idx,
                 self.tp_buffer,
-                &self.tp_free_lists,
                 term_pos,
                 null,
             );
