@@ -92,10 +92,31 @@ pub inline fn getVbyteSize(value: u64) usize {
     return @max(1, num_bytes);
 }
 
+pub inline fn getPrevVByteSize(buf: [*]u8, start_idx: usize) usize {
+    const prev: [*]u8 = @ptrFromInt(@intFromPtr(buf) + start_idx - 8);
+    var mask: [8]u8 align(8) = undefined;
+    inline for (0..8) |idx| {
+        mask[idx] = prev[idx] & 0b10000000; 
+    }
+    switch (@ctz(@as(u64, @bitCast(mask)))) {
+        7 => return 1,
+        15 => return 2,
+        23 => return 3,
+        31 => return 4,
+        39 => return 5,
+        47 => return 6,
+        55 => return 7,
+        64 => return 8,
+        else => @panic("Invalid VByte sequence found."),
+    }
+
+    unreachable;
+}
+
 
 pub inline fn getVbyteSizeTable(comptime T: type, value: T) usize {
     const table = comptime blk: {
-        @setEvalBranchQuota(10_000);
+        @setEvalBranchQuota(66_000);
         
         var arr: [@bitSizeOf(T) + 1]usize = undefined;
         for (0..(@bitSizeOf(T) + 1)) |idx| {
