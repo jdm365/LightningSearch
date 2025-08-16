@@ -3031,14 +3031,12 @@ pub const BM25Partition = struct {
         doc_id: u32,
         term_pos: u16,
         col_idx: usize,
-        // scratch_arr: *align(64) [BLOCK_SIZE]u32,
     ) !void {
         std.debug.assert(
             self.II[col_idx].vocab.map.count() < (1 << 32),
             );
 
         const gop = try self.II[col_idx].vocab.map.getOrPutContextAdapted(
-            // self.arena.allocator(),
             self.gpa.allocator(),
             term[0..term_len],
             self.II[col_idx].vocab.getAdapter(),
@@ -3048,18 +3046,16 @@ pub const BM25Partition = struct {
         self.II[col_idx].doc_sizes.items[doc_id] += 1;
 
         if (!gop.found_existing) {
+            const term_id = self.II[col_idx].vocab.map.count() - 1;
             try self.II[col_idx].vocab.string_bytes.appendSlice(
-                // self.arena.allocator(),
                 self.gpa.allocator(),
                 term[0..term_len],
                 );
             try self.II[col_idx].vocab.string_bytes.append(
-                // self.arena.allocator(), 
                 self.gpa.allocator(), 
                 0,
                 );
 
-            const term_id = self.II[col_idx].vocab.map.count() - 1;
             gop.key_ptr.* = @truncate(
                 self.II[col_idx].vocab.string_bytes.items.len - term_len - 1,
                 );
@@ -3069,9 +3065,7 @@ pub const BM25Partition = struct {
                 self.gpa,
                 term_id,
                 doc_id,
-                // self.II[col_idx].doc_sizes.items[doc_id],
                 term_pos,
-                // scratch_arr,
             );
 
         } else {
@@ -3080,9 +3074,7 @@ pub const BM25Partition = struct {
                 self.gpa,
                 term_id,
                 doc_id,
-                // self.II[col_idx].doc_sizes.items[doc_id],
                 term_pos,
-                // scratch_arr,
             );
         }
 
